@@ -1,0 +1,32 @@
+"" Source your .vimrc
+source ~/.vimrc
+
+"" -- Suggested options --
+" Don't use Ex mode, use Q for formatting.
+map Q gq
+
+
+"" -- Map IDE actions to IdeaVim -- https://jb.gg/abva4t
+"" Map \r to the Reformat Code action
+map <leader>r <Action>(ReformatCode)
+
+"" Map <leader>d to start debug
+map <leader>d <Action>(Debug)
+
+"" Map \b to toggle the breakpoint on the current line
+map <leader>b <Action>(ToggleLineBreakpoint)
+
+
+" Find more examples here: https://jb.gg/share-ideavimrc
+set ideajoin
+set surround
+
+nnoremap <leader>h <C-w>h<CR>
+nnoremap <leader>j <C-w>j<CR>
+nnoremap <leader>k <C-w>k<CR>
+nnoremap <leader>l <C-w>l<CR>
+
+inoremap , ,
+inoremap . .
+inoremap ! !
+inoremap ? ?

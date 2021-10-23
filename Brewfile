@@ -1,0 +1,10 @@
+tap "homebrew/bundle"
+tap "homebrew/cask"
+tap "homebrew/core"
+
+brew "zsh"
+brew "git"
+brew "gh"
+brew "vim"
+brew "deno"
+brew "cmake"
