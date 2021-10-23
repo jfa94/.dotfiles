@@ -1,5 +1,7 @@
 inoremap jk <ESC>
-syntax on 
+if (&t_Co > 2 || has("gui_running")) && !exists("syntax_on")
+  syntax on
+endif
 
 let mapleader=" "
 
@@ -11,7 +13,8 @@ set expandtab
 set smartindent
 set nowrap
 set relativenumber
-set colorcolumn=80
+set textwidth=80
+set colorcolumn=+1
 set noswapfile
 set nobackup
 set undodir=~/.vim/undodir
@@ -22,8 +25,10 @@ set ignorecase
 set incsearch
 set scrolloff=5
 set signcolumn=yes
+set splitbelow
+set splitright
 
-highlight ColorColumn ctermbg=0 guibg=lightgrey
+let g:html_indent_tags = 'li\|p'
 
 nnoremap <leader>r gg=G<C-o>
 nnoremap <leader>h :wincmd h<CR>
