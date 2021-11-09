@@ -58,6 +58,7 @@ Plug 'leafgarland/typescript-vim'
 Plug 'Valloric/YouCompleteMe'
 Plug 'mbbill/undotree'
 Plug 'tpope/vim-surround'
+Plug 'mattn/emmet-vim'
 
 call plug#end()
 
