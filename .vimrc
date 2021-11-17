@@ -1,6 +1,6 @@
 inoremap jk <ESC>
 if (&t_Co > 2 || has("gui_running")) && !exists("syntax_on")
-  syntax on
+    syntax on
 endif
 
 let mapleader=" "
@@ -36,7 +36,7 @@ nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
 nnoremap <leader>l :wincmd l<CR>
 nnoremap <leader>r :%s/
-nnoremap <leader>pv :wincmd v<bar> :Ex<bar> :vertical resize 30<CR>
+nnoremap <leader>pv :wincmd v<bar> :wincmd R<bar> :Ex<bar> :vertical resize 30<CR>
 nnoremap <silent> <leader>+ :vertical resize +5<CR>
 nnoremap <silent> <leader>- :vertical resize -5<CR>
 
@@ -69,6 +69,9 @@ colorscheme darcula
 
 let g:netrw_browse_split=2
 let g:netrw_winsize = 25
+
+"emmet-vim remap
+nnoremap <leader>e <C-y>,
 
 nnoremap <leader>u :UndotreeShow<CR>
 nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
