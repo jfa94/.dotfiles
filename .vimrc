@@ -13,7 +13,7 @@ set expandtab
 set smartindent
 set nowrap
 set relativenumber
-set textwidth=80
+set textwidth=120
 set colorcolumn=+1
 set noswapfile
 set nobackup
@@ -27,6 +27,7 @@ set scrolloff=5
 set signcolumn=yes
 set splitbelow
 set splitright
+set list lcs=tab:>>,nbsp:␣,trail:·,precedes:←,extends:→
 
 let g:html_indent_tags = 'li\|p'
 
@@ -49,6 +50,7 @@ inoremap , ,<C-g>u
 inoremap . .<C-g>u
 inoremap ! !<C-g>u
 inoremap ? ?<C-g>u
+inoremap ;; <ESC>mT A;<ESC> `T i
 
 call plug#begin('~/.vim/plugged')
 
@@ -71,7 +73,7 @@ let g:netrw_browse_split=2
 let g:netrw_winsize = 25
 
 "emmet-vim remap
-nnoremap <leader>e <C-y>,
+imap <buffer> <expr> <tab> emmet#expandAbbrIntelligent("\<tab>")
 
 nnoremap <leader>u :UndotreeShow<CR>
 nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
