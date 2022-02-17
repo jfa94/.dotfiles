@@ -23,6 +23,8 @@ nnoremap <leader>j <C-w>j<CR>
 nnoremap <leader>k <C-w>k<CR>
 nnoremap <leader>l <C-w>l<CR>
 
+vnoremap K :m '<-2<CR>gv=gv<CR>
+
 inoremap , ,
 inoremap . .
 inoremap ! !

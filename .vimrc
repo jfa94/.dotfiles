@@ -51,6 +51,7 @@ inoremap . .<C-g>u
 inoremap ! !<C-g>u
 inoremap ? ?<C-g>u
 inoremap ;; <ESC>mT A;<ESC> `T :delmarks T<CR>i
+inoremap ,, <ESC>mT A,<ESC> `T :delmarks T<CR>i
 
 call plug#begin('~/.vim/plugged')
 
