@@ -52,6 +52,10 @@ inoremap ! !<C-g>u
 inoremap ? ?<C-g>u
 inoremap ;; <ESC>mT A;<ESC> `T :delmarks T<CR>i
 inoremap ,, <ESC>mT A,<ESC> `T :delmarks T<CR>i
+inoremap {<CR> {<CR>}<ESC>ko<Tab>
+inoremap [<CR> [<CR>]<ESC>ko<Tab>
+inoremap (<CR> (<CR>)<ESC>ko<Tab>
+inoremap {{ <ESC>A{<CR>}<ESC>ko<Tab>
 
 call plug#begin('~/.vim/plugged')
 

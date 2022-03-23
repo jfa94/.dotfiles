@@ -29,3 +29,7 @@ inoremap , ,
 inoremap . .
 inoremap ! !
 inoremap ? ?
+inoremap {<CR> {<CR>
+inoremap [<CR> [<CR>
+inoremap (<CR> (<CR>
+inoremap {{ <ESC>A{<CR>
