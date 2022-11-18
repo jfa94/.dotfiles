@@ -66,6 +66,8 @@ Plug 'Valloric/YouCompleteMe'
 Plug 'mbbill/undotree'
 Plug 'tpope/vim-surround'
 Plug 'mattn/emmet-vim'
+Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+Plug 'junegunn/fzf.vim'
 
 call plug#end()
 
@@ -83,3 +85,5 @@ imap <buffer> <expr> <tab> emmet#expandAbbrIntelligent("\<tab>")
 nnoremap <leader>u :UndotreeShow<CR>
 nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
 nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
+
+nnoremap <leader>/ :Files<CR>
