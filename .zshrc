@@ -2,9 +2,12 @@ autoload -Uz vcs_info
 precmd() { vcs_info }
 precmd_functions+=( precmd_vcs_info )
 
-export TERM=screen-256color
-
 alias python='python3'
+
+export TERM="xterm-256color"
+#if which tmux >/dev/null 2>&1; then
+#    test -z "$TMUX" && (tmux attach || tmux new-session)
+#fi
 
 zstyle ':vcs_info:*' enable git
 zstyle ':vcs_info:*' check-for-changes true

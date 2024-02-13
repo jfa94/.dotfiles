@@ -3,6 +3,8 @@ if (&t_Co > 2 || has("gui_running")) && !exists("syntax_on")
     syntax on
 endif
 
+set term=xterm-256color
+
 let mapleader=" "
 
 set hidden
