@@ -1,12 +1,15 @@
 inoremap jk <ESC>
+
 if (&t_Co > 2 || has("gui_running")) && !exists("syntax_on")
     syntax on
 endif
 
-set term=xterm-256color
-
 let mapleader=" "
+let g:html_indent_tags = 'li\|p'
+let &t_SI = "\e[5 q"
+let &t_EI = "\e[2 q"
 
+set term=xterm-256color
 set hidden
 set noerrorbells
 set tabstop=4 softtabstop=4
@@ -31,15 +34,12 @@ set splitbelow
 set splitright
 set list lcs=tab:>>,nbsp:␣,trail:·,precedes:←,extends:→
 
-let g:html_indent_tags = 'li\|p'
-
 nnoremap <leader>f gg=G<C-o>
 nnoremap <leader>h :wincmd h<CR>
 nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
 nnoremap <leader>l :wincmd l<CR>
 nnoremap <leader>r :%s/
-nnoremap <leader>pv :NERDTree<CR>
 nnoremap <silent> <leader>+ :vertical resize +5<CR>
 nnoremap <silent> <leader>- :vertical resize -5<CR>
 
@@ -62,8 +62,7 @@ inoremap {{ <ESC>A{<CR>}<ESC>ko<Tab>
 call plug#begin('~/.vim/plugged')
 
 Plug 'doums/darcula'
-Plug 'leafgarland/typescript-vim'
-" Plug 'Valloric/YouCompleteMe'
+Plug 'Valloric/YouCompleteMe'
 Plug 'dense-analysis/ale'
 Plug 'mbbill/undotree'
 Plug 'tpope/vim-surround'
@@ -79,19 +78,30 @@ if (has("termguicolors"))
 endif
 colorscheme darcula
 
-let g:netrw_browse_split=2
-let g:netrw_winsize = 25
+nnoremap <leader>pv :NERDTree<CR>
+nnoremap <leader>u :UndotreeShow<CR>
+nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
+" nnoremap <silent> <leader>gd :ALEGoToDefinition GoTo<CR>
+nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
+"nnoremap <silent> <leader>fi :ALEFix<CR>
+nnoremap <leader>/ :GFiles<CR>
 
 "emmet-vim remap
 imap <buffer> <expr> <tab> emmet#expandAbbrIntelligent("\<tab>")
 
-nnoremap <leader>u :UndotreeShow<CR>
-" nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
-" nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
-nnoremap <silent> <leader>gd :ALEGoToDefinition GoTo<CR>
-nnoremap <silent> <leader>fi :ALEFix<CR>
+let g:netrw_browse_split=2
+let g:netrw_winsize = 25
 
-nnoremap <leader>/ :GFiles<CR>
+let g:ale_linters = {
+            \   'javascript': ['eslint'],
+            \   'python': ['black']
+            \}
+
+let g:ale_fixers = {
+            \   '*': ['remove_trailing_lines', 'trim_whitespace'],
+            \   'javascript': ['eslint'],
+            \   'python': ['black'],
+            \}
 
 " Exit Vim if NERDTree is the only window remaining in the only tab.
 autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
