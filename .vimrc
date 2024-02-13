@@ -60,9 +60,9 @@ inoremap {{ <ESC>A{<CR>}<ESC>ko<Tab>
 call plug#begin('~/.vim/plugged')
 
 Plug 'doums/darcula'
-Plug 'morhetz/gruvbox'
 Plug 'leafgarland/typescript-vim'
-Plug 'Valloric/YouCompleteMe'
+" Plug 'Valloric/YouCompleteMe'
+Plug 'dense-analysis/ale'
 Plug 'mbbill/undotree'
 Plug 'tpope/vim-surround'
 Plug 'mattn/emmet-vim'
@@ -84,14 +84,12 @@ let g:netrw_winsize = 25
 imap <buffer> <expr> <tab> emmet#expandAbbrIntelligent("\<tab>")
 
 nnoremap <leader>u :UndotreeShow<CR>
-nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
-nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
+" nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
+" nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
+nnoremap <silent> <leader>gd :ALEGoToDefinition GoTo<CR>
+nnoremap <silent> <leader>fi :ALEFix<CR>
 
-nnoremap <leader>/ :Files<CR>
-
-" If another buffer tries to replace NERDTree, put it in the other window, and bring back NERDTree.
-autocmd BufEnter * if bufname('#') =~ 'NERD_tree_\d\+' && bufname('%') !~ 'NERD_tree_\d\+' && winnr('$') > 1 |
-            \ let buf=bufnr() | buffer# | execute "normal! \<C-W>w" | execute 'buffer'.buf | endif
+nnoremap <leader>/ :GFiles<CR>
 
 " Exit Vim if NERDTree is the only window remaining in the only tab.
 autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif

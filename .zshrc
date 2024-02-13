@@ -2,6 +2,8 @@ autoload -Uz vcs_info
 precmd() { vcs_info }
 precmd_functions+=( precmd_vcs_info )
 
+alias python='python3'
+
 zstyle ':vcs_info:*' enable git
 zstyle ':vcs_info:*' check-for-changes true
 zstyle ':vcs_info:*' unstagedstr '*'
