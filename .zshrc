@@ -2,6 +2,8 @@ autoload -Uz vcs_info
 precmd() { vcs_info }
 precmd_functions+=( precmd_vcs_info )
 
+export TERM=screen-256color
+
 alias python='python3'
 
 zstyle ':vcs_info:*' enable git
