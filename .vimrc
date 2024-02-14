@@ -35,7 +35,7 @@ set splitbelow
 set splitright
 set list lcs=tab:>>,nbsp:␣,trail:·,precedes:←,extends:→
 
-nnoremap <leader>f gg=G<C-o>
+nnoremap <leader>f mT gg=G `T :delmarks T<CR>
 nnoremap <leader>h :wincmd h<CR>
 nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
@@ -60,6 +60,26 @@ inoremap [<CR> [<CR>]<ESC>ko<Tab>
 inoremap (<CR> (<CR>)<ESC>ko<Tab>
 inoremap {{ <ESC>A{<CR>}<ESC>ko<Tab>
 
+function! GitBranch()
+  return system("git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -d '\n'")
+endfunction
+
+function! StatuslineGit()
+  let l:branchname = GitBranch()
+  return strlen(l:branchname) > 0?'  '.l:branchname.' ':''
+endfunction
+
+set laststatus=2
+set statusline=
+set statusline+=%{StatuslineGit()}
+set statusline+=%#LineNr#
+set statusline+=\ %F
+set statusline+=%m
+set statusline+=%=
+set statusline+=%#CursorColumn#
+set statusline+=\ %y
+set statusline+=\ %l:%c
+
 call plug#begin('~/.vim/plugged')
 
 Plug 'preservim/nerdtree'
@@ -73,6 +93,7 @@ Plug 'mattn/emmet-vim'
 Plug 'tpope/vim-surround'
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
+Plug 'vimpostor/vim-tpipeline'
 
 call plug#end()
 
