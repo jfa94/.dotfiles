@@ -15,7 +15,8 @@ set noerrorbells
 set tabstop=4 softtabstop=4
 set shiftwidth=4
 set expandtab
-set smartindent
+" set smartindent
+set autoindent nosmartindent nocindent
 set nowrap
 set relativenumber
 set textwidth=120
@@ -40,7 +41,7 @@ nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
 nnoremap <leader>l :wincmd l<CR>
 nnoremap <leader>r :%s/
-nnoremap <silent> <leader>+ :vertical resize +5<CR>
+nnoremap <silent> <leader>= :vertical resize +5<CR>
 nnoremap <silent> <leader>- :vertical resize -5<CR>
 
 vnoremap J :m '>+1<CR>gv=gv
@@ -61,15 +62,17 @@ inoremap {{ <ESC>A{<CR>}<ESC>ko<Tab>
 
 call plug#begin('~/.vim/plugged')
 
+Plug 'preservim/nerdtree'
 Plug 'doums/darcula'
+Plug 'mbbill/undotree'
 Plug 'Valloric/YouCompleteMe'
 Plug 'dense-analysis/ale'
-Plug 'mbbill/undotree'
-Plug 'tpope/vim-surround'
+Plug 'leafgarland/typescript-vim'
+Plug 'maxmellon/vim-jsx-pretty'
 Plug 'mattn/emmet-vim'
+Plug 'tpope/vim-surround'
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
-Plug 'preservim/nerdtree'
 
 call plug#end()
 
@@ -84,7 +87,12 @@ nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
 " nnoremap <silent> <leader>gd :ALEGoToDefinition GoTo<CR>
 nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
 "nnoremap <silent> <leader>fi :ALEFix<CR>
-nnoremap <leader>/ :GFiles<CR>
+
+if isdirectory(".git")
+    nnoremap <leader>/ :GFiles<CR>
+else
+    nnoremap <leader>/ :Files<CR>
+endif
 
 "emmet-vim remap
 imap <buffer> <expr> <tab> emmet#expandAbbrIntelligent("\<tab>")
@@ -93,13 +101,13 @@ let g:netrw_browse_split=2
 let g:netrw_winsize = 25
 
 let g:ale_linters = {
-            \   'javascript': ['eslint'],
+            \   'javascript': ['prettier','eslint'],
             \   'python': ['black']
             \}
 
 let g:ale_fixers = {
             \   '*': ['remove_trailing_lines', 'trim_whitespace'],
-            \   'javascript': ['eslint'],
+            \   'javascript': ['prettier','eslint'],
             \   'python': ['black'],
             \}
 
