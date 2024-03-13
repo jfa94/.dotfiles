@@ -35,7 +35,7 @@ set splitbelow
 set splitright
 set list lcs=tab:>>,nbsp:␣,trail:·,precedes:←,extends:→
 
-nnoremap <leader>f mT gg=G `T :delmarks T<CR>
+nnoremap <leader>f mT gg=G `T :delmarks T<CR> <C-l>
 nnoremap <leader>h :wincmd h<CR>
 nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
@@ -84,16 +84,17 @@ call plug#begin('~/.vim/plugged')
 
 Plug 'preservim/nerdtree'
 Plug 'doums/darcula'
+"Plug 'morhetz/gruvbox'
 Plug 'mbbill/undotree'
 Plug 'Valloric/YouCompleteMe'
 Plug 'dense-analysis/ale'
 Plug 'leafgarland/typescript-vim'
 Plug 'maxmellon/vim-jsx-pretty'
+"Plug 'styled-components/vim-styled-components', { 'branch': 'main' }
 Plug 'mattn/emmet-vim'
 Plug 'tpope/vim-surround'
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
-Plug 'vimpostor/vim-tpipeline'
 
 call plug#end()
 
@@ -102,12 +103,16 @@ if (has("termguicolors"))
 endif
 colorscheme darcula
 
+let NERDTreeShowHidden=1
+
 nnoremap <leader>pv :NERDTree<CR>
 nnoremap <leader>u :UndotreeShow<CR>
 nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
 " nnoremap <silent> <leader>gd :ALEGoToDefinition GoTo<CR>
 nnoremap <silent> <leader>yf :YcmCompleter FixIt<CR>
 "nnoremap <silent> <leader>fi :ALEFix<CR>
+nnoremap <silent> <leader>gr :YcmCompleter GoToReferences<CR>
+nnoremap <silent> <leader>k :ALEHover<CR>
 
 if isdirectory(".git")
     nnoremap <leader>/ :GFiles<CR>
