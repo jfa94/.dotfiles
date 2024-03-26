@@ -40,7 +40,7 @@ nnoremap <leader>h :wincmd h<CR>
 nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
 nnoremap <leader>l :wincmd l<CR>
-nnoremap <leader>r :%s/
+nnoremap <leader>s :%s/
 nnoremap <silent> <leader>= :vertical resize +5<CR>
 nnoremap <silent> <leader>- :vertical resize -5<CR>
 
@@ -121,7 +121,10 @@ else
 endif
 
 "emmet-vim remap
+let g:user_emmet_expandabbr_key='<Tab>'
 imap <buffer> <expr> <tab> emmet#expandAbbrIntelligent("\<tab>")
+
+let g:ycm_key_list_select_completion = ['<Enter>', '<Down>']
 
 let g:netrw_browse_split=2
 let g:netrw_winsize = 25
