@@ -6,8 +6,13 @@ endif
 
 let mapleader=" "
 let g:html_indent_tags = 'li\|p'
-let &t_SI = "\e[5 q"
-let &t_EI = "\e[2 q"
+if exists('$TMUX')
+    let &t_SI .= "\<Esc>Ptmux;\<Esc>\<Esc>[6 q\<Esc>\\"
+    let &t_EI .= "\<Esc>Ptmux;\<Esc>\<Esc>[2 q\<Esc>\\"
+else
+    let &t_SI .= "\<Esc>[6 q"
+    let &t_EI .= "\<Esc>[2 q"
+endif
 
 set term=xterm-256color
 set hidden
@@ -17,6 +22,7 @@ set shiftwidth=4
 set expandtab
 " set smartindent
 set autoindent nosmartindent nocindent
+set backspace=start
 set nowrap
 set relativenumber
 set textwidth=120
@@ -25,7 +31,7 @@ set noswapfile
 set nobackup
 set undodir=~/.vim/undodir
 set undofile
-set nohlsearch
+"set nohlsearch
 set smartcase
 set ignorecase
 set incsearch
