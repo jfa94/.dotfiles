@@ -47,6 +47,7 @@ nnoremap <leader>j :wincmd j<CR>
 nnoremap <leader>k :wincmd k<CR>
 nnoremap <leader>l :wincmd l<CR>
 nnoremap <leader>s :%s/
+nnoremap <leader>w :w<CR>
 nnoremap <silent> <leader>= :vertical resize +5<CR>
 nnoremap <silent> <leader>- :vertical resize -5<CR>
 
@@ -61,10 +62,11 @@ inoremap ! !<C-g>u
 inoremap ? ?<C-g>u
 inoremap ;; <ESC>mT A;<ESC> `T :delmarks T<CR>i
 inoremap ,, <ESC>mT A,<ESC> `T :delmarks T<CR>i
-inoremap {<CR> {<CR>}<ESC>ko<Tab>
-inoremap [<CR> [<CR>]<ESC>ko<Tab>
-inoremap (<CR> (<CR>)<ESC>ko<Tab>
-inoremap {{ <ESC>A{<CR>}<ESC>ko<Tab>
+inoremap {<CR> {<CR>}<ESC>ko
+inoremap [<CR> [<CR>]<ESC>ko
+inoremap (<CR> (<CR>)<ESC>ko
+inoremap ({<CR> ({<CR>})<ESC>ko
+inoremap {{ <ESC>A{<CR>}<ESC>ko
 
 function! GitBranch()
   return system("git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -d '\n'")
