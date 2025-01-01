@@ -15,7 +15,7 @@ else
     let &t_EI .= "\<Esc>[2 q"
 endif
 
-set term=xterm-256color
+" set term=xterm-256color
 set hidden
 set noerrorbells
 set tabstop=4 softtabstop=4
@@ -99,7 +99,7 @@ call plug#begin('~/.vim/plugged')
 
 Plug 'preservim/nerdtree'
 Plug 'doums/darcula'
-"Plug 'morhetz/gruvbox'
+Plug 'morhetz/gruvbox'
 Plug 'mbbill/undotree'
 Plug 'Valloric/YouCompleteMe'
 Plug 'dense-analysis/ale'
@@ -114,7 +114,6 @@ Plug 'junegunn/fzf.vim'
 call plug#end()
 
 if (has("termguicolors"))
-    set ttymouse=xterm2
     set termguicolors
 endif
 colorscheme darcula
