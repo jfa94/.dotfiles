@@ -116,7 +116,7 @@ call plug#end()
 if (has("termguicolors"))
     set termguicolors
 endif
-colorscheme darcula
+colorscheme gruvbox
 
 let NERDTreeShowHidden=1
 
