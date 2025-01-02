@@ -1,19 +1,7 @@
 inoremap jk <ESC>
 
-if (&t_Co > 2 || has("gui_running")) && !exists("syntax_on")
-    syntax on
-endif
-
 let mapleader=" "
 let g:html_indent_tags = 'li\|p'
-
-if exists('$TMUX')
-    let &t_SI .= "\<Esc>Ptmux;\<Esc>\<Esc>[6 q\<Esc>\\"
-    let &t_EI .= "\<Esc>Ptmux;\<Esc>\<Esc>[2 q\<Esc>\\"
-else
-    let &t_SI .= "\<Esc>[6 q"
-    let &t_EI .= "\<Esc>[2 q"
-endif
 
 " set term=xterm-256color
 set hidden
@@ -105,7 +93,7 @@ Plug 'Valloric/YouCompleteMe'
 Plug 'dense-analysis/ale'
 Plug 'leafgarland/typescript-vim'
 Plug 'maxmellon/vim-jsx-pretty'
-"Plug 'styled-components/vim-styled-components', { 'branch': 'main' }
+Plug 'styled-components/vim-styled-components', { 'branch': 'main' }
 Plug 'mattn/emmet-vim'
 Plug 'tpope/vim-surround'
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
@@ -116,7 +104,19 @@ call plug#end()
 if (has("termguicolors"))
     set termguicolors
 endif
-colorscheme gruvbox
+colorscheme darcula
+
+if (&t_Co > 2 || has("gui_running")) && !exists("syntax_on")
+    syntax on
+endif
+
+if exists('$TMUX')
+    let &t_SI .= "\<Esc>Ptmux;\<Esc>\<Esc>[6 q\<Esc>\\"
+    let &t_EI .= "\<Esc>Ptmux;\<Esc>\<Esc>[2 q\<Esc>\\"
+else
+    let &t_SI .= "\<Esc>[6 q"
+    let &t_EI .= "\<Esc>[2 q"
+endif
 
 let NERDTreeShowHidden=1
 
