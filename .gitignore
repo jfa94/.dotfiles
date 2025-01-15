@@ -102,6 +102,7 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
+.aws-sam/
 .installed.cfg
 *.egg
 MANIFEST
