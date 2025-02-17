@@ -3,6 +3,7 @@ precmd() { vcs_info }
 precmd_functions+=( precmd_vcs_info )
 
 alias python='python3'
+alias pip='pip3'
 
 #export TERM="xterm-256color"
 export TERM="screen-256color"
