@@ -19,3 +19,6 @@ zstyle ':vcs_info:*' formats '(%b%u%c)'
 
 setopt PROMPT_SUBST
 PROMPT='%F{208}%n%f in %F{247}${PWD/#HOME/~}%f ${vcs_info_msg_0_}> '
+
+# Created by `pipx` on 2025-02-17 10:52:55
+export PATH="$PATH:/Users/Javier/.local/bin"
