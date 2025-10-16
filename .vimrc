@@ -120,7 +120,7 @@ endif
 
 let NERDTreeShowHidden=1
 
-nnoremap <leader>pv :NERDTree<CR>
+nnoremap <leader>e :NERDTree<CR>
 nnoremap <leader>u :UndotreeShow<CR>
 nnoremap <silent> <leader>gd :YcmCompleter GoTo<CR>
 " nnoremap <silent> <leader>gd :ALEGoToDefinition GoTo<CR>
