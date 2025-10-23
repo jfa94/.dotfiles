@@ -8,7 +8,6 @@ map Q gq
 "" -- Map IDE actions to IdeaVim -- https://jb.gg/abva4t
 map <leader>f <Action>(ReformatCode)
 map <leader>d <Action>(Debug)
-
 map <leader>r <Action>(Run)
 
 "" Map \b to toggle the breakpoint on the current line
