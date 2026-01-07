@@ -1,7 +1,14 @@
-eval "$(/opt/homebrew/bin/brew shellenv)"
-if [ -f ~/.zshrc ]; then
-	source ~/.zshrc
+# Homebrew (macOS only)
+if [[ "$(uname -s)" == "Darwin" ]] && [[ -x /opt/homebrew/bin/brew ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-# Created by `pipx` on 2025-02-17 10:52:55
-export PATH="$PATH:/Users/Javier/.local/bin"
+# Load zshrc if present
+if [[ -f "$HOME/.zshrc" ]]; then
+  source "$HOME/.zshrc"
+fi
+
+# pipx path (Linux / WSL)
+if [[ -d "$HOME/.local/bin" ]]; then
+  export PATH="$PATH:$HOME/.local/bin"
+fi
