@@ -27,7 +27,7 @@
 			"Read",
 			"Edit",
 			"Write",
-            “Bash(cat *)”,
+			"Bash(cat *)",
 			"Bash(pnpm install)",
 			"Bash(pnpm run *)",
 			"Bash(pnpm test *)",
@@ -38,7 +38,7 @@
 			"Bash(npx prettier *)",
 			"Bash(npx depcruise *)",
 			"Bash(npx stryker *)",
-            “Bash(tsc *)”,
+			"Bash(tsc *)",
 			"Bash(git add *)",
 			"Bash(git commit *)",
 			"Bash(git checkout *)",
@@ -49,7 +49,7 @@
 			"Bash(git log *)",
 			"Bash(git status)",
 			"Bash(gh pr create *)",
-			"Bash(gh pr merge *)”
+			"Bash(gh pr merge *)"
 		],
 		"deny": [
 			"Bash(curl *)",
@@ -57,7 +57,7 @@
 			"Bash(rm -rf *)",
 			"Bash(git push --force *)",
 			"Bash(git rebase *)",
-			"Bash(npx *create-*)”
+			"Bash(npx *create-*)"
 		]
 	},
 	"hooks": {
