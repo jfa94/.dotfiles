@@ -74,13 +74,70 @@ for file in "${DOTFILES[@]}"; do
 done
 
 # =============================================================================
-# Section 3: Create Required Directories
+# Section 3: Claude Code Symlinks
+# =============================================================================
+
+info "Creating Claude Code symlinks..."
+mkdir -p ~/.claude
+
+CLAUDE_FILES=(
+  CLAUDE.md
+  frontend.md
+  backend.md
+  settings.json
+)
+
+for file in "${CLAUDE_FILES[@]}"; do
+  src="$DOTFILES_DIR/claude/$file"
+  dest="$HOME/.claude/$file"
+
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    skipped+=("~/.claude/$file")
+    success "~/.claude/$file already linked"
+    continue
+  fi
+
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    backup="${dest}${BACKUP_SUFFIX}"
+    mv "$dest" "$backup"
+    backed_up+=("~/.claude/$file -> $backup")
+    warn "~/.claude/$file backed up to $backup"
+  fi
+
+  ln -s "$src" "$dest"
+  linked+=("~/.claude/$file")
+  success "~/.claude/$file linked"
+done
+
+# Symlink skills/ directory
+src="$DOTFILES_DIR/claude/skills"
+dest="$HOME/.claude/skills"
+
+if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  skipped+=("~/.claude/skills")
+  success "~/.claude/skills already linked"
+elif [[ -e "$dest" || -L "$dest" ]]; then
+  backup="${dest}${BACKUP_SUFFIX}"
+  mv "$dest" "$backup"
+  backed_up+=("~/.claude/skills -> $backup")
+  warn "~/.claude/skills backed up to $backup"
+  ln -s "$src" "$dest"
+  linked+=("~/.claude/skills")
+  success "~/.claude/skills linked"
+else
+  ln -s "$src" "$dest"
+  linked+=("~/.claude/skills")
+  success "~/.claude/skills linked"
+fi
+
+# =============================================================================
+# Section 4: Create Required Directories
 # =============================================================================
 
 mkdir -p ~/.vim/undodir
 
 # =============================================================================
-# Section 4: Install Homebrew + Brewfile
+# Section 5: Install Homebrew + Brewfile
 # =============================================================================
 
 brew_status="already installed"
@@ -102,7 +159,7 @@ info "Running brew bundle..."
 brew bundle --file="$DOTFILES_DIR/Brewfile"
 
 # =============================================================================
-# Section 5: Install Vim Plugins
+# Section 6: Install Vim Plugins
 # =============================================================================
 
 info "Installing vim plugins..."
@@ -119,7 +176,7 @@ else
 fi
 
 # =============================================================================
-# Section 6: Summary
+# Section 7: Summary
 # =============================================================================
 
 echo ""
