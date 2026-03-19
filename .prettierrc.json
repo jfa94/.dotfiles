@@ -7,5 +7,6 @@
     "bracketSpacing": false,
     "singleQuote": true,
     "jsxSingleQuote": true,
-    "objectWrap": "preserve"
+    "objectWrap": "preserve",
+    "plugins": ["prettier-plugin-tailwindcss"]
 }

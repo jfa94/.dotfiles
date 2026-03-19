@@ -1,0 +1,99 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-settings.json",
+	"enabledPlugins": {
+		"typescript-lsp@claude-plugins-official": true,
+		"commit-commands@claude-plugins-official": true,
+		"security-guidance@claude-plugins-official": true,
+		"pr-review-toolkit@claude-plugins-official": true,
+		"agent-sdk-dev@claude-plugins-official": true,
+		"feature-dev@claude-plugins-official": true,
+		"code-review@claude-plugins-official": true,
+		"code-simplifier@claude-plugins-official": true,
+		"frontend-design@claude-plugins-official": true,
+		"playground@claude-plugins-official": true,
+		"claude-md-management@claude-plugins-official": true,
+		"plugin-dev@claude-plugins-official": true,
+		"playwright@claude-plugins-official": true,
+		"supabase@claude-plugins-official": true,
+		"figma@claude-plugins-official": true,
+		"posthog@claude-plugins-official": true,
+		"ralph-loop@claude-plugins-official": true,
+		"superpowers@claude-plugins-official": true,
+		"stripe@claude-plugins-official": true
+	},
+	"effortLevel": "high",
+	"permissions": {
+		"allow": [
+			"Read",
+			"Edit",
+			"Write",
+            “Bash(cat *)”,
+			"Bash(pnpm install)",
+			"Bash(pnpm run *)",
+			"Bash(pnpm test *)",
+			"Bash(pnpm *)",
+			"Bash(npx tsc *)",
+			"Bash(npx vitest *)",
+			"Bash(npx eslint *)",
+			"Bash(npx prettier *)",
+			"Bash(npx depcruise *)",
+			"Bash(npx stryker *)",
+            “Bash(tsc *)”,
+			"Bash(git add *)",
+			"Bash(git commit *)",
+			"Bash(git checkout *)",
+			"Bash(git branch *)",
+			"Bash(git stash *)",
+			"Bash(git push *)",
+			"Bash(git diff *)",
+			"Bash(git log *)",
+			"Bash(git status)",
+			"Bash(gh pr create *)",
+			"Bash(gh pr merge *)”
+		],
+		"deny": [
+			"Bash(curl *)",
+			"Bash(wget *)",
+			"Bash(rm -rf *)",
+			"Bash(git push --force *)",
+			"Bash(git rebase *)",
+			"Bash(npx *create-*)”
+		]
+	},
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "BRANCH=$(git branch --show-current 2>/dev/null); if [ \"$BRANCH\" = \"main\" ] || [ \"$BRANCH\" = \"master\" ]; then echo '{\"decision\":\"block\",\"reason\":\"Cannot edit on main/master. Create a feature branch first.\"}'; exit 0; fi"
+					}
+				]
+			}
+		],
+		"PostToolUse": [
+			{
+				"matcher": "Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "FILE=$(cat | jq -r '.tool_input.file_path'); npx prettier --write \"$FILE\" 2>/dev/null; echo '{\"suppressOutput\": true}'",
+						"timeout": 15
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "cd $CLAUDE_PROJECT_DIR && npx tsc --noEmit 2>&1 | tail -20; TSC=$?; npx eslint . --max-warnings 0 2>&1 | tail -20; LINT=$?; npx vitest run --reporter=verbose 2>&1 | tail -40; TEST=$?; if [ $TSC -ne 0 ] || [ $LINT -ne 0 ] || [ $TEST -ne 0 ]; then echo 'QUALITY GATE FAILED: tsc('$TSC') lint('$LINT') test('$TEST'). Fix all issues.'; exit 1; fi",
+						"timeout": 120
+					}
+				]
+			}
+		]
+	}
+}
