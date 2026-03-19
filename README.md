@@ -17,31 +17,14 @@ git clone https://github.com/jfa94/.dotfiles.git ~/.dotfiles
 ```
 
 
-3. Create symlinks in the Home directory to the real files in the repo.
+3. Run the setup script to create symlinks, install Homebrew & Brewfile packages, and set up vim plugins.
 
 ```zsh
-# There are better and less manual ways to do this;
-# investigate install scripts and bootstrapping tools.
-
-ln -s ~/.dotfiles/.zshrc ~/.zshrc
-ln -s ~/.dotfiles/.gitconfig ~/.gitconfig
+chmod +x ~/.dotfiles/setup.sh
+~/.dotfiles/setup.sh
 ```
 
-
-4. Install Homebrew, followed by the software listed in the Brewfile.
-
-```zsh
-# These could also be in an install script.
-
-# Install Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Then pass in the Brewfile location...
-brew bundle --file ~/.dotfiles/Brewfile
-
-# ...or move to the directory first.
-cd ~/.dotfiles && brew bundle
-```
+The script is idempotent — re-running it skips anything already set up. Existing files are backed up before being replaced with symlinks.
 
 # Claude files
 
