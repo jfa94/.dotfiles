@@ -19,7 +19,7 @@ CONFIG_FILES=(
 # --- Help ---
 show_help() {
   cat <<'HELP'
-Usage: .claude/configure.sh <target-project-directory>
+Usage: ./configure.sh <target-project-directory>
 
 Bootstraps a project with Claude Code configuration, linting, and
 quality tooling from the dotfiles repo.
