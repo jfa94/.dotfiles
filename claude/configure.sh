@@ -29,6 +29,7 @@ Arguments:
 
 What gets copied:
   .claude/*                    Claude Code settings, CLAUDE.md, run-factory.sh
+  .github/workflows/quality-gate.yml  Quality gate CI workflow
   .gitignore                   Git ignore rules
   .prettierrc.json             Prettier config
   .stryker.config.json         Stryker mutation testing config
@@ -43,9 +44,9 @@ Additionally:
 
 Conflict handling:
   If files already exist in the target, you'll be prompted to choose:
-    1) Replace all — overwrite everything
-    2) Replace matching + add new
-    3) Add new only — skip conflicts
+    1) Replace — overwrite conflicts and add new files
+    2) Skip — add new files only, leave existing files untouched
+    3) Prompt — decide file-by-file
 
 Prerequisites:
   node      Required for package.json scripts merge
@@ -92,6 +93,11 @@ for file in "${CONFIG_FILES[@]}"; do
   fi
 done
 
+# Check workflow file
+if [[ -e "$TARGET/.github/workflows/quality-gate.yml" ]]; then
+  conflicts+=(".github/workflows/quality-gate.yml")
+fi
+
 # --- Prompt (only if conflicts detected) ---
 MODE="replace"  # default: no conflicts, copy everything
 
@@ -102,16 +108,16 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
   done
   echo ""
   echo "How would you like to handle conflicts?"
-  echo "  1) Replace all — overwrite everything"
-  echo "  2) Replace matching + add new — overwrite conflicts and add non-conflicting"
-  echo "  3) Add new only — skip all conflicts"
+  echo "  1) Replace — overwrite conflicts and add new files"
+  echo "  2) Skip — add new files only, leave existing files untouched"
+  echo "  3) Prompt — decide file-by-file"
   echo ""
   read -rp "Choose [1/2/3]: " choice
 
   case "$choice" in
     1) MODE="replace" ;;
-    2) MODE="replace" ;;
-    3) MODE="skip" ;;
+    2) MODE="skip" ;;
+    3) MODE="prompt" ;;
     *)
       echo "Invalid choice. Aborting."
       exit 1
@@ -134,6 +140,13 @@ copy_file() {
     if [[ "$MODE" == "skip" ]]; then
       skipped+=("$label")
       return
+    elif [[ "$MODE" == "prompt" ]]; then
+      read -rp "  $label already exists. Replace? [y/n]: " answer
+      if [[ "$answer" != "y" ]]; then
+        skipped+=("$label")
+        return
+      fi
+      replaced+=("$label")
     else
       replaced+=("$label")
     fi
@@ -154,6 +167,12 @@ done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" -print0)
 # --- Make run-factory.sh executable ---
 if [[ -f "$TARGET/.claude/run-factory.sh" ]]; then
   chmod +x "$TARGET/.claude/run-factory.sh"
+fi
+
+# --- Copy workflow file to .github/workflows/ ---
+WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
+if [[ -f "$WORKFLOW_SRC" ]]; then
+  copy_file "$WORKFLOW_SRC" "$TARGET/.github/workflows/quality-gate.yml" ".github/workflows/quality-gate.yml"
 fi
 
 # --- Copy config files ---
