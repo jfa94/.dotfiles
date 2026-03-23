@@ -141,7 +141,7 @@ copy_file() {
       skipped+=("$label")
       return
     elif [[ "$MODE" == "prompt" ]]; then
-      read -rp "  $label already exists. Replace? [y/n]: " answer
+      read -rp "  $label already exists. Replace? [y/n]: " answer < /dev/tty
       if [[ "$answer" != "y" ]]; then
         skipped+=("$label")
         return
