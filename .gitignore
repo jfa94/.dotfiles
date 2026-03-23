@@ -5,7 +5,11 @@
 .claude/worktrees/*
 .claude/settings.local.json
 .claude/CLAUDE.local.md
+.claude/tool-audit.jsonl
 CLAUDE.local.md
+
+# Reports (mutation testing, coverage)
+reports/
 
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839

@@ -47,6 +47,12 @@ Pipeline steps:
   5. Print summary (ok/failed/skipped) and restore settings
 
 Logs are written to logs/<timestamp>-<spec-name>/.
+
+Environment variables:
+  MAX_TASKS                Max tasks before circuit breaker (default: 20)
+  MAX_MINUTES              Max pipeline runtime in minutes (default: 120)
+  MAX_CONSECUTIVE_FAILURES Max consecutive failures before stop (default: 3)
+  MUTATION_FEEDBACK        Enable mutation testing feedback loop (default: false)
 HELP
 }
 
@@ -65,6 +71,14 @@ fi
 SPEC_NAME="$1"
 SPEC_DIR="specs/features/$SPEC_NAME"
 TASKS_FILE="$SPEC_DIR/tasks.json"
+
+# --- Circuit breaker defaults (override via env vars) ---
+MAX_TASKS=${MAX_TASKS:-20}
+MAX_MINUTES=${MAX_MINUTES:-120}
+MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
+PIPELINE_START=$(date +%s)
+TASKS_RUN=0
+CONSECUTIVE_FAILURES=0
 
 # --- Settings swap with trap ---
 SETTINGS_FILE="$SCRIPT_DIR/settings.json"
@@ -208,7 +222,7 @@ gh api "repos/$REPO/branches/staging/protection" \
 {
   "required_status_checks": {
     "strict": false,
-    "contexts": ["quality", "mutation"]
+    "contexts": ["quality", "mutation", "security"]
   },
   "enforce_admins": false,
   "required_pull_request_reviews": null,
@@ -294,6 +308,20 @@ TASK_IDS=$(jq -r '
 
 for TASK_ID in $TASK_IDS; do
   echo ""
+
+  # --- Circuit breakers ---
+  TASKS_RUN=$((TASKS_RUN + 1))
+  if [[ $TASKS_RUN -gt $MAX_TASKS ]]; then
+    echo "=== CIRCUIT BREAKER: max tasks ($MAX_TASKS) reached ==="
+    break
+  fi
+
+  ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
+  if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
+    echo "=== CIRCUIT BREAKER: time limit (${MAX_MINUTES}m) reached ==="
+    break
+  fi
+
   echo "=== Starting task: $TASK_ID ==="
 
   # --- Dependency check ---
@@ -349,13 +377,24 @@ for TASK_ID in $TASK_IDS; do
   CRITERIA=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .acceptance_criteria | join(\"; \")" "$TASKS_FILE")
   TESTS=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .tests_to_write | join(\"; \")" "$TASKS_FILE")
 
+  # Model routing by task complexity
+  COMPLEXITY=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .complexity // \"standard\"" "$TASKS_FILE")
+  case "$COMPLEXITY" in
+    simple)  MODEL_FLAG="--model haiku" ;;
+    complex) MODEL_FLAG="--model opus" ;;
+    *)       MODEL_FLAG="" ;;
+  esac
+
+  # Export task ID for audit log correlation
+  export FACTORY_TASK_ID="$TASK_ID"
+
   # Create isolated branch from staging
   BRANCH="feat/$TASK_ID"
   git checkout -b "$BRANCH"
 
   # Run Claude Code in headless mode
   EXIT_CODE=0
-  claude -p "You are implementing task '$TITLE' for this project.
+  claude -p $MODEL_FLAG "You are implementing task '$TITLE' for this project.
 
 ## Phase 1: Orient (do this BEFORE writing any code)
 1. Run pwd to confirm your working directory
@@ -430,6 +469,19 @@ $TESTS" \
     echo "=== $TASK_ID: AGENT FAILED (exit $EXIT_CODE) ==="
     echo "${TASK_ID}=failed" >> "$STATUS_FILE"
   fi
+
+  # --- Consecutive failure tracking ---
+  TASK_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
+  case "$TASK_STATUS" in
+    failed)
+      CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+      if [[ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]]; then
+        echo "=== CIRCUIT BREAKER: $MAX_CONSECUTIVE_FAILURES consecutive failures ==="
+        break
+      fi
+      ;;
+    *) CONSECUTIVE_FAILURES=0 ;;
+  esac
 
   # Return to staging for next task
   git checkout staging
