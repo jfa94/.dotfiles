@@ -135,7 +135,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); for PAT in 'rm -rf' 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*|.*sh' 'wget.*|.*sh'; do if echo \"$CMD\" | grep -qiE \"$PAT\"; then echo '{\"decision\":\"block\",\"reason\":\"Blocked dangerous command pattern\"}'; exit 0; fi; done"
+                        "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); for PAT in 'rm -rf' 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\\|.*sh' 'wget.*\\|.*sh'; do if echo \"$CMD\" | grep -qiE \"$PAT\"; then echo '{\"decision\":\"block\",\"reason\":\"Blocked dangerous command pattern\"}'; exit 0; fi; done"
                     }
                 ]
             },
@@ -144,7 +144,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git commit'; then cd \"${CLAUDE_PROJECT_DIR:-.}\"; SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\\s*[:=]\\s*[\"'\\'''][^\"'\\''']|secret_?key\\s*[:=]\\s*[\"'\\'''][^\"'\\''']|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' || true); if [ -n \"$SECRETS\" ]; then echo '{\"decision\":\"block\",\"reason\":\"Potential secrets detected in staged changes.\"}'; exit 0; fi; npx tsc --noEmit 2>&1 | tail -10; TSC=$?; npx eslint . --max-warnings 0 2>&1 | tail -10; LINT=$?; if [ $TSC -ne 0 ] || [ $LINT -ne 0 ]; then echo '{\"decision\":\"block\",\"reason\":\"Pre-commit gate failed: tsc('\"$TSC\"') lint('\"$LINT\"'). Fix before committing.\"}'; exit 0; fi; fi",
+                        "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git commit'; then cd \"${CLAUDE_PROJECT_DIR:-.}\"; SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\\s*[:=]\\s*\\S+|secret_?key\\s*[:=]\\s*\\S+|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' || true); if [ -n \"$SECRETS\" ]; then echo '{\"decision\":\"block\",\"reason\":\"Potential secrets detected in staged changes.\"}'; exit 0; fi; npx tsc --noEmit 2>&1 | tail -10; TSC=$?; npx eslint . --max-warnings 0 2>&1 | tail -10; LINT=$?; if [ $TSC -ne 0 ] || [ $LINT -ne 0 ]; then jq -n --arg r \"Pre-commit gate failed: tsc($TSC) lint($LINT). Fix before committing.\" '{\"decision\":\"block\",\"reason\":$r}'; exit 0; fi; fi",
                         "timeout": 60
                     }
                 ]

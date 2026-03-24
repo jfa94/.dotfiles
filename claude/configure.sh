@@ -27,7 +27,7 @@ quality tooling from the dotfiles repo.
 Arguments:
   <target-project-directory>   Path to the project to configure
 
-What gets copied:
+What gets linked:
   .claude/*                    Claude Code settings, CLAUDE.md, run-factory.sh
   .github/workflows/quality-gate.yml  Quality gate CI workflow
   .gitignore                   Git ignore rules
@@ -81,20 +81,33 @@ conflicts=()
 # Check .claude/ files
 while IFS= read -r -d '' file; do
   rel="${file#"$SCRIPT_DIR"/}"
-  if [[ -e "$TARGET/.claude/$rel" ]]; then
+  dest="$TARGET/.claude/$rel"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
+    continue
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=(".claude/$rel")
   fi
 done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" -print0)
 
 # Check config files
 for file in "${CONFIG_FILES[@]}"; do
-  if [[ -e "$TARGET/$file" ]]; then
+  src="$DOTFILES_DIR/$file"
+  dest="$TARGET/$file"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    continue
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=("$file")
   fi
 done
 
 # Check workflow file
-if [[ -e "$TARGET/.github/workflows/quality-gate.yml" ]]; then
+WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
+WORKFLOW_DEST="$TARGET/.github/workflows/quality-gate.yml"
+if [[ -L "$WORKFLOW_DEST" && "$(readlink "$WORKFLOW_DEST")" == "$WORKFLOW_SRC" ]]; then
+  : # already correct
+elif [[ -e "$WORKFLOW_DEST" || -L "$WORKFLOW_DEST" ]]; then
   conflicts+=(".github/workflows/quality-gate.yml")
 fi
 
@@ -126,17 +139,22 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
 fi
 
 # --- Tracking ---
-copied=()
+linked=()
 skipped=()
 replaced=()
 
-# --- Helper: copy a file respecting conflict mode ---
-copy_file() {
+# --- Helper: link a file respecting conflict mode ---
+link_file() {
   local src="$1"
   local dest="$2"
   local label="$3"
 
-  if [[ -e "$dest" ]]; then
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    skipped+=("$label (already linked)")
+    return
+  fi
+
+  if [[ -e "$dest" || -L "$dest" ]]; then
     if [[ "$MODE" == "skip" ]]; then
       skipped+=("$label")
       return
@@ -150,18 +168,19 @@ copy_file() {
     else
       replaced+=("$label")
     fi
+    rm -f "$dest"
   else
-    copied+=("$label")
+    linked+=("$label")
   fi
 
   mkdir -p "$(dirname "$dest")"
-  cp "$src" "$dest"
+  ln -s "$src" "$dest"
 }
 
-# --- Copy .claude/ directory ---
+# --- Link .claude/ directory ---
 while IFS= read -r -d '' file; do
   rel="${file#"$SCRIPT_DIR"/}"
-  copy_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
+  link_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
 done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" -print0)
 
 # --- Make run-factory.sh executable ---
@@ -169,16 +188,16 @@ if [[ -f "$TARGET/.claude/run-factory.sh" ]]; then
   chmod +x "$TARGET/.claude/run-factory.sh"
 fi
 
-# --- Copy workflow file to .github/workflows/ ---
+# --- Link workflow file to .github/workflows/ ---
 WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
 if [[ -f "$WORKFLOW_SRC" ]]; then
-  copy_file "$WORKFLOW_SRC" "$TARGET/.github/workflows/quality-gate.yml" ".github/workflows/quality-gate.yml"
+  link_file "$WORKFLOW_SRC" "$TARGET/.github/workflows/quality-gate.yml" ".github/workflows/quality-gate.yml"
 fi
 
-# --- Copy config files ---
+# --- Link config files ---
 for file in "${CONFIG_FILES[@]}"; do
   if [[ -e "$DOTFILES_DIR/$file" ]]; then
-    copy_file "$DOTFILES_DIR/$file" "$TARGET/$file" "$file"
+    link_file "$DOTFILES_DIR/$file" "$TARGET/$file" "$file"
   else
     echo "Warning: Source config file not found: $file"
   fi
@@ -206,9 +225,9 @@ fi
 echo ""
 echo "=== Summary ==="
 
-if [[ ${#copied[@]} -gt 0 ]]; then
-  echo "Copied:"
-  for f in "${copied[@]}"; do echo "  + $f"; done
+if [[ ${#linked[@]} -gt 0 ]]; then
+  echo "Linked:"
+  for f in "${linked[@]}"; do echo "  + $f"; done
 fi
 
 if [[ ${#replaced[@]} -gt 0 ]]; then
@@ -221,7 +240,7 @@ if [[ ${#skipped[@]} -gt 0 ]]; then
   for f in "${skipped[@]}"; do echo "  - $f"; done
 fi
 
-if [[ ${#copied[@]} -eq 0 && ${#replaced[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
+if [[ ${#linked[@]} -eq 0 && ${#replaced[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
   echo "No files were processed."
 fi
 

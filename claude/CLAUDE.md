@@ -24,7 +24,7 @@
 - Ask clarifying questions rather than making assumptions
 - Never plan to drop a database table
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise
-- Once a plan is confirmed, pause before writing any code to ask whether the user wants to continue with the current model, or swap to a different one (e.g., Opus ↔ Sonnet)
+
 
 ## When Implementing (after alignment)
 

@@ -8,7 +8,7 @@ DOTFILES_DIR="$SCRIPT_DIR"
 # --- Backup suffix ---
 BACKUP_SUFFIX=".backup.$(date +%Y%m%d%H%M%S)"
 
-# --- Files to symlink: source (relative to DOTFILES_DIR) -> target (in HOME) ---
+# --- Files to symlink ---
 DOTFILES=(
   .zshrc
   .zprofile
@@ -17,6 +17,13 @@ DOTFILES=(
   .vimrc
   .ideavimrc
   .tmux.conf
+)
+
+CLAUDE_FILES=(
+  CLAUDE.md
+  frontend.md
+  backend.md
+  settings.json
 )
 
 # --- Helpers ---
@@ -29,6 +36,42 @@ error()   { printf '[ERR]  %s\n' "$1" >&2; }
 linked=()
 backed_up=()
 skipped=()
+
+# --- Mode-aware symlink creation ---
+link_file() {
+  local src="$1"
+  local dest="$2"
+  local label="$3"
+
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    skipped+=("$label")
+    success "$label already linked"
+    return
+  fi
+
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    if [[ "$MODE" == "skip" ]]; then
+      skipped+=("$label")
+      success "$label skipped (conflict)"
+      return
+    elif [[ "$MODE" == "prompt" ]]; then
+      read -rp "  $label already exists. Replace? [y/n]: " answer < /dev/tty
+      if [[ "$answer" != "y" ]]; then
+        skipped+=("$label")
+        success "$label skipped (user chose)"
+        return
+      fi
+    fi
+    backup="${dest}${BACKUP_SUFFIX}"
+    mv "$dest" "$backup"
+    backed_up+=("$label -> $backup")
+    warn "$label backed up to $backup"
+  fi
+
+  ln -s "$src" "$dest"
+  linked+=("$label")
+  success "$label linked"
+}
 
 # =============================================================================
 # Section 1: Preflight Checks
@@ -46,98 +89,97 @@ if ! xcode-select -p &>/dev/null; then
 fi
 
 # =============================================================================
-# Section 2: Create Symlinks
+# Section 2: Conflict Detection
+# =============================================================================
+
+conflicts=()
+
+for file in "${DOTFILES[@]}"; do
+  src="$DOTFILES_DIR/$file"
+  dest="$HOME/$file"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    continue
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    conflicts+=("$file")
+  fi
+done
+
+for file in "${CLAUDE_FILES[@]}"; do
+  src="$DOTFILES_DIR/claude/$file"
+  dest="$HOME/.claude/$file"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+    continue
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    conflicts+=("~/.claude/$file")
+  fi
+done
+
+src="$DOTFILES_DIR/claude/skills"
+dest="$HOME/.claude/skills"
+if ! [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    conflicts+=("~/.claude/skills")
+  fi
+fi
+
+MODE="replace"
+if [[ ${#conflicts[@]} -gt 0 ]]; then
+  echo "The following files already exist and will need replacement:"
+  for c in "${conflicts[@]}"; do
+    echo "  - $c"
+  done
+  echo ""
+  echo "How would you like to handle conflicts?"
+  echo "  1) Replace — backup and replace all conflicts"
+  echo "  2) Skip — only link files that don't exist yet"
+  echo "  3) Prompt — decide file-by-file"
+  echo ""
+  read -rp "Choose [1/2/3]: " choice < /dev/tty
+
+  case "$choice" in
+    1) MODE="replace" ;;
+    2) MODE="skip" ;;
+    3) MODE="prompt" ;;
+    *)
+      error "Invalid choice. Aborting."
+      exit 1
+      ;;
+  esac
+fi
+
+# =============================================================================
+# Section 3: Create Symlinks
 # =============================================================================
 
 info "Creating symlinks..."
 
 for file in "${DOTFILES[@]}"; do
-  src="$DOTFILES_DIR/$file"
-  dest="$HOME/$file"
-
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-    skipped+=("$file")
-    success "$file already linked"
-    continue
-  fi
-
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    backup="${dest}${BACKUP_SUFFIX}"
-    mv "$dest" "$backup"
-    backed_up+=("$file -> $backup")
-    warn "$file backed up to $backup"
-  fi
-
-  ln -s "$src" "$dest"
-  linked+=("$file")
-  success "$file linked"
+  link_file "$DOTFILES_DIR/$file" "$HOME/$file" "$file"
 done
 
 # =============================================================================
-# Section 3: Claude Code Symlinks
+# Section 4: Claude Code Symlinks
 # =============================================================================
 
 info "Creating Claude Code symlinks..."
 mkdir -p ~/.claude
 
-CLAUDE_FILES=(
-  CLAUDE.md
-  frontend.md
-  backend.md
-  settings.json
-)
-
 for file in "${CLAUDE_FILES[@]}"; do
-  src="$DOTFILES_DIR/claude/$file"
-  dest="$HOME/.claude/$file"
-
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-    skipped+=("~/.claude/$file")
-    success "~/.claude/$file already linked"
-    continue
-  fi
-
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    backup="${dest}${BACKUP_SUFFIX}"
-    mv "$dest" "$backup"
-    backed_up+=("~/.claude/$file -> $backup")
-    warn "~/.claude/$file backed up to $backup"
-  fi
-
-  ln -s "$src" "$dest"
-  linked+=("~/.claude/$file")
-  success "~/.claude/$file linked"
+  link_file "$DOTFILES_DIR/claude/$file" "$HOME/.claude/$file" "~/.claude/$file"
 done
 
-# Symlink skills/ directory
-src="$DOTFILES_DIR/claude/skills"
-dest="$HOME/.claude/skills"
-
-if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-  skipped+=("~/.claude/skills")
-  success "~/.claude/skills already linked"
-elif [[ -e "$dest" || -L "$dest" ]]; then
-  backup="${dest}${BACKUP_SUFFIX}"
-  mv "$dest" "$backup"
-  backed_up+=("~/.claude/skills -> $backup")
-  warn "~/.claude/skills backed up to $backup"
-  ln -s "$src" "$dest"
-  linked+=("~/.claude/skills")
-  success "~/.claude/skills linked"
-else
-  ln -s "$src" "$dest"
-  linked+=("~/.claude/skills")
-  success "~/.claude/skills linked"
-fi
+link_file "$DOTFILES_DIR/claude/skills" "$HOME/.claude/skills" "~/.claude/skills"
 
 # =============================================================================
-# Section 4: Create Required Directories
+# Section 5: Create Required Directories
 # =============================================================================
 
 mkdir -p ~/.vim/undodir
 
 # =============================================================================
-# Section 5: Install Homebrew + Brewfile
+# Section 6: Install Homebrew + Brewfile
 # =============================================================================
 
 brew_status="already installed"
@@ -159,7 +201,7 @@ info "Running brew bundle..."
 brew bundle --file="$DOTFILES_DIR/Brewfile"
 
 # =============================================================================
-# Section 6: Install Vim Plugins
+# Section 7: Install Vim Plugins
 # =============================================================================
 
 info "Installing vim plugins..."
@@ -176,7 +218,7 @@ else
 fi
 
 # =============================================================================
-# Section 7: Summary
+# Section 8: Summary
 # =============================================================================
 
 echo ""
