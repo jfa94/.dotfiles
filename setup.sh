@@ -16,13 +16,6 @@ DOTFILES=(
   .tmux.conf
 )
 
-CLAUDE_FILES=(
-  CLAUDE.md
-  frontend.md
-  backend.md
-  settings.json
-)
-
 # --- Helpers ---
 info()    { printf '[INFO] %s\n' "$1"; }
 success() { printf '[OK]   %s\n' "$1"; }
@@ -100,24 +93,17 @@ for file in "${DOTFILES[@]}"; do
   fi
 done
 
-for file in "${CLAUDE_FILES[@]}"; do
-  src="$DOTFILES_DIR/claude/$file"
-  dest="$HOME/.claude/$file"
+while IFS= read -r file; do
+  src="$DOTFILES_DIR/$file"
+  rel="${file#.claude/}"
+  dest="$HOME/.claude/$rel"
   if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
-    conflicts+=("~/.claude/$file")
+    conflicts+=("~/.claude/$rel")
   fi
-done
-
-src="$DOTFILES_DIR/claude/skills"
-dest="$HOME/.claude/skills"
-if ! [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    conflicts+=("~/.claude/skills")
-  fi
-fi
+done < <(git -C "$DOTFILES_DIR" ls-files .claude/)
 
 MODE="replace"
 if [[ ${#conflicts[@]} -gt 0 ]]; then
@@ -161,11 +147,12 @@ done
 info "Creating Claude Code symlinks..."
 mkdir -p ~/.claude
 
-for file in "${CLAUDE_FILES[@]}"; do
-  link_file "$DOTFILES_DIR/claude/$file" "$HOME/.claude/$file" "~/.claude/$file"
-done
-
-link_file "$DOTFILES_DIR/claude/skills" "$HOME/.claude/skills" "~/.claude/skills"
+while IFS= read -r file; do
+  rel="${file#.claude/}"
+  dest="$HOME/.claude/$rel"
+  mkdir -p "$(dirname "$dest")"
+  link_file "$DOTFILES_DIR/$file" "$dest" "~/.claude/$rel"
+done < <(git -C "$DOTFILES_DIR" ls-files .claude/)
 
 # =============================================================================
 # Section 5: Create Required Directories

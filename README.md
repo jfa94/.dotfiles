@@ -27,8 +27,8 @@ The script is idempotent — re-running it skips anything already set up. If con
 
 # Claude files
 
-1. Link project config by running the ‘./claude/configure.sh’ script
+1. Link project config by running the ‘.claude/configure.sh’ script
 
 ```zsh
-chmod +x ./claude/configure.sh && ./claude/configure.sh ~/Projects/<Project Name>
+chmod +x ./.claude/configure.sh && ./.claude/configure.sh ~/Projects/<Project Name>
 ```
