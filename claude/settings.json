@@ -233,7 +233,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); for PAT in 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\\|.*sh' 'wget.*\\|.*sh'; do if echo \"$CMD\" | grep -qiE \"$PAT\"; then echo '{\"decision\":\"block\",\"reason\":\"Blocked dangerous command pattern\"}'; exit 0; fi; done; if echo \"$CMD\" | grep -qiE 'rm -rf'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"rm -rf detected — confirm before running\"}}'; exit 0; fi"
+            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); for PAT in 'rm -rf' 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\\|.*sh' 'wget.*\\|.*sh'; do if echo \"$CMD\" | grep -qiE \"$PAT\"; then echo '{\"decision\":\"block\",\"reason\":\"Blocked dangerous command pattern\"}'; exit 0; fi; done"
           }
         ]
       },
