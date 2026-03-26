@@ -3,6 +3,7 @@
 
 # Claude Code
 .claude/worktrees/*
+.claude/plugins/
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 .claude/tool-audit.jsonl
