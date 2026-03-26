@@ -2,7 +2,7 @@
 .DS_Store
 
 # Claude Code
-.claude/worktrees/*
+.claude/worktrees/
 .claude/plugins/
 .claude/settings.local.json
 .claude/CLAUDE.local.md
