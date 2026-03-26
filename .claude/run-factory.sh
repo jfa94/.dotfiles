@@ -10,13 +10,13 @@ cd "$PROJECT_DIR"
 # --- Help ---
 show_help() {
   cat <<'HELP'
-Usage: .claude/run-factory.sh <feature-spec-name>
+Usage: .claude/run-factory.sh [<feature-spec-name>]
 
 Autonomous factory pipeline — sets up scaffolding if needed, then
 executes each task from a feature spec on isolated branches.
 
 Arguments:
-  <feature-spec-name>   Name of the feature spec under specs/features/
+  <feature-spec-name>   Name of the feature spec under specs/features/ (interactive if omitted)
 
 Prerequisites:
   claude    Claude Code CLI
@@ -61,14 +61,49 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-# --- Validate args ---
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <feature-spec-name>"
+# --- Resolve spec name ---
+if [[ $# -eq 1 ]]; then
+  SPEC_NAME="$1"
+elif [[ $# -eq 0 ]]; then
+  AVAILABLE_SPECS=()
+  for tasks_file in specs/features/*/tasks.json; do
+    [[ -f "$tasks_file" ]] || continue
+    AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
+  done
+
+  if [[ ${#AVAILABLE_SPECS[@]} -eq 0 ]]; then
+    echo "No feature specs found in specs/features/."
+    echo "Create a spec first (try the prd-to-spec skill)."
+    exit 1
+  fi
+
+  if [[ ${#AVAILABLE_SPECS[@]} -eq 1 ]]; then
+    SPEC_NAME="${AVAILABLE_SPECS[0]}"
+    read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
+    if [[ "$confirm" =~ ^[Nn] ]]; then
+      echo "Aborted."
+      exit 0
+    fi
+  else
+    echo "Available feature specs:"
+    for i in "${!AVAILABLE_SPECS[@]}"; do
+      task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
+      echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
+    done
+    echo ""
+    read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
+      echo "Invalid selection."
+      exit 1
+    fi
+    SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
+  fi
+else
+  echo "Usage: $0 [<feature-spec-name>]"
   echo "Run with --help for more information."
   exit 1
 fi
 
-SPEC_NAME="$1"
 SPEC_DIR="specs/features/$SPEC_NAME"
 TASKS_FILE="$SPEC_DIR/tasks.json"
 
@@ -549,6 +584,56 @@ if [[ -f "$METADATA_FILE" ]]; then
       gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
       gh issue close "$PRD_ISSUE" --reason completed
       echo "PRD issue #$PRD_ISSUE closed."
+
+      # --- Post-closure cleanup ---
+      echo ""
+      echo "=== Cleaning up completed feature artifacts ==="
+
+      # Delete local feat/ branches
+      for tid in $TASK_IDS; do
+        branch="feat/$tid"
+        if git show-ref --verify --quiet "refs/heads/$branch"; then
+          git branch -D "$branch" 2>/dev/null && echo "  Deleted local branch: $branch"
+        fi
+      done
+
+      # Delete remote feat/ branches (may already be gone via GitHub auto-delete)
+      for tid in $TASK_IDS; do
+        branch="feat/$tid"
+        if git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+          git push origin --delete "$branch" 2>/dev/null \
+            && echo "  Deleted remote branch: $branch" \
+            || echo "  Remote branch already gone: $branch"
+        fi
+      done
+
+      # Remove spec directory (fully consumed)
+      if [[ -d "$SPEC_DIR" ]]; then
+        rm -rf "$SPEC_DIR"
+        echo "  Removed spec dir: $SPEC_DIR"
+      fi
+      # Clean up empty parent dirs
+      if [[ -d "specs/features" ]] && [[ -z "$(ls -A specs/features 2>/dev/null)" ]]; then
+        rmdir "specs/features"
+        [[ -d "specs" ]] && [[ -z "$(ls -A specs 2>/dev/null)" ]] && rmdir "specs"
+      fi
+
+      # Remove log directory for this run (logs are gitignored)
+      if [[ -d "$LOG_DIR" ]]; then
+        rm -rf "$LOG_DIR"
+        echo "  Removed log dir: $LOG_DIR"
+      fi
+
+      # Commit spec removal if there are tracked changes
+      if [[ -n "$(git ls-files --deleted -- specs/ 2>/dev/null)" ]] || \
+         [[ -n "$(git status --porcelain -- specs/ 2>/dev/null)" ]]; then
+        git add -A specs/
+        git commit -m "chore: clean up $SPEC_NAME spec after completion"
+        git push origin staging
+        echo "  Cleanup committed and pushed."
+      fi
+
+      echo "=== Cleanup complete ==="
     else
       COMMENT_BODY="$(printf "Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%b\n\n**PRs created:** %s" \
         "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}")"
