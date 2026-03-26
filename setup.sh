@@ -5,9 +5,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DOTFILES_DIR="$SCRIPT_DIR"
 
-# --- Backup suffix ---
-BACKUP_SUFFIX=".backup.$(date +%Y%m%d%H%M%S)"
-
 # --- Files to symlink ---
 DOTFILES=(
   .zshrc
@@ -34,7 +31,7 @@ error()   { printf '[ERR]  %s\n' "$1" >&2; }
 
 # --- Tracking ---
 linked=()
-backed_up=()
+replaced=()
 skipped=()
 
 # --- Mode-aware symlink creation ---
@@ -62,10 +59,8 @@ link_file() {
         return
       fi
     fi
-    backup="${dest}${BACKUP_SUFFIX}"
-    mv "$dest" "$backup"
-    backed_up+=("$label -> $backup")
-    warn "$label backed up to $backup"
+    rm -rf "$dest"
+    replaced+=("$label")
   fi
 
   ln -s "$src" "$dest"
@@ -132,7 +127,7 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
   done
   echo ""
   echo "How would you like to handle conflicts?"
-  echo "  1) Replace — backup and replace all conflicts"
+  echo "  1) Replace — overwrite all conflicts"
   echo "  2) Skip — only link files that don't exist yet"
   echo "  3) Prompt — decide file-by-file"
   echo ""
@@ -229,9 +224,9 @@ if [[ ${#linked[@]} -gt 0 ]]; then
   for f in "${linked[@]}"; do echo "  + $f"; done
 fi
 
-if [[ ${#backed_up[@]} -gt 0 ]]; then
-  echo "Backed up:"
-  for f in "${backed_up[@]}"; do echo "  ~ $f"; done
+if [[ ${#replaced[@]} -gt 0 ]]; then
+  echo "Replaced:"
+  for f in "${replaced[@]}"; do echo "  ~ $f"; done
 fi
 
 if [[ ${#skipped[@]} -gt 0 ]]; then
