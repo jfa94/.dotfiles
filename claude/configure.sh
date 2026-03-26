@@ -6,8 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 
 # --- Config file list ---
-CONFIG_FILES=(
-  .gitignore
+JSTS_CONFIG_FILES=(
   .prettierrc.json
   .stryker.config.json
   .dependency-cruiser.cjs
@@ -27,19 +26,21 @@ quality tooling from the dotfiles repo.
 Arguments:
   <target-project-directory>   Path to the project to configure
 
-What gets linked:
+What gets copied:
   .claude/*                    Claude Code settings, CLAUDE.md, run-factory.sh
   .github/workflows/quality-gate.yml  Quality gate CI workflow
   .gitignore                   Git ignore rules
+
+  JS/TS only (requires package.json in target):
   .prettierrc.json             Prettier config
   .stryker.config.json         Stryker mutation testing config
   .dependency-cruiser.cjs      Dependency-cruiser rules
   eslint.config.mjs            ESLint flat config
   tsconfig.json                TypeScript config
   vitest.config.ts             Vitest config
+  + Merges scripts from package.scripts.json into package.json
 
 Additionally:
-  - Merges scripts from package.scripts.json into the target's package.json
   - Makes run-factory.sh executable in the target
 
 Conflict handling:
@@ -82,31 +83,40 @@ conflicts=()
 while IFS= read -r -d '' file; do
   rel="${file#"$SCRIPT_DIR"/}"
   dest="$TARGET/.claude/$rel"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$file" "$dest" &>/dev/null; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=(".claude/$rel")
   fi
-done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" -print0)
+done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" ! -name "quality-gate.yml" -print0)
 
-# Check config files
-for file in "${CONFIG_FILES[@]}"; do
+# Check .gitignore
+if [[ -e "$TARGET/.gitignore" || -L "$TARGET/.gitignore" ]]; then
+  if ! { [[ -e "$TARGET/.gitignore" && ! -L "$TARGET/.gitignore" ]] && diff -q "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" &>/dev/null; }; then
+    conflicts+=(".gitignore")
+  fi
+fi
+
+# Check JS/TS config files (only for JS/TS projects)
+if [[ -f "$TARGET/package.json" ]]; then
+for file in "${JSTS_CONFIG_FILES[@]}"; do
   src="$DOTFILES_DIR/$file"
   dest="$TARGET/$file"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=("$file")
   fi
 done
+fi
 
 # Check workflow file
 WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
 WORKFLOW_DEST="$TARGET/.github/workflows/quality-gate.yml"
-if [[ -L "$WORKFLOW_DEST" && "$(readlink "$WORKFLOW_DEST")" == "$WORKFLOW_SRC" ]]; then
-  : # already correct
+if [[ -e "$WORKFLOW_DEST" && ! -L "$WORKFLOW_DEST" ]] && diff -q "$WORKFLOW_SRC" "$WORKFLOW_DEST" &>/dev/null; then
+  : # already up to date
 elif [[ -e "$WORKFLOW_DEST" || -L "$WORKFLOW_DEST" ]]; then
   conflicts+=(".github/workflows/quality-gate.yml")
 fi
@@ -139,18 +149,18 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
 fi
 
 # --- Tracking ---
-linked=()
+copied=()
 skipped=()
 replaced=()
 
-# --- Helper: link a file respecting conflict mode ---
-link_file() {
+# --- Helper: copy a file respecting conflict mode ---
+copy_file() {
   local src="$1"
   local dest="$2"
   local label="$3"
 
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-    skipped+=("$label (already linked)")
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
+    skipped+=("$label (already up to date)")
     return
   fi
 
@@ -170,41 +180,45 @@ link_file() {
     fi
     rm -f "$dest"
   else
-    linked+=("$label")
+    copied+=("$label")
   fi
 
   mkdir -p "$(dirname "$dest")"
-  ln -s "$src" "$dest"
+  cp "$src" "$dest"
 }
 
-# --- Link .claude/ directory ---
+# --- Copy .claude/ directory ---
 while IFS= read -r -d '' file; do
   rel="${file#"$SCRIPT_DIR"/}"
-  link_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
-done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" -print0)
+  copy_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
+done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" ! -name "quality-gate.yml" -print0)
 
 # --- Make run-factory.sh executable ---
 if [[ -f "$TARGET/.claude/run-factory.sh" ]]; then
   chmod +x "$TARGET/.claude/run-factory.sh"
 fi
 
-# --- Link workflow file to .github/workflows/ ---
+# --- Copy workflow file to .github/workflows/ ---
 WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
 if [[ -f "$WORKFLOW_SRC" ]]; then
-  link_file "$WORKFLOW_SRC" "$TARGET/.github/workflows/quality-gate.yml" ".github/workflows/quality-gate.yml"
+  copy_file "$WORKFLOW_SRC" "$TARGET/.github/workflows/quality-gate.yml" ".github/workflows/quality-gate.yml"
 fi
 
-# --- Link config files ---
-for file in "${CONFIG_FILES[@]}"; do
-  if [[ -e "$DOTFILES_DIR/$file" ]]; then
-    link_file "$DOTFILES_DIR/$file" "$TARGET/$file" "$file"
-  else
-    echo "Warning: Source config file not found: $file"
-  fi
-done
+# --- Copy .gitignore ---
+if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
+  copy_file "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" ".gitignore"
+fi
 
-# --- Replace package.json scripts ---
+# --- Copy config files + merge package.json (JS/TS projects only) ---
 if [[ -f "$TARGET/package.json" ]]; then
+  for file in "${JSTS_CONFIG_FILES[@]}"; do
+    if [[ -e "$DOTFILES_DIR/$file" ]]; then
+      copy_file "$DOTFILES_DIR/$file" "$TARGET/$file" "$file"
+    else
+      echo "Warning: Source config file not found: $file"
+    fi
+  done
+
   if [[ -f "$DOTFILES_DIR/package.scripts.json" ]]; then
     node -e "
       const fs = require('fs');
@@ -218,16 +232,16 @@ if [[ -f "$TARGET/package.json" ]]; then
     echo "Warning: package.scripts.json not found, skipping scripts update"
   fi
 else
-  echo "Warning: No package.json found in target, skipping scripts update"
+  echo "Skipping JS/TS config files (no package.json found in target)"
 fi
 
 # --- Summary ---
 echo ""
 echo "=== Summary ==="
 
-if [[ ${#linked[@]} -gt 0 ]]; then
-  echo "Linked:"
-  for f in "${linked[@]}"; do echo "  + $f"; done
+if [[ ${#copied[@]} -gt 0 ]]; then
+  echo "Copied:"
+  for f in "${copied[@]}"; do echo "  + $f"; done
 fi
 
 if [[ ${#replaced[@]} -gt 0 ]]; then
@@ -240,7 +254,7 @@ if [[ ${#skipped[@]} -gt 0 ]]; then
   for f in "${skipped[@]}"; do echo "  - $f"; done
 fi
 
-if [[ ${#linked[@]} -eq 0 && ${#replaced[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
+if [[ ${#copied[@]} -eq 0 && ${#replaced[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
   echo "No files were processed."
 fi
 
