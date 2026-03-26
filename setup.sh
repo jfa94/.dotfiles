@@ -8,7 +8,7 @@ DOTFILES_DIR="$SCRIPT_DIR"
 # --- Backup suffix ---
 BACKUP_SUFFIX=".backup.$(date +%Y%m%d%H%M%S)"
 
-# --- Files to symlink ---
+# --- Files to copy ---
 DOTFILES=(
   .zshrc
   .zprofile
@@ -33,19 +33,19 @@ warn()    { printf '[WARN] %s\n' "$1"; }
 error()   { printf '[ERR]  %s\n' "$1" >&2; }
 
 # --- Tracking ---
-linked=()
+copied=()
 backed_up=()
 skipped=()
 
-# --- Mode-aware symlink creation ---
-link_file() {
+# --- Mode-aware file copy ---
+copy_file() {
   local src="$1"
   local dest="$2"
   local label="$3"
 
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
     skipped+=("$label")
-    success "$label already linked"
+    success "$label already up to date"
     return
   fi
 
@@ -68,9 +68,45 @@ link_file() {
     warn "$label backed up to $backup"
   fi
 
-  ln -s "$src" "$dest"
-  linked+=("$label")
-  success "$label linked"
+  cp "$src" "$dest"
+  copied+=("$label")
+  success "$label copied"
+}
+
+# --- Mode-aware directory copy ---
+copy_dir() {
+  local src="$1"
+  local dest="$2"
+  local label="$3"
+
+  if [[ -d "$dest" && ! -L "$dest" ]] && diff -rq "$src" "$dest" &>/dev/null; then
+    skipped+=("$label")
+    success "$label already up to date"
+    return
+  fi
+
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    if [[ "$MODE" == "skip" ]]; then
+      skipped+=("$label")
+      success "$label skipped (conflict)"
+      return
+    elif [[ "$MODE" == "prompt" ]]; then
+      read -rp "  $label already exists. Replace? [y/n]: " answer < /dev/tty
+      if [[ "$answer" != "y" ]]; then
+        skipped+=("$label")
+        success "$label skipped (user chose)"
+        return
+      fi
+    fi
+    backup="${dest}${BACKUP_SUFFIX}"
+    mv "$dest" "$backup"
+    backed_up+=("$label -> $backup")
+    warn "$label backed up to $backup"
+  fi
+
+  cp -R "$src" "$dest"
+  copied+=("$label")
+  success "$label copied"
 }
 
 # =============================================================================
@@ -97,7 +133,7 @@ conflicts=()
 for file in "${DOTFILES[@]}"; do
   src="$DOTFILES_DIR/$file"
   dest="$HOME/$file"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
@@ -108,7 +144,7 @@ done
 for file in "${CLAUDE_FILES[@]}"; do
   src="$DOTFILES_DIR/claude/$file"
   dest="$HOME/.claude/$file"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
@@ -118,10 +154,10 @@ done
 
 src="$DOTFILES_DIR/claude/skills"
 dest="$HOME/.claude/skills"
-if ! [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    conflicts+=("~/.claude/skills")
-  fi
+if [[ -d "$dest" && ! -L "$dest" ]] && diff -rq "$src" "$dest" &>/dev/null; then
+  : # already up to date
+elif [[ -e "$dest" || -L "$dest" ]]; then
+  conflicts+=("~/.claude/skills")
 fi
 
 MODE="replace"
@@ -133,7 +169,7 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
   echo ""
   echo "How would you like to handle conflicts?"
   echo "  1) Replace — backup and replace all conflicts"
-  echo "  2) Skip — only link files that don't exist yet"
+  echo "  2) Skip — only copy files that don't exist yet"
   echo "  3) Prompt — decide file-by-file"
   echo ""
   read -rp "Choose [1/2/3]: " choice < /dev/tty
@@ -150,27 +186,27 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
 fi
 
 # =============================================================================
-# Section 3: Create Symlinks
+# Section 3: Copy Dotfiles
 # =============================================================================
 
-info "Creating symlinks..."
+info "Copying dotfiles..."
 
 for file in "${DOTFILES[@]}"; do
-  link_file "$DOTFILES_DIR/$file" "$HOME/$file" "$file"
+  copy_file "$DOTFILES_DIR/$file" "$HOME/$file" "$file"
 done
 
 # =============================================================================
-# Section 4: Claude Code Symlinks
+# Section 4: Claude Code Files
 # =============================================================================
 
-info "Creating Claude Code symlinks..."
+info "Copying Claude Code files..."
 mkdir -p ~/.claude
 
 for file in "${CLAUDE_FILES[@]}"; do
-  link_file "$DOTFILES_DIR/claude/$file" "$HOME/.claude/$file" "~/.claude/$file"
+  copy_file "$DOTFILES_DIR/claude/$file" "$HOME/.claude/$file" "~/.claude/$file"
 done
 
-link_file "$DOTFILES_DIR/claude/skills" "$HOME/.claude/skills" "~/.claude/skills"
+copy_dir "$DOTFILES_DIR/claude/skills" "$HOME/.claude/skills" "~/.claude/skills"
 
 # =============================================================================
 # Section 5: Create Required Directories
@@ -224,9 +260,9 @@ fi
 echo ""
 echo "=== Summary ==="
 
-if [[ ${#linked[@]} -gt 0 ]]; then
-  echo "Linked:"
-  for f in "${linked[@]}"; do echo "  + $f"; done
+if [[ ${#copied[@]} -gt 0 ]]; then
+  echo "Copied:"
+  for f in "${copied[@]}"; do echo "  + $f"; done
 fi
 
 if [[ ${#backed_up[@]} -gt 0 ]]; then
@@ -235,7 +271,7 @@ if [[ ${#backed_up[@]} -gt 0 ]]; then
 fi
 
 if [[ ${#skipped[@]} -gt 0 ]]; then
-  echo "Skipped (already correct):"
+  echo "Skipped (already up to date):"
   for f in "${skipped[@]}"; do echo "  - $f"; done
 fi
 
