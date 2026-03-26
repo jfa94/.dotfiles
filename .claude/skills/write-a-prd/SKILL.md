@@ -24,7 +24,7 @@ Check with the user that these modules match their expectations. Check with the 
 tests written for.
 
 5. Once you have a complete understanding of the problem and solution, use the template below to write the PRD.
-The PRD should be submitted as a GitHub issue.
+The PRD should be submitted as a GitHub issue. The issue title MUST be prefixed with `[PRD]` (e.g., `[PRD] User Onboarding Flow`).
 
 <prd-template>
 

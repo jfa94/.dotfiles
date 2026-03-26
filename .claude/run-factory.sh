@@ -505,3 +505,55 @@ echo "  Succeeded: $OK_COUNT"
 echo "  Failed:    $FAILED_COUNT"
 echo "  Skipped:   $SKIPPED_COUNT"
 echo "  Logs:      $LOG_DIR"
+
+# --- Close PRD issue if all tasks succeeded ---
+METADATA_FILE="$SPEC_DIR/metadata.json"
+if [[ -f "$METADATA_FILE" ]]; then
+  PRD_ISSUE=$(jq -r '.prd_issue // empty' "$METADATA_FILE")
+  if [[ -n "$PRD_ISSUE" ]]; then
+    # Build PR list from completed tasks
+    PR_LIST=""
+    while IFS='=' read -r tid pr_num; do
+      PR_LIST="${PR_LIST:+$PR_LIST, }#$pr_num"
+    done < "$PR_FILE"
+
+    # Build per-task breakdown
+    TASK_DETAILS=""
+    while IFS='=' read -r tid status; do
+      case "$status" in
+        ok)
+          tid_pr=$(grep "^${tid}=" "$PR_FILE" | cut -d= -f2)
+          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: ok (PR #${tid_pr})"
+          ;;
+        failed)
+          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.json\`"
+          ;;
+        skipped)
+          # Find which dependency caused the skip
+          skip_deps=$(jq -r ".[] | select(.task_id==\"$tid\") | .depends_on[]" "$TASKS_FILE" 2>/dev/null)
+          skip_reason=""
+          for sd in $skip_deps; do
+            sd_status=$(grep "^${sd}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
+            if [[ "$sd_status" == "failed" || "$sd_status" == "skipped" ]]; then
+              skip_reason="dependency \`${sd}\` ${sd_status}"
+              break
+            fi
+          done
+          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: **skipped** — ${skip_reason:-unknown reason}"
+          ;;
+      esac
+    done < "$STATUS_FILE"
+
+    if [[ $FAILED_COUNT -eq 0 && $SKIPPED_COUNT -eq 0 ]]; then
+      COMMENT_BODY="All $OK_COUNT tasks completed. PRs against staging: $PR_LIST"
+      gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
+      gh issue close "$PRD_ISSUE" --reason completed
+      echo "PRD issue #$PRD_ISSUE closed."
+    else
+      COMMENT_BODY="$(printf "Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%b\n\n**PRs created:** %s" \
+        "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}")"
+      gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
+      echo "PRD issue #$PRD_ISSUE left open (not all tasks succeeded)."
+    fi
+  fi
+fi

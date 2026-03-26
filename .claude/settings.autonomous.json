@@ -27,6 +27,8 @@
             "Read",
             "Edit",
             "Write",
+            "Glob",
+            "Grep",
             "WebSearch",
             "Bash(*)",
             "mcp__plugin_supabase_supabase__get_logs",

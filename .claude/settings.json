@@ -5,6 +5,8 @@
       "Read",
       "Edit",
       "Write",
+      "Glob",
+      "Grep",
       "WebSearch",
       "Bash(* --help)",
       "Bash(* --version)",
@@ -127,6 +129,7 @@
       "Bash(gh issue list *)",
       "Bash(gh issue view *)",
       "Bash(gh issue status *)",
+      "Bash(gh issue create *)",
       "Bash(gh repo view *)",
       "Bash(gh run list *)",
       "Bash(gh run view *)",
@@ -238,7 +241,7 @@
   },
   "hooks": {
     "PreToolUse": [
-{
+      {
         "matcher": "Edit|Write",
         "hooks": [
           {

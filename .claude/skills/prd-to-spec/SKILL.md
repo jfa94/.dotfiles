@@ -12,9 +12,17 @@ The output is a list of Markdown files in `specs/features/`.
 
 ## Process
 
-### 1. Confirm the PRD is in context
+### 1. Find the PRD
 
-The PRD should already be in the conversation or in a GitHub issue. If it isn't, ask the user to paste it or point you to the file.
+First, check for open GitHub issues tagged with `[PRD]` in the title:
+
+```bash
+gh issue list --search "[PRD] in:title" --state open
+```
+
+- **Multiple issues found:** present the list and ask the user which one to implement
+- **One issue found:** use it directly — fetch the full body with `gh issue view <number>`
+- **No issues found:** ask the user to paste the PRD or point you to the file/issue
 
 ### 2. Explore the codebase
 
@@ -126,7 +134,17 @@ Key principles for good specs:
 - **State technical constraints as hard rules.** "No third-party auth libraries" is clearer than "prefer building from primitives."
 - **Keep acceptance criteria testable.** Each criterion should map directly to one or more test cases. Vague criteria like "good user experience" give nothing to verify against.
 
-### 7. Create tasks
+### 7. Write metadata
+
+If the PRD came from a GitHub issue (step 1), write a `metadata.json` in the same spec directory:
+
+```json
+{ "prd_issue": <issue-number> }
+```
+
+For example: `specs/features/user-onboarding/metadata.json`. Skip this file if the user pasted the PRD manually.
+
+### 8. Create tasks
 
 Ask the user if they would like to decompose the specs into agent-friendly tasks. If yes, decompose each spec into implementation tasks where each task:
 1. is completable in under (approximately) 45 min
