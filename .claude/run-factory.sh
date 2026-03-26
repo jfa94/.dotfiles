@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # --- Resolve paths ---
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
@@ -116,16 +116,19 @@ TASKS_RUN=0
 CONSECUTIVE_FAILURES=0
 
 # --- Settings swap with trap ---
-SETTINGS_FILE="$SCRIPT_DIR/settings.json"
-SETTINGS_BAK="$SCRIPT_DIR/settings.json.factory-bak"
+SETTINGS_LOCAL="$SCRIPT_DIR/settings.local.json"
+SETTINGS_LOCAL_BAK="$SCRIPT_DIR/settings.local.json.factory-bak"
 SETTINGS_AUTO="$SCRIPT_DIR/settings.autonomous.json"
 
 STATUS_FILE=""
 PR_FILE=""
 
 cleanup() {
-  if [[ -f "$SETTINGS_BAK" ]]; then
-    mv "$SETTINGS_BAK" "$SETTINGS_FILE"
+  if [[ -f "$SETTINGS_LOCAL_BAK" ]]; then
+    mv "$SETTINGS_LOCAL_BAK" "$SETTINGS_LOCAL"
+    echo "Settings restored."
+  elif [[ -f "$SETTINGS_LOCAL" ]]; then
+    rm -f "$SETTINGS_LOCAL"
     echo "Settings restored."
   fi
   [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
@@ -138,10 +141,10 @@ if [[ ! -f "$SETTINGS_AUTO" ]]; then
   exit 1
 fi
 
-if [[ -f "$SETTINGS_FILE" ]]; then
-  cp "$SETTINGS_FILE" "$SETTINGS_BAK"
+if [[ -f "$SETTINGS_LOCAL" ]]; then
+  cp "$SETTINGS_LOCAL" "$SETTINGS_LOCAL_BAK"
 fi
-cp "$SETTINGS_AUTO" "$SETTINGS_FILE"
+cp "$SETTINGS_AUTO" "$SETTINGS_LOCAL"
 echo "Settings swapped to autonomous mode."
 
 # --- Smart staging functions ---

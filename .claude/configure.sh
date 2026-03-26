@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # --- Resolve paths ---
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 
 # --- Helper: list tracked .claude/ files eligible for distribution ---
