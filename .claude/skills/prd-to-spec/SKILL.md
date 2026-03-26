@@ -146,13 +146,15 @@ For example: `specs/features/user-onboarding/metadata.json`. Skip this file if t
 
 ### 8. Create tasks
 
-Ask the user if they would like to decompose the specs into agent-friendly tasks. If yes, decompose each spec into implementation tasks where each task:
+Ask the user if they would like to decompose the specs into agent-friendly tasks. If yes, decompose ALL specs into a single flat list of implementation tasks where each task:
 1. is completable in under (approximately) 45 min
 2. has clear acceptance criteria that map to specific test assertions
 3. lists exact files to create or modify (max 3 files per task)
 4. specifies which tests to write.
 
-Output as a JSON array called `tasks.json` in the same location as the corresponding spec (e.g., `specs/features/user-onboarding/tasks.json`) with fields: task_id, title, description, files, acceptance_criteria, tests_to_write, depends_on (array of task_ids).
+Tasks from later phases MUST list tasks from earlier phases in their `depends_on` array so the factory can execute them in the correct order.
+
+Output the entire list as a single JSON array in ONE file called `tasks.json` in the feature directory (e.g., `specs/features/user-onboarding/tasks.json`). Do NOT create separate task files per spec — all tasks go in this one file. Fields: task_id, title, description, files, acceptance_criteria, tests_to_write, depends_on (array of task_ids).
 ```json
 [
   {

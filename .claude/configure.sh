@@ -5,6 +5,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 
+# --- Helper: list tracked .claude/ files eligible for distribution ---
+list_distributable_files() {
+  git -C "$DOTFILES_DIR" ls-files -z -- ".claude/" | while IFS= read -r -d '' gitfile; do
+    local base="${gitfile#.claude/}"
+    [[ "$base" == "configure.sh" || "$base" == "quality-gate.yml" ]] && continue
+    printf '%s\0' "$SCRIPT_DIR/$base"
+  done
+}
+
 # --- Config file list ---
 JSTS_CONFIG_FILES=(
   .prettierrc.json
@@ -89,7 +98,7 @@ while IFS= read -r -d '' file; do
   if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=(".claude/$rel")
   fi
-done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" ! -name "quality-gate.yml" -print0)
+done < <(list_distributable_files)
 
 # Check .gitignore
 if [[ -e "$TARGET/.gitignore" || -L "$TARGET/.gitignore" ]]; then
@@ -191,7 +200,7 @@ copy_file() {
 while IFS= read -r -d '' file; do
   rel="${file#"$SCRIPT_DIR"/}"
   copy_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
-done < <(find "$SCRIPT_DIR" -type f ! -name "configure.sh" ! -name "quality-gate.yml" -print0)
+done < <(list_distributable_files)
 
 # --- Make run-factory.sh executable ---
 if [[ -f "$TARGET/.claude/run-factory.sh" ]]; then

@@ -4,6 +4,20 @@
 # Claude Code
 .claude/worktrees/
 .claude/plugins/
+.claude/file-history/
+.claude/backups/
+.claude/debug/
+.claude/todos/
+.claude/plans/
+.claude/memory/
+.claude/statsig/
+.claude/cache/
+.claude/history.jsonl
+.claude/paste-cache/
+.claude/projects/
+.claude/shell-snapshots/
+.claude/tasks/
+.claude/telemetry/
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 .claude/tool-audit.jsonl
