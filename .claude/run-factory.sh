@@ -45,6 +45,7 @@ Pipeline steps:
      d. Branch feat/<task-id> from staging
      e. Run Claude Code in headless mode
      f. Quality gate (pnpm quality)
+     f2. Code review via separate Claude session (if ENABLE_CODE_REVIEW=true)
      g. Push + open PR against staging with auto-merge enabled
   5. Print summary (ok/failed/skipped) and restore settings
 
@@ -56,6 +57,8 @@ Environment variables:
   MAX_CONSECUTIVE_FAILURES Max consecutive failures before stop (default: 3)
   MAX_RETRIES              Max retries per failed task (default: 2, 0 = no retry)
   MUTATION_FEEDBACK        Enable mutation testing feedback loop (default: false)
+  ENABLE_CODE_REVIEW       Enable AI code review before PR merge (default: true)
+  REVIEW_TURNS             Max turns for code review session (default: 40)
   MAX_SPEC_ITERATIONS      Max spec review-refine iterations (default: 3)
   SPEC_GEN_TURNS           Turn budget for spec generation session (default: 80)
   SPEC_PASS_THRESHOLD      Min total score for spec approval, out of 60 (default: 48)
@@ -561,6 +564,8 @@ MAX_TASKS=${MAX_TASKS:-20}
 MAX_MINUTES=${MAX_MINUTES:-360}
 MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
 MAX_RETRIES=${MAX_RETRIES:-2}
+ENABLE_CODE_REVIEW=${ENABLE_CODE_REVIEW:-true}
+REVIEW_TURNS=${REVIEW_TURNS:-40}
 PIPELINE_START=$(date +%s)
 TASKS_RUN=0
 CONSECUTIVE_FAILURES=0
@@ -920,6 +925,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   TASK_OUTCOME="failed"  # default to failed; overwritten on success
   FAILURE_TYPE=""
   PREV_QUALITY_LOG=""
+  PREV_REVIEW_FINDINGS=""
   PREV_EXIT_CODE=0
   TASK_COST=0
 
@@ -981,6 +987,19 @@ Fix ALL quality failures. The previous work is committed on this branch.
         agent_error)
           RETRY_CONTEXT+="The previous session ended with an error (exit code $PREV_EXIT_CODE).
 Check git log and claude-progress.json for any partial work.
+
+"
+          ;;
+        code_review)
+          RETRY_CONTEXT+="The implementation passed quality gates but FAILED code review.
+The reviewer (a separate AI with fresh context) found issues.
+
+## Code Review Findings
+$PREV_REVIEW_FINDINGS
+
+Fix ALL CRITICAL and WARNING findings. The previous work is committed on this branch.
+Do NOT introduce new issues while fixing these.
+Run pnpm quality after fixes to ensure nothing regresses.
 
 "
           ;;
@@ -1068,6 +1087,119 @@ __FACTORY_TASK2__
     # Quality gate
     QUALITY_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.quality.log"
     if pnpm quality > "$QUALITY_LOG" 2>&1; then
+
+      # --- Code review gate (optional) ---
+      REVIEW_VERDICT="APPROVE"  # default when review disabled
+      REVIEW_TEXT=""
+      if [[ "$ENABLE_CODE_REVIEW" == "true" ]]; then
+        echo "  Running code review ($TASK_ID, attempt $ATTEMPT)..."
+        REVIEW_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.json"
+
+        review_prompt_file=$(mktemp "$FACTORY_TMPDIR/review-prompt.XXXXXX")
+
+        DIFF_STAT=$(git diff staging...HEAD --stat 2>/dev/null || git diff --stat)
+        CHANGED_FILES=$(git diff staging...HEAD --name-only 2>/dev/null || git diff --name-only)
+
+        cat > "$review_prompt_file" << '__REVIEW_PROMPT__'
+You are a senior engineer performing a code review. You have a FRESH context -- you did not write this code. This separation is intentional: AI-generated code escapes review because well-formatted code triggers "looks fine" approval bias.
+
+## Critical Principle: Signal Over Noise
+
+Only report findings you are genuinely confident about. Score each finding mentally on likelihood (1-10) and impact (1-10). Drop anything below 5 on either axis. Keep total findings to 3-7. A review with 15+ comments is almost certainly noisy.
+
+Do NOT flag: formatting, naming conventions, missing comments/docs, type annotations, lint violations. These are covered by deterministic tools.
+
+DO flag: logic errors, unhandled edge cases, incorrect business logic, missing error handling that matters, weak test assertions, cross-file impact, AI-specific anti-patterns.
+
+## Review Process
+
+### Phase 1: Context
+1. Read CLAUDE.md and any stack guidelines (frontend.md, backend.md) in the .claude/ directory
+2. Run git diff staging...HEAD to read ALL changes
+3. Run git log --oneline staging...HEAD to understand commit narrative
+
+### Phase 2: Logic and Correctness
+For each changed file, examine:
+- Data flow correctness (trace inputs to outputs; off-by-one errors, wrong operators)
+- Edge cases (empty, null/undefined, zero, negative, large inputs, concurrent access, network failures)
+- Error handling that matters (errors that WILL happen in production -- not "add try-catch everywhere")
+- Cross-file impact (does this break callers? grep for changed exports/signatures)
+- AI-specific anti-patterns: hallucinated APIs, over-abstraction, copy-paste drift, missing null checks on external data, excessive I/O (N+1 queries, redundant API calls), dead code
+
+### Phase 3: Test Quality
+For each test file in the diff:
+- Does it test BEHAVIOR or just run code? (tests without meaningful assertions create false confidence)
+- Are assertions specific? (toBeDefined() alone is almost never sufficient)
+- Would the test fail if the implementation returned a wrong value?
+- Are mocks realistic? Do mock responses match the actual API/DB shape?
+
+### Phase 4: Verification
+Run pnpm quality to confirm all automated checks pass.
+
+### Phase 5: Verdict
+
+Group findings by severity:
+- CRITICAL: Will cause bugs in production, data loss, or security issues
+- WARNING: Likely to cause problems, should fix before merge
+- NOTE: Minor improvements, non-blocking
+
+For each finding: file path, line number, one-sentence issue, why it matters, suggested fix.
+
+Your response MUST end with exactly one of these verdict lines (no other text after it):
+
+**VERDICT: APPROVE**
+**VERDICT: REQUEST_CHANGES**
+**VERDICT: NEEDS_DISCUSSION**
+
+Use APPROVE if changes are correct (explain WHY -- cite specific verification).
+Use REQUEST_CHANGES if there are CRITICAL or WARNING findings.
+Use NEEDS_DISCUSSION if you are uncertain about impact and a human should decide.
+__REVIEW_PROMPT__
+
+        printf '\n## Task Context\n\nTask: %s\nBranch: %s\n\nChanged files:\n%s\n\nDiff stats:\n%s\n' \
+          "$TITLE" "$BRANCH" "$CHANGED_FILES" "$DIFF_STAT" >> "$review_prompt_file"
+
+        REVIEW_EXIT=0
+        claude -p --model sonnet \
+          --max-turns "$REVIEW_TURNS" \
+          --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log" || REVIEW_EXIT=$?
+
+        REVIEW_COST=$(jq -r '.total_cost_usd // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
+        TASK_COST=$(echo "$TASK_COST + $REVIEW_COST" | bc 2>/dev/null || echo "$TASK_COST")
+        echo "  Review cost: \$$REVIEW_COST (task total \$$TASK_COST)"
+
+        REVIEW_TEXT=$(jq -r '.result // ""' "$REVIEW_LOG" 2>/dev/null || echo "")
+
+        if echo "$REVIEW_TEXT" | grep -q 'VERDICT: REQUEST_CHANGES'; then
+          REVIEW_VERDICT="REQUEST_CHANGES"
+        elif echo "$REVIEW_TEXT" | grep -q 'VERDICT: NEEDS_DISCUSSION'; then
+          REVIEW_VERDICT="NEEDS_DISCUSSION"
+        elif echo "$REVIEW_TEXT" | grep -q 'VERDICT: APPROVE'; then
+          REVIEW_VERDICT="APPROVE"
+        elif [[ $REVIEW_EXIT -ne 0 ]]; then
+          echo "  Warning: review session failed (exit=$REVIEW_EXIT), treating as APPROVE"
+          REVIEW_VERDICT="APPROVE"
+        else
+          echo "  Warning: no verdict found in review output, treating as NEEDS_DISCUSSION"
+          REVIEW_VERDICT="NEEDS_DISCUSSION"
+        fi
+
+        echo "  Review verdict: $REVIEW_VERDICT"
+      fi
+
+      # --- Act on review verdict ---
+      if [[ "$REVIEW_VERDICT" == "REQUEST_CHANGES" ]]; then
+        FAILURE_TYPE="code_review"
+        PREV_REVIEW_FINDINGS="$REVIEW_TEXT"
+        echo "=== $TASK_ID: CODE REVIEW REJECTED (attempt $ATTEMPT) ==="
+        if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+          continue
+        fi
+        TASK_OUTCOME="failed"
+        break
+      fi
+
+      # APPROVE or NEEDS_DISCUSSION — proceed to push + PR
       git push -u origin "$BRANCH"
 
       # Build PR body in temp file to avoid shell expansion of AI-generated content
@@ -1078,6 +1210,11 @@ __FACTORY_TASK2__
       jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .acceptance_criteria | map("- " + .) | join("\n")' "$TASKS_FILE" >> "$pr_body_file"
       printf '\n## Tests\n' >> "$pr_body_file"
       jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .tests_to_write | map("- " + .) | join("\n")' "$TASKS_FILE" >> "$pr_body_file"
+
+      if [[ "$ENABLE_CODE_REVIEW" == "true" && -n "$REVIEW_TEXT" ]]; then
+        printf '\n## Code Review\n\n**Verdict:** %s\n\n<details>\n<summary>Review findings</summary>\n\n%s\n</details>\n' \
+          "$REVIEW_VERDICT" "$REVIEW_TEXT" >> "$pr_body_file"
+      fi
 
       PR_URL=$(gh pr create \
         --title "feat: $TITLE" \
@@ -1097,7 +1234,20 @@ __FACTORY_TASK2__
 
       if [[ -n "$PR_URL" ]]; then
         PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
-        gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
+        if [[ "$REVIEW_VERDICT" == "NEEDS_DISCUSSION" ]]; then
+          echo "  Skipping auto-merge: code review returned NEEDS_DISCUSSION (needs human input)"
+          gh pr comment "$PR_NUMBER" --body "## Code Review: NEEDS_DISCUSSION
+
+This PR was flagged by automated code review as needing human discussion before merge.
+
+<details>
+<summary>Review findings</summary>
+
+$REVIEW_TEXT
+</details>" 2>/dev/null || true
+        else
+          gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
+        fi
         echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
         echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, cost \$$TASK_COST) ==="
         TASK_OUTCOME="ok"

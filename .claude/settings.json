@@ -239,7 +239,6 @@
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
     ]
   },
-  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -325,5 +324,5 @@
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true
   },
-  "effortLevel": "medium"
+  "effortLevel": "high"
 }
