@@ -127,6 +127,10 @@ FACTORY_TMPDIR=$(mktemp -d /tmp/factory-run.XXXXXX)
 LOCK_DIR=""
 
 cleanup() {
+  # Kill any background claude processes to avoid orphaned API usage
+  kill $(jobs -p) 2>/dev/null || true
+  wait 2>/dev/null || true
+
   if [[ "$SKIP_SETTINGS_SWAP" == "true" ]]; then
     # Child process — don't touch settings, parent manages them
     [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
@@ -178,14 +182,17 @@ slugify_title() {
 # Usage: some_command & spin $! "message"
 spin() {
   local pid=$1 msg=$2
-  local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local frames=('|' '/' '-' '\')
   local i=0
+  # Kill background process if spinner is interrupted
+  trap 'kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 130' INT TERM
   while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  %s %s" "${chars:$i:1}" "$msg"
-    i=$(( (i + 1) % ${#chars} ))
+    printf "\r  %s %s" "${frames[$i]}" "$msg"
+    i=$(( (i + 1) % ${#frames[@]} ))
     sleep 0.1
   done
   printf "\r\033[K"  # clear spinner line
+  trap - INT TERM
   wait "$pid"
 }
 
