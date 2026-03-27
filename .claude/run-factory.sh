@@ -62,6 +62,7 @@ Environment variables:
   MAX_SPEC_ITERATIONS      Max spec review-refine iterations (default: 3)
   SPEC_GEN_TURNS           Turn budget for spec generation session (default: 80)
   SPEC_PASS_THRESHOLD      Min total score for spec approval, out of 60 (default: 48)
+  USAGE_PAUSE_THRESHOLD    5-hour utilization % that triggers pause (default: 90)
 HELP
 }
 
@@ -564,11 +565,70 @@ MAX_TASKS=${MAX_TASKS:-20}
 MAX_MINUTES=${MAX_MINUTES:-360}
 MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
 MAX_RETRIES=${MAX_RETRIES:-2}
+USAGE_PAUSE_THRESHOLD=${USAGE_PAUSE_THRESHOLD:-90}
 ENABLE_CODE_REVIEW=${ENABLE_CODE_REVIEW:-true}
 REVIEW_TURNS=${REVIEW_TURNS:-40}
 PIPELINE_START=$(date +%s)
 TASKS_RUN=0
 CONSECUTIVE_FAILURES=0
+
+# --- Usage guard ---
+check_usage_and_wait() {
+  local threshold=${USAGE_PAUSE_THRESHOLD:-90}
+
+  # Read OAuth token from macOS Keychain
+  local creds token
+  creds=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) \
+    || { echo "⚠ Usage check: can't read keychain, skipping"; return 0; }
+  token=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null) \
+    || { echo "⚠ Usage check: can't parse token, skipping"; return 0; }
+  [[ -z "$token" ]] && { echo "⚠ Usage check: no access token, skipping"; return 0; }
+
+  # Call the usage API
+  local response
+  response=$(curl -sf --max-time 10 \
+    -H "Authorization: Bearer $token" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    "https://api.anthropic.com/api/oauth/usage" 2>/dev/null) \
+    || { echo "⚠ Usage check: API call failed, skipping"; return 0; }
+
+  # Parse 5-hour window
+  local utilization resets_at
+  utilization=$(printf '%s' "$response" | jq -r '.five_hour.utilization // empty' 2>/dev/null)
+  resets_at=$(printf '%s' "$response" | jq -r '.five_hour.resets_at // empty' 2>/dev/null)
+  [[ -z "$utilization" || -z "$resets_at" ]] && { echo "⚠ Usage check: unexpected API response, skipping"; return 0; }
+
+  echo "Usage: ${utilization}% (5h window, resets at $resets_at)"
+
+  # Pause if at or above threshold
+  if (( $(echo "$utilization >= $threshold" | bc -l) )); then
+    local reset_epoch now_epoch wait_secs
+    # macOS date -j; fallback to GNU date -d for Linux
+    reset_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${resets_at%%.*}" "+%s" 2>/dev/null) \
+      || reset_epoch=$(date -d "$resets_at" "+%s" 2>/dev/null) \
+      || { echo "⚠ Usage check: can't parse reset time, skipping"; return 0; }
+    now_epoch=$(date +%s)
+    wait_secs=$(( reset_epoch - now_epoch + 60 ))  # +60s buffer past reset
+
+    if [[ $wait_secs -le 0 ]]; then
+      echo "Usage reset already passed, continuing."
+      return 0
+    fi
+
+    echo "=== USAGE PAUSE: ${utilization}% >= ${threshold}% threshold ==="
+    echo "=== Sleeping $((wait_secs / 60))m until $(date -r $((now_epoch + wait_secs)) '+%H:%M:%S') ==="
+
+    local remaining=$wait_secs
+    while [[ $remaining -gt 0 ]]; do
+      local chunk=$(( remaining > 300 ? 300 : remaining ))
+      sleep "$chunk"
+      remaining=$(( remaining - chunk ))
+      [[ $remaining -gt 0 ]] && echo "  ... $((remaining / 60))m remaining"
+    done
+
+    echo "=== USAGE PAUSE: resumed ==="
+  fi
+}
 
 # --- Smart staging functions ---
 reconcile_staging_with_develop() {
@@ -900,6 +960,9 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   # Pull latest staging (picks up merged dependency PRs)
   git checkout staging
   git pull origin staging
+
+  # Check usage before starting task — pause if 5h window is near exhausted
+  check_usage_and_wait
 
   # Extract task details
   TITLE=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .title' "$TASKS_FILE")
