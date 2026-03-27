@@ -140,6 +140,15 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
+  # Prevent concurrent factory runs from racing on settings/branches
+  LOCK_FILE="/tmp/factory-$(echo "$PROJECT_DIR" | tr '/' '-').lock"
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    echo "Error: another factory instance is running for this project."
+    echo "  Lock: $LOCK_FILE"
+    exit 1
+  fi
+
   if [[ ! -f "$SETTINGS_AUTO" ]]; then
     echo "Error: settings.autonomous.json not found at $SETTINGS_AUTO"
     exit 1
@@ -194,7 +203,7 @@ generate_and_review_spec() {
     echo "Warning: skill file missing YAML frontmatter, using full content"
     skill_body=$(cat "$skill_path")
   else
-    skill_body=$(sed '1,/^---$/d' "$skill_path" | sed '1,/^---$/d')
+    skill_body=$(awk 'BEGIN{n=0} /^---$/{n++; if(n==2){found=1; next}} found' "$skill_path")
   fi
 
   local log_file="$log_dir/spec-gen.json"
@@ -214,8 +223,8 @@ __FACTORY_HEADER__
   printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
     "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
 
-  # Write instructions with only safe variable interpolation
-  cat >> "$prompt_file" << __FACTORY_INSTRUCTIONS__
+  # Write instructions — quoted heredoc for static text, printf for dynamic values
+  cat >> "$prompt_file" << '__FACTORY_INSTRUCTIONS__'
 ## Instructions
 
 Follow these spec-generation instructions. IMPORTANT modifications:
@@ -223,19 +232,22 @@ Follow these spec-generation instructions. IMPORTANT modifications:
 - For step 5 (quiz the user): SKIP this step. Use your best judgment for granularity.
   A spec-reviewer agent will review your output separately.
 - For step 8 (create tasks): ALWAYS create tasks.json. Do not ask for confirmation.
-- Write metadata.json with: { "prd_issue": $issue_number }
+__FACTORY_INSTRUCTIONS__
 
-$skill_body
+  printf -- '- Write metadata.json with: { "prd_issue": %s }\n\n%s\n\n---\n\n' \
+    "$issue_number" "$skill_body" >> "$prompt_file"
 
----
-
+  cat >> "$prompt_file" << '__FACTORY_REVIEW__'
 ## Review loop
 
 After generating all spec files and tasks.json, you MUST spawn the spec-reviewer agent
 (via the Agent tool with subagent_type 'spec-reviewer') to review your work. Pass it:
-  "Review the spec in $SPEC_DIR. Read all .md files and tasks.json.
-   The pass threshold for this review is $SPEC_PASS_THRESHOLD/60. Return your verdict."
+__FACTORY_REVIEW__
 
+  printf '  "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
+  printf '   The pass threshold for this review is %s/60. Return your verdict."\n\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
+
+  cat >> "$prompt_file" << '__FACTORY_REVIEW2__'
 The reviewer has a FRESH context and will catch issues you missed.
 
 If the reviewer returns NEEDS_REVISION:
@@ -244,13 +256,13 @@ If the reviewer returns NEEDS_REVISION:
 3. Address suggestions for any dimension scoring below 8
 4. Do NOT change parts that scored 8 or above unless they have blocking issues
 5. Re-spawn the spec-reviewer agent to review the updated specs
-6. Repeat until the reviewer returns PASS or you have done $MAX_SPEC_ITERATIONS review iterations
+__FACTORY_REVIEW2__
 
-Do NOT declare success until the reviewer returns a PASS verdict.
-If after $MAX_SPEC_ITERATIONS iterations the reviewer still returns NEEDS_REVISION,
-DELETE tasks.json (run: rm $TASKS_FILE) before stopping. Report the final review findings.
-The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.
-__FACTORY_INSTRUCTIONS__
+  printf '6. Repeat until the reviewer returns PASS or you have done %s review iterations\n\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
+  printf 'Do NOT declare success until the reviewer returns a PASS verdict.\n' >> "$prompt_file"
+  printf 'If after %s iterations the reviewer still returns NEEDS_REVISION,\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
+  printf 'DELETE tasks.json (run: rm %s) before stopping. Report the final review findings.\n' "$TASKS_FILE" >> "$prompt_file"
+  printf 'The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.\n' >> "$prompt_file"
 
   claude -p --model opus "$(cat "$prompt_file")" \
     --max-turns "$SPEC_GEN_TURNS" \
@@ -279,27 +291,34 @@ __FACTORY_RETRY_HEADER__
     printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
       "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
 
-    cat >> "$prompt_file" << __FACTORY_SPEC_RETRY__
+    cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY__'
 ## Instructions
 
-$skill_body
+__FACTORY_SPEC_RETRY__
 
-CRITICAL: You MUST create the directory $SPEC_DIR and write:
+    printf '%s\n\n' "$skill_body" >> "$prompt_file"
+    printf 'CRITICAL: You MUST create the directory %s and write:\n' "$SPEC_DIR" >> "$prompt_file"
+
+    cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY2__'
 1. Spec .md files for each vertical slice
 2. tasks.json with all decomposed tasks
-3. metadata.json with { "prd_issue": $issue_number }
+__FACTORY_SPEC_RETRY2__
 
+    printf '3. metadata.json with { "prd_issue": %s }\n\n' "$issue_number" >> "$prompt_file"
+
+    cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY3__'
 Modifications:
 - Step 1: PRD is above, skip issue search
 - Step 5: Skip user quiz, use best judgment
 - Step 8: Always create tasks.json
 
 After generating, spawn the spec-reviewer agent (subagent_type 'spec-reviewer') to review
-your work. Pass it: "Review the spec in $SPEC_DIR. Read all .md files and tasks.json.
-The pass threshold for this review is $SPEC_PASS_THRESHOLD/60. Return your verdict."
-Fix blocking issues and re-review until PASS or $MAX_SPEC_ITERATIONS iterations.
-If review never passes, DELETE tasks.json (run: rm $TASKS_FILE) before stopping.
-__FACTORY_SPEC_RETRY__
+__FACTORY_SPEC_RETRY3__
+
+    printf 'your work. Pass it: "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
+    printf 'The pass threshold for this review is %s/60. Return your verdict."\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
+    printf 'Fix blocking issues and re-review until PASS or %s iterations.\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
+    printf 'If review never passes, DELETE tasks.json (run: rm %s) before stopping.\n' "$TASKS_FILE" >> "$prompt_file"
 
     claude -p --model opus "$(cat "$prompt_file")" \
       --max-turns "$retry_turns" \
@@ -350,7 +369,7 @@ sequential_execution() {
     echo "========================================"
     echo "Processing PRD issue #$issue_num: $title"
     echo "========================================"
-    if "$0" --issue "$issue_num" --skip-settings-swap; then
+    if "$SCRIPT_DIR/run-factory.sh" --issue "$issue_num" --skip-settings-swap; then
       succeeded=$((succeeded + 1))
     else
       failed=$((failed + 1))
@@ -407,23 +426,28 @@ parallel_worktree_execution() {
   # Wait for all
   local failed=0
   local succeeded=0
+  local failed_worktrees=()
   for i in "${!pids[@]}"; do
     if wait "${pids[$i]}"; then
       succeeded=$((succeeded + 1))
       echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) succeeded."
+      git worktree remove "${worktrees[$i]}" 2>/dev/null || true
     else
       failed=$((failed + 1))
       echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) failed."
+      failed_worktrees+=("${worktrees[$i]}")
     fi
-  done
-
-  # Cleanup worktrees
-  for wt in "${worktrees[@]}"; do
-    git worktree remove "$wt" 2>/dev/null || true
   done
 
   echo ""
   echo "=== Parallel execution complete: $succeeded succeeded, $failed failed ==="
+  if [[ ${#failed_worktrees[@]} -gt 0 ]]; then
+    echo "  Failed worktrees preserved for inspection:"
+    for wt in "${failed_worktrees[@]}"; do
+      echo "    $wt"
+    done
+    echo "  Clean up manually: git worktree remove <path>"
+  fi
 }
 
 discover_and_process_prds() {
@@ -729,7 +753,7 @@ Create the following files:
 Use JSON (not Markdown) for all status tracking files. The model is less
 likely to inappropriately edit structured JSON compared to Markdown." \
     --max-turns 20 \
-    --output-format json > logs/initialiser.json 2>&1
+    --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log
 
   echo "Project setup complete. Log: logs/initialiser.json"
 fi
@@ -738,6 +762,12 @@ fi
 if [[ ! -f "$TASKS_FILE" ]]; then
   echo "Error: $TASKS_FILE not found."
   echo "Create a tasks.json in $SPEC_DIR before running the factory."
+  exit 1
+fi
+
+# Validate required fields exist in every task
+if ! jq -e 'if length == 0 then false else [.[] | has("task_id", "title", "depends_on", "acceptance_criteria")] | all end' "$TASKS_FILE" > /dev/null 2>&1; then
+  echo "Error: tasks.json has entries missing required fields (task_id, title, depends_on, acceptance_criteria)."
   exit 1
 fi
 
@@ -799,7 +829,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   echo "=== Starting task: $TASK_ID ==="
 
   # --- Dependency check ---
-  DEPS=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .depends_on // [] | .[]" "$TASKS_FILE")
+  DEPS=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .depends_on // [] | .[]' "$TASKS_FILE")
   SKIP=false
 
   for DEP in $DEPS; do
@@ -845,14 +875,14 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   git pull origin staging
 
   # Extract task details
-  TITLE=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .title" "$TASKS_FILE")
-  DESC=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .description" "$TASKS_FILE")
-  FILES=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .files | join(\", \")" "$TASKS_FILE")
-  CRITERIA=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .acceptance_criteria | join(\"; \")" "$TASKS_FILE")
-  TESTS=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .tests_to_write | join(\"; \")" "$TASKS_FILE")
+  TITLE=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .title' "$TASKS_FILE")
+  DESC=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .description' "$TASKS_FILE")
+  FILES=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .files | join(", ")' "$TASKS_FILE")
+  CRITERIA=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .acceptance_criteria | join("; ")' "$TASKS_FILE")
+  TESTS=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .tests_to_write | join("; ")' "$TASKS_FILE")
 
   # Model + turn-budget routing by task complexity
-  COMPLEXITY=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .complexity // \"standard\"" "$TASKS_FILE")
+  COMPLEXITY=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .complexity // "standard"' "$TASKS_FILE")
   case "$COMPLEXITY" in
     simple)  MODEL_FLAG="--model haiku"; TURN_BUDGET=40 ;;
     complex) MODEL_FLAG="--model opus";  TURN_BUDGET=80 ;;
@@ -935,11 +965,17 @@ Check git log and claude-progress.json for any partial work.
       esac
     fi
 
-    # Run Claude Code in headless mode
+    # Build task prompt in temp file (avoids ARG_MAX on large retry contexts)
     LOG_FILE="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.json"
     EXIT_CODE=0
-    claude -p $MODEL_FLAG "${RETRY_CONTEXT}You are implementing task '$TITLE' for this project.
+    local task_prompt_file
+    task_prompt_file=$(mktemp /tmp/factory-task-prompt.XXXXXX)
 
+    [[ -n "$RETRY_CONTEXT" ]] && printf '%s' "$RETRY_CONTEXT" > "$task_prompt_file"
+
+    printf "You are implementing task '%s' for this project.\n\n" "$TITLE" >> "$task_prompt_file"
+
+    cat >> "$task_prompt_file" << '__FACTORY_TASK__'
 ## Phase 1: Orient (do this BEFORE writing any code)
 1. Run pwd to confirm your working directory
 2. Read claude-progress.json to understand what previous sessions accomplished
@@ -949,11 +985,12 @@ Check git log and claude-progress.json for any partial work.
 6. If the app is broken, fix existing bugs BEFORE starting new work
 
 ## Phase 2: Implement (one task only)
-Task: $DESC
-Files to create/modify: $FILES
-Acceptance criteria: $CRITERIA
-Tests to write: $TESTS
+__FACTORY_TASK__
 
+    printf 'Task: %s\nFiles to create/modify: %s\nAcceptance criteria: %s\nTests to write: %s\n\n' \
+      "$DESC" "$FILES" "$CRITERIA" "$TESTS" >> "$task_prompt_file"
+
+    cat >> "$task_prompt_file" << '__FACTORY_TASK2__'
 7. Read the project CLAUDE.md and follow all rules
 8. Read existing code in the listed files (if they exist)
 9. Implement the feature following acceptance criteria exactly
@@ -976,9 +1013,17 @@ you MUST still leave the environment in a clean state:
 - Revert any half-implemented changes (git checkout -- .)
 - Update claude-progress.json with status 'incomplete' and notes on
   what remains to be done
-- Do NOT leave broken code on the branch" \
+- Do NOT leave broken code on the branch
+__FACTORY_TASK2__
+
+    # Run Claude Code in headless mode
+    MODEL_ARGS=()
+    [[ -n "$MODEL_FLAG" ]] && read -ra MODEL_ARGS <<< "$MODEL_FLAG"
+    claude -p "${MODEL_ARGS[@]}" "$(cat "$task_prompt_file")" \
       --max-turns "$TURN_BUDGET" \
       --output-format json > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" || EXIT_CODE=$?
+
+    rm -f "$task_prompt_file"
 
     # Per-attempt cost logging
     ATTEMPT_COST=$(jq -r '.total_cost_usd // 0' "$LOG_FILE" 2>/dev/null || echo "0")
@@ -1064,8 +1109,7 @@ $TESTS" \
   echo "${TASK_ID}=${TASK_OUTCOME}" >> "$STATUS_FILE"
 
   # --- Consecutive failure tracking ---
-  TASK_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
-  case "$TASK_STATUS" in
+  case "$TASK_OUTCOME" in
     failed)
       CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
       if [[ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]]; then
@@ -1116,14 +1160,14 @@ if [[ -f "$METADATA_FILE" ]]; then
       case "$status" in
         ok)
           tid_pr=$(grep "^${tid}=" "$PR_FILE" | cut -d= -f2)
-          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: ok (PR #${tid_pr})"
+          TASK_DETAILS+=$'\n'"- \`${tid}\`: ok (PR #${tid_pr})"
           ;;
         failed)
-          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.attempt-*.json\`"
+          TASK_DETAILS+=$'\n'"- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.attempt-*.json\`"
           ;;
         skipped)
           # Find which dependency caused the skip
-          skip_deps=$(jq -r ".[] | select(.task_id==\"$tid\") | .depends_on[]" "$TASKS_FILE" 2>/dev/null)
+          skip_deps=$(jq -r --arg tid "$tid" '.[] | select(.task_id==$tid) | .depends_on[]' "$TASKS_FILE" 2>/dev/null)
           skip_reason=""
           for sd in $skip_deps; do
             sd_status=$(grep "^${sd}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
@@ -1132,7 +1176,7 @@ if [[ -f "$METADATA_FILE" ]]; then
               break
             fi
           done
-          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: **skipped** — ${skip_reason:-unknown reason}"
+          TASK_DETAILS+=$'\n'"- \`${tid}\`: **skipped** — ${skip_reason:-unknown reason}"
           ;;
       esac
     done < "$STATUS_FILE"
@@ -1183,6 +1227,7 @@ if [[ -f "$METADATA_FILE" ]]; then
       fi
 
       # Commit spec removal if there are tracked changes
+      git checkout staging 2>/dev/null || true
       if [[ -n "$(git ls-files --deleted -- specs/ 2>/dev/null)" ]] || \
          [[ -n "$(git status --porcelain -- specs/ 2>/dev/null)" ]]; then
         git add -A specs/
@@ -1193,7 +1238,7 @@ if [[ -f "$METADATA_FILE" ]]; then
 
       echo "=== Cleanup complete ==="
     else
-      COMMENT_BODY="$(printf "Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%b\n\n**PRs created:** %s" \
+      COMMENT_BODY="$(printf "Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%s\n\n**PRs created:** %s" \
         "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}")"
       gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
       echo "PRD issue #$PRD_ISSUE left open (not all tasks succeeded)."
