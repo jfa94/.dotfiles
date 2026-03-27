@@ -35,14 +35,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Semgrep SAST
-        uses: semgrep/semgrep-action@v1
+        uses: semgrep/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
         with:
           config: >-
             p/typescript
             p/security-audit
             p/secrets
       - name: TruffleHog secrets scan
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@61d57c10a563ba8a33a4c4205c85b5b3505a050e # main 2026-03-27
         with:
           extra_args: --only-verified
 
@@ -70,6 +70,6 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - run: gh pr merge ${{ github.event.pull_request.number }} --squash --auto
+      - run: gh pr merge ${{ github.event.pull_request.number }} --merge --auto
         env:
           GH_TOKEN: ${{ github.token }}

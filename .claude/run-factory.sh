@@ -188,27 +188,34 @@ generate_and_review_spec() {
     return 1
   fi
 
-  # Strip YAML frontmatter from skill
+  # Strip YAML frontmatter from skill (expects --- on line 1 and closing ---)
   local skill_body
-  skill_body=$(sed '1,/^---$/d' "$skill_path" | sed '1,/^---$/d')
+  if ! head -1 "$skill_path" | grep -q '^---$'; then
+    echo "Warning: skill file missing YAML frontmatter, using full content"
+    skill_body=$(cat "$skill_path")
+  else
+    skill_body=$(sed '1,/^---$/d' "$skill_path" | sed '1,/^---$/d')
+  fi
 
   local log_file="$log_dir/spec-gen.json"
 
-  # Build prompt in a temp file (skill body contains backticks that break double-quoted strings)
+  # Build prompt in a temp file — use quoted heredocs + printf to avoid shell injection
+  # from PRD body content (issue_body could contain $(), backticks, etc.)
   local prompt_file
   prompt_file=$(mktemp /tmp/factory-prompt.XXXXXX)
 
-  cat > "$prompt_file" << __FACTORY_SPEC_GEN_PROMPT__
+  # Write static header (quoted heredoc = no expansion)
+  cat > "$prompt_file" << '__FACTORY_HEADER__'
 You are generating implementation specs from a PRD stored in a GitHub issue.
 
-## PRD (from issue #$issue_number)
+__FACTORY_HEADER__
 
-**Title:** $issue_title
+  # Inject dynamic values safely via printf (no shell interpretation)
+  printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
+    "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
 
-$issue_body
-
----
-
+  # Write instructions with only safe variable interpolation
+  cat >> "$prompt_file" << __FACTORY_INSTRUCTIONS__
 ## Instructions
 
 Follow these spec-generation instructions. IMPORTANT modifications:
@@ -243,7 +250,7 @@ Do NOT declare success until the reviewer returns a PASS verdict.
 If after $MAX_SPEC_ITERATIONS iterations the reviewer still returns NEEDS_REVISION,
 DELETE tasks.json (run: rm $TASKS_FILE) before stopping. Report the final review findings.
 The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.
-__FACTORY_SPEC_GEN_PROMPT__
+__FACTORY_INSTRUCTIONS__
 
   claude -p --model opus "$(cat "$prompt_file")" \
     --max-turns "$SPEC_GEN_TURNS" \
@@ -262,17 +269,17 @@ __FACTORY_SPEC_GEN_PROMPT__
     log_file="$log_dir/spec-gen.retry.json"
 
     prompt_file=$(mktemp /tmp/factory-prompt.XXXXXX)
-    cat > "$prompt_file" << __FACTORY_SPEC_RETRY__
+
+    # Quoted heredoc for static header, printf for dynamic PRD content
+    cat > "$prompt_file" << '__FACTORY_RETRY_HEADER__'
 You are generating implementation specs from a PRD. A previous attempt failed to produce tasks.json.
 
-## PRD (from issue #$issue_number)
+__FACTORY_RETRY_HEADER__
 
-**Title:** $issue_title
+    printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
+      "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
 
-$issue_body
-
----
-
+    cat >> "$prompt_file" << __FACTORY_SPEC_RETRY__
 ## Instructions
 
 $skill_body
@@ -392,7 +399,7 @@ parallel_worktree_execution() {
     issues+=("$issue_num")
 
     # Launch factory in background (skip settings swap — parent manages settings)
-    (cd "$worktree_path" && .claude/run-factory.sh --issue "$issue_num") &
+    (cd "$worktree_path" && .claude/run-factory.sh --issue "$issue_num" --skip-settings-swap) &
     pids+=($!)
     echo "  Launched PID ${pids[-1]}"
   done <<< "$issue_list"
@@ -536,6 +543,14 @@ CONSECUTIVE_FAILURES=0
 
 # --- Smart staging functions ---
 reconcile_staging_with_develop() {
+  # Ensure we're on staging before merging
+  local current_branch
+  current_branch=$(git branch --show-current)
+  if [[ "$current_branch" != "staging" ]]; then
+    echo "Error: reconcile_staging_with_develop called from branch '$current_branch', expected 'staging'"
+    exit 1
+  fi
+
   local merge_base develop_sha staging_sha
   merge_base=$(git merge-base staging develop)
   develop_sha=$(git rev-parse develop)
@@ -593,10 +608,24 @@ wait_for_pr_merge() {
   local timeout_secs=${2:-2700}
   local elapsed=0
   local interval=30
+  local consecutive_errors=0
+  local max_errors=5
 
   while [[ $elapsed -lt $timeout_secs ]]; do
     local state
-    state=$(gh pr view "$pr_number" --json state -q '.state')
+    state=$(gh pr view "$pr_number" --json state -q '.state' 2>/dev/null) || true
+    if [[ -z "$state" ]]; then
+      consecutive_errors=$((consecutive_errors + 1))
+      if [[ $consecutive_errors -ge $max_errors ]]; then
+        echo "  Warning: GitHub API unreachable after $max_errors attempts for PR #$pr_number"
+        return 1
+      fi
+      echo "  Warning: failed to fetch PR #$pr_number state (attempt $consecutive_errors/$max_errors)"
+      sleep $interval
+      elapsed=$((elapsed + interval))
+      continue
+    fi
+    consecutive_errors=0
     if [[ "$state" == "MERGED" ]]; then
       return 0
     fi
@@ -721,6 +750,7 @@ LOG_DIR="logs/$(date +%Y%m%d-%H%M%S)-$SPEC_NAME"
 mkdir -p "$LOG_DIR"
 
 # Topological sort of tasks by dependency order
+TOTAL_TASKS=$(jq 'length' "$TASKS_FILE")
 TASK_IDS=()
 while IFS= read -r tid; do
   TASK_IDS+=("$tid")
@@ -733,6 +763,22 @@ done < <(jq -r '
     end;
   topo | .[]
 ' "$TASKS_FILE")
+
+# Cycle detection: if topo sort produced fewer IDs than tasks, there's a cycle
+if [[ ${#TASK_IDS[@]} -lt $TOTAL_TASKS ]]; then
+  echo "=== ERROR: Dependency cycle detected in tasks.json ==="
+  echo "  Sorted ${#TASK_IDS[@]} of $TOTAL_TASKS tasks. Unsorted tasks have circular dependencies."
+  # Show which tasks weren't sorted
+  ALL_IDS=$(jq -r '.[].task_id' "$TASKS_FILE")
+  for aid in $ALL_IDS; do
+    found=false
+    for sid in "${TASK_IDS[@]}"; do
+      [[ "$aid" == "$sid" ]] && found=true && break
+    done
+    [[ "$found" == "false" ]] && echo "  Stuck in cycle: $aid"
+  done
+  exit 1
+fi
 
 for TASK_ID in "${TASK_IDS[@]}"; do
   echo ""
@@ -819,7 +865,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   # --- Ralph loop retry ---
   BRANCH="feat/$TASK_ID"
   ATTEMPT=0
-  TASK_OUTCOME=""
+  TASK_OUTCOME="failed"  # default to failed; overwritten on success
   FAILURE_TYPE=""
   PREV_QUALITY_LOG=""
   PREV_EXIT_CODE=0
@@ -996,7 +1042,8 @@ $TESTS" \
         echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, cost \$$TASK_COST) ==="
         TASK_OUTCOME="ok"
       else
-        echo "=== $TASK_ID: PR CREATION FAILED ==="
+        echo "=== $TASK_ID: PR CREATION FAILED (code pushed to $BRANCH) ==="
+        echo "  Manual recovery: gh pr create --head $BRANCH --base staging"
         TASK_OUTCOME="failed"
       fi
       break
@@ -1072,7 +1119,7 @@ if [[ -f "$METADATA_FILE" ]]; then
           TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: ok (PR #${tid_pr})"
           ;;
         failed)
-          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.json\`"
+          TASK_DETAILS="${TASK_DETAILS}\n- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.attempt-*.json\`"
           ;;
         skipped)
           # Find which dependency caused the skip

@@ -8,7 +8,7 @@ DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 # --- Helper: list tracked .claude/ files eligible for distribution ---
 list_distributable_files() {
   git -C "$DOTFILES_DIR" ls-files -z -- ".claude/" | while IFS= read -r -d '' gitfile; do
-    local base="${gitfile#.claude/}"
+    base="${gitfile#.claude/}"
     [[ "$base" == "configure.sh" || "$base" == "quality-gate.yml" ]] && continue
     printf '%s\0' "$SCRIPT_DIR/$base"
   done
