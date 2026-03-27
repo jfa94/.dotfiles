@@ -146,7 +146,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git commit'; then cd \"${CLAUDE_PROJECT_DIR:-.}\"; SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\\s*[:=]\\s*\\S+|secret_?key\\s*[:=]\\s*\\S+|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' || true); if [ -n \"$SECRETS\" ]; then echo '{\"decision\":\"block\",\"reason\":\"Potential secrets detected in staged changes.\"}'; exit 0; fi; STAGED=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' 2>/dev/null); if [ -n \"$STAGED\" ]; then echo \"$STAGED\" | xargs npx eslint --max-warnings 0 2>&1 | tail -10; LINT=$?; if [ $LINT -ne 0 ]; then jq -n --arg r \"Pre-commit gate: lint failed on staged files. Fix before committing.\" '{\"decision\":\"block\",\"reason\":$r}'; exit 0; fi; fi; fi",
+                        "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git commit'; then cd \"${CLAUDE_PROJECT_DIR:-.}\"; SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\\s*[:=]\\s*\\S+|secret_?key\\s*[:=]\\s*\\S+|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' || true); if [ -n \"$SECRETS\" ]; then echo '{\"decision\":\"block\",\"reason\":\"Potential secrets detected in staged changes.\"}'; exit 0; fi; npx tsc --noEmit 2>&1 | tail -10; TSC=$?; STAGED=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' 2>/dev/null); if [ -n \"$STAGED\" ]; then echo \"$STAGED\" | xargs npx eslint --max-warnings 0 2>&1 | tail -10; LINT=$?; else LINT=0; fi; if [ $TSC -ne 0 ] || [ $LINT -ne 0 ]; then jq -n --arg r \"Pre-commit gate failed: tsc($TSC) lint($LINT). Fix before committing.\" '{\"decision\":\"block\",\"reason\":$r}'; exit 0; fi; fi",
                         "timeout": 60
                     }
                 ]
@@ -188,7 +188,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "cd $CLAUDE_PROJECT_DIR && npx vitest run --reporter=verbose --retry 2 2>&1 | tail -40; TEST=$?; if [ $TEST -ne 0 ]; then echo 'STOP GATE FAILED: tests failing. Fix all issues.'; exit 1; fi",
+                        "command": "cd $CLAUDE_PROJECT_DIR && npx vitest run --reporter=verbose 2>&1 | tail -40; TEST=$?; if [ $TEST -ne 0 ]; then echo 'STOP GATE FAILED: tests failing. Fix all issues.'; exit 1; fi",
                         "timeout": 120
                     }
                 ]
