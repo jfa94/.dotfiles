@@ -174,6 +174,21 @@ slugify_title() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/\[prd\] *//' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//'
 }
 
+# Spinner — runs in foreground while a background PID is alive
+# Usage: some_command & spin $! "message"
+spin() {
+  local pid=$1 msg=$2
+  local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "\r  %s %s" "${chars:$i:1}" "$msg"
+    i=$(( (i + 1) % ${#chars} ))
+    sleep 0.1
+  done
+  printf "\r\033[K"  # clear spinner line
+  wait "$pid"
+}
+
 # --- Spec generation + review (Phase 0) ---
 generate_and_review_spec() {
   local issue_number=$1
@@ -272,9 +287,11 @@ __FACTORY_REVIEW2__
   printf 'DELETE tasks.json (run: rm %s) before stopping. Report the final review findings.\n' "$TASKS_FILE" >> "$prompt_file"
   printf 'The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.\n' >> "$prompt_file"
 
+  echo "  Running: claude -p --model opus --max-turns $SPEC_GEN_TURNS (spec generation)..."
   claude -p --model opus \
     --max-turns "$SPEC_GEN_TURNS" \
-    --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log" || true
+    --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log" &
+  spin $! "Generating spec (opus, up to $SPEC_GEN_TURNS turns)..." || true
 
   local cost
   cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
@@ -326,9 +343,11 @@ __FACTORY_SPEC_RETRY3__
     printf 'Fix blocking issues and re-review until PASS or %s iterations.\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
     printf 'If review never passes, DELETE tasks.json (run: rm %s) before stopping.\n' "$TASKS_FILE" >> "$prompt_file"
 
+    echo "  Running: claude -p --model opus --max-turns $retry_turns (spec generation retry)..."
     claude -p --model opus \
       --max-turns "$retry_turns" \
-      --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log" || true
+      --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log" &
+    spin $! "Generating spec — retry (opus, up to $retry_turns turns)..." || true
 
     local retry_cost
     retry_cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
@@ -732,6 +751,7 @@ wait_for_pr_merge() {
     fi
     sleep $interval
     elapsed=$((elapsed + interval))
+    echo "  Waiting for PR #$pr_number to merge... (${elapsed}s/${timeout_secs}s)"
   done
   return 1
 }
@@ -747,6 +767,7 @@ else
 fi
 
 # --- Smart staging setup ---
+echo "Fetching from origin..."
 git fetch origin
 setup_staging
 
@@ -795,6 +816,7 @@ if [[ "$NEEDS_SETUP" == "true" ]]; then
   echo "Running project setup..."
   mkdir -p logs
 
+  echo "  Running: claude -p --max-turns 20 (project scaffolding)..."
   claude -p "You are setting up a new project for autonomous AI development.
 
 Read the CLAUDE.md and all spec files in specs/features/.
@@ -827,7 +849,8 @@ Create the following files:
 Use JSON (not Markdown) for all status tracking files. The model is less
 likely to inappropriately edit structured JSON compared to Markdown." \
     --max-turns 20 \
-    --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log
+    --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log &
+  spin $! "Scaffolding project (up to 20 turns)..."
 
   echo "Project setup complete. Log: logs/initialiser.json"
 fi
@@ -958,6 +981,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   fi
 
   # Pull latest staging (picks up merged dependency PRs)
+  echo "  Pulling latest staging..."
   git checkout staging
   git pull origin staging
 
@@ -1008,6 +1032,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     fi
 
     # Branch handling
+    echo "  Switching to branch $BRANCH..."
     if [[ $ATTEMPT -eq 1 ]]; then
       if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
         git checkout "$BRANCH"
@@ -1122,9 +1147,11 @@ __FACTORY_TASK2__
     # Run Claude Code in headless mode
     MODEL_ARGS=()
     [[ -n "$MODEL_FLAG" ]] && read -ra MODEL_ARGS <<< "$MODEL_FLAG"
+    echo "  Running: claude -p ${MODEL_FLAG:---model default} --max-turns $TURN_BUDGET (task: $TASK_ID, attempt $ATTEMPT)..."
     claude -p "${MODEL_ARGS[@]}" \
       --max-turns "$TURN_BUDGET" \
-      --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" || EXIT_CODE=$?
+      --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" &
+    spin $! "Task $TASK_ID, attempt $ATTEMPT (up to $TURN_BUDGET turns)..." || EXIT_CODE=$?
 
     # Per-attempt cost logging
     ATTEMPT_COST=$(jq -r '.total_cost_usd // 0' "$LOG_FILE" 2>/dev/null || echo "0")
@@ -1148,8 +1175,9 @@ __FACTORY_TASK2__
     fi
 
     # Quality gate
+    echo "  Running quality gate (pnpm quality)..."
     QUALITY_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.quality.log"
-    if pnpm quality > "$QUALITY_LOG" 2>&1; then
+    if pnpm quality 2>&1 | tee "$QUALITY_LOG"; then
 
       # --- Code review gate (optional) ---
       REVIEW_VERDICT="APPROVE"  # default when review disabled
@@ -1225,7 +1253,8 @@ __REVIEW_PROMPT__
         REVIEW_EXIT=0
         claude -p --model sonnet \
           --max-turns "$REVIEW_TURNS" \
-          --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log" || REVIEW_EXIT=$?
+          --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log" &
+        spin $! "Code review (sonnet, up to $REVIEW_TURNS turns)..." || REVIEW_EXIT=$?
 
         REVIEW_COST=$(jq -r '.total_cost_usd // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
         TASK_COST=$(echo "$TASK_COST + $REVIEW_COST" | bc 2>/dev/null || echo "$TASK_COST")
@@ -1263,6 +1292,7 @@ __REVIEW_PROMPT__
       fi
 
       # APPROVE or NEEDS_DISCUSSION — proceed to push + PR
+      echo "  Pushing $BRANCH and creating PR..."
       git push -u origin "$BRANCH"
 
       # Build PR body in temp file to avoid shell expansion of AI-generated content
