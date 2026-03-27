@@ -239,6 +239,7 @@
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
     ]
   },
+  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -324,5 +325,5 @@
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true
   },
-  "effortLevel": "high"
+  "effortLevel": "medium"
 }

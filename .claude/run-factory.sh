@@ -11,12 +11,16 @@ cd "$PROJECT_DIR"
 show_help() {
   cat <<'HELP'
 Usage: .claude/run-factory.sh [<feature-spec-name>]
+       .claude/run-factory.sh --issue <number>
+       .claude/run-factory.sh --discover
 
-Autonomous factory pipeline — sets up scaffolding if needed, then
-executes each task from a feature spec on isolated branches.
+Autonomous factory pipeline — generates specs from PRDs, reviews them,
+then executes each task on isolated branches with quality gates.
 
-Arguments:
-  <feature-spec-name>   Name of the feature spec under specs/features/ (interactive if omitted)
+Modes:
+  <feature-spec-name>   Execute tasks from an existing spec (interactive if omitted)
+  --issue <number>      Generate specs from a [PRD] GitHub issue, review, then execute
+  --discover            Find all open [PRD] issues, prompt for parallel/sequential
 
 Prerequisites:
   claude    Claude Code CLI
@@ -25,11 +29,9 @@ Prerequisites:
   pnpm      Package manager
   git       With a configured remote
 
-Expected project structure:
-  specs/features/<name>/tasks.json    Task definitions with dependencies
-  .claude/settings.autonomous.json    Autonomous permissions/hooks
-
 Pipeline steps:
+  0. (--issue/--discover) Generate specs from PRD, review via spec-reviewer
+     agent, refine until approved or max iterations reached
   1. Swap settings.json to autonomous mode (restored on exit)
   2. Reconcile staging with develop (create if needed, ff or merge if behind)
   2.5 Deploy quality gate workflow to .github/workflows/ if missing
@@ -54,70 +56,63 @@ Environment variables:
   MAX_CONSECUTIVE_FAILURES Max consecutive failures before stop (default: 3)
   MAX_RETRIES              Max retries per failed task (default: 2, 0 = no retry)
   MUTATION_FEEDBACK        Enable mutation testing feedback loop (default: false)
+  MAX_SPEC_ITERATIONS      Max spec review-refine iterations (default: 3)
+  SPEC_GEN_TURNS           Turn budget for spec generation session (default: 80)
+  SPEC_PASS_THRESHOLD      Min total score for spec approval, out of 60 (default: 48)
 HELP
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  show_help
-  exit 0
-fi
+# --- Parse arguments ---
+MODE=""
+ISSUE_NUMBER=""
+SKIP_SETTINGS_SWAP=false
 
-# --- Resolve spec name ---
-if [[ $# -eq 1 ]]; then
-  SPEC_NAME="$1"
-elif [[ $# -eq 0 ]]; then
-  AVAILABLE_SPECS=()
-  for tasks_file in specs/features/*/tasks.json; do
-    [[ -f "$tasks_file" ]] || continue
-    AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
-  done
-
-  if [[ ${#AVAILABLE_SPECS[@]} -eq 0 ]]; then
-    echo "No feature specs found in specs/features/."
-    echo "Create a spec first (try the prd-to-spec skill)."
-    exit 1
-  fi
-
-  if [[ ${#AVAILABLE_SPECS[@]} -eq 1 ]]; then
-    SPEC_NAME="${AVAILABLE_SPECS[0]}"
-    read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
-    if [[ "$confirm" =~ ^[Nn] ]]; then
-      echo "Aborted."
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
       exit 0
-    fi
-  else
-    echo "Available feature specs:"
-    for i in "${!AVAILABLE_SPECS[@]}"; do
-      task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
-      echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
-    done
-    echo ""
-    read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
-    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
-      echo "Invalid selection."
+      ;;
+    --issue)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --issue requires an issue number."
+        exit 1
+      fi
+      MODE="issue"
+      ISSUE_NUMBER="$2"
+      shift 2
+      ;;
+    --discover)
+      MODE="discover"
+      shift
+      ;;
+    --skip-settings-swap)
+      SKIP_SETTINGS_SWAP=true
+      shift
+      ;;
+    -*)
+      echo "Unknown flag: $1"
+      echo "Run with --help for usage."
       exit 1
-    fi
-    SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
-  fi
-else
-  echo "Usage: $0 [<feature-spec-name>]"
-  echo "Run with --help for more information."
-  exit 1
+      ;;
+    *)
+      MODE="named"
+      SPEC_NAME="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$MODE" ]]; then
+  MODE="interactive"
 fi
 
-SPEC_DIR="specs/features/$SPEC_NAME"
-TASKS_FILE="$SPEC_DIR/tasks.json"
+# --- Spec generation defaults ---
+MAX_SPEC_ITERATIONS=${MAX_SPEC_ITERATIONS:-3}
+SPEC_GEN_TURNS=${SPEC_GEN_TURNS:-80}
+SPEC_PASS_THRESHOLD=${SPEC_PASS_THRESHOLD:-48}
 
-# --- Circuit breaker defaults (override via env vars) ---
-MAX_TASKS=${MAX_TASKS:-20}
-MAX_MINUTES=${MAX_MINUTES:-360}
-MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
-MAX_RETRIES=${MAX_RETRIES:-2}
-PIPELINE_START=$(date +%s)
-TASKS_RUN=0
-CONSECUTIVE_FAILURES=0
-
-# --- Settings swap with trap ---
+# --- Settings swap with trap (early, so spec generation has autonomous permissions) ---
 SETTINGS_LOCAL="$SCRIPT_DIR/settings.local.json"
 SETTINGS_LOCAL_BAK="$SCRIPT_DIR/settings.local.json.factory-bak"
 SETTINGS_AUTO="$SCRIPT_DIR/settings.autonomous.json"
@@ -126,6 +121,12 @@ STATUS_FILE=""
 PR_FILE=""
 
 cleanup() {
+  if [[ "$SKIP_SETTINGS_SWAP" == "true" ]]; then
+    # Child process — don't touch settings, parent manages them
+    [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
+    [[ -n "$PR_FILE" ]] && rm -f "$PR_FILE"
+    return
+  fi
   if [[ -f "$SETTINGS_LOCAL_BAK" ]]; then
     mv "$SETTINGS_LOCAL_BAK" "$SETTINGS_LOCAL"
     echo "Settings restored."
@@ -138,16 +139,400 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -f "$SETTINGS_AUTO" ]]; then
-  echo "Error: settings.autonomous.json not found at $SETTINGS_AUTO"
-  exit 1
+if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
+  if [[ ! -f "$SETTINGS_AUTO" ]]; then
+    echo "Error: settings.autonomous.json not found at $SETTINGS_AUTO"
+    exit 1
+  fi
+
+  if [[ -f "$SETTINGS_LOCAL" ]]; then
+    cp "$SETTINGS_LOCAL" "$SETTINGS_LOCAL_BAK"
+  fi
+  cp "$SETTINGS_AUTO" "$SETTINGS_LOCAL"
+  echo "Settings swapped to autonomous mode."
 fi
 
-if [[ -f "$SETTINGS_LOCAL" ]]; then
-  cp "$SETTINGS_LOCAL" "$SETTINGS_LOCAL_BAK"
-fi
-cp "$SETTINGS_AUTO" "$SETTINGS_LOCAL"
-echo "Settings swapped to autonomous mode."
+# --- Helpers ---
+slugify_title() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/\[prd\] *//' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//'
+}
+
+# --- Spec generation + review (Phase 0) ---
+generate_and_review_spec() {
+  local issue_number=$1
+  local issue_json
+  issue_json=$(gh issue view "$issue_number" --json title,body)
+  local issue_title
+  issue_title=$(echo "$issue_json" | jq -r '.title')
+  local issue_body
+  issue_body=$(echo "$issue_json" | jq -r '.body')
+
+  SPEC_NAME=$(slugify_title "$issue_title")
+  if [[ -z "$SPEC_NAME" ]]; then
+    echo "Error: could not derive spec name from title '$issue_title'. Add a descriptive title after [PRD]."
+    return 1
+  fi
+  SPEC_DIR="specs/features/$SPEC_NAME"
+  TASKS_FILE="$SPEC_DIR/tasks.json"
+
+  echo "=== Generating spec from issue #$issue_number: $issue_title ==="
+  echo "  Spec name: $SPEC_NAME"
+
+  local log_dir="logs/$(date +%Y%m%d-%H%M%S)-spec-gen-$SPEC_NAME"
+  mkdir -p "$log_dir"
+
+  # Read prd-to-spec skill and modify for autonomous use
+  local skill_path="$SCRIPT_DIR/skills/prd-to-spec/SKILL.md"
+  if [[ ! -f "$skill_path" ]]; then
+    echo "Error: prd-to-spec skill not found at $skill_path"
+    return 1
+  fi
+
+  # Strip YAML frontmatter from skill
+  local skill_body
+  skill_body=$(sed '1,/^---$/d' "$skill_path" | sed '1,/^---$/d')
+
+  local log_file="$log_dir/spec-gen.json"
+
+  # Build prompt in a temp file (skill body contains backticks that break double-quoted strings)
+  local prompt_file
+  prompt_file=$(mktemp /tmp/factory-prompt.XXXXXX)
+
+  cat > "$prompt_file" << __FACTORY_SPEC_GEN_PROMPT__
+You are generating implementation specs from a PRD stored in a GitHub issue.
+
+## PRD (from issue #$issue_number)
+
+**Title:** $issue_title
+
+$issue_body
+
+---
+
+## Instructions
+
+Follow these spec-generation instructions. IMPORTANT modifications:
+- For step 1: the PRD is provided above, skip searching for issues.
+- For step 5 (quiz the user): SKIP this step. Use your best judgment for granularity.
+  A spec-reviewer agent will review your output separately.
+- For step 8 (create tasks): ALWAYS create tasks.json. Do not ask for confirmation.
+- Write metadata.json with: { "prd_issue": $issue_number }
+
+$skill_body
+
+---
+
+## Review loop
+
+After generating all spec files and tasks.json, you MUST spawn the spec-reviewer agent
+(via the Agent tool with subagent_type 'spec-reviewer') to review your work. Pass it:
+  "Review the spec in $SPEC_DIR. Read all .md files and tasks.json.
+   The pass threshold for this review is $SPEC_PASS_THRESHOLD/60. Return your verdict."
+
+The reviewer has a FRESH context and will catch issues you missed.
+
+If the reviewer returns NEEDS_REVISION:
+1. Read the blocking issues and findings carefully
+2. Fix all blocking issues (these are non-negotiable)
+3. Address suggestions for any dimension scoring below 8
+4. Do NOT change parts that scored 8 or above unless they have blocking issues
+5. Re-spawn the spec-reviewer agent to review the updated specs
+6. Repeat until the reviewer returns PASS or you have done $MAX_SPEC_ITERATIONS review iterations
+
+Do NOT declare success until the reviewer returns a PASS verdict.
+If after $MAX_SPEC_ITERATIONS iterations the reviewer still returns NEEDS_REVISION,
+DELETE tasks.json (run: rm $TASKS_FILE) before stopping. Report the final review findings.
+The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.
+__FACTORY_SPEC_GEN_PROMPT__
+
+  claude -p --model opus "$(cat "$prompt_file")" \
+    --max-turns "$SPEC_GEN_TURNS" \
+    --output-format json > "$log_file" 2>"$log_dir/spec-gen.stderr.log" || true
+
+  rm -f "$prompt_file"
+
+  local cost
+  cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
+  echo "  Spec generation cost: \$$cost"
+
+  # Validate output
+  if [[ ! -f "$TASKS_FILE" ]]; then
+    echo "=== Spec generation produced no tasks.json, retrying with more turns ==="
+    local retry_turns=$((SPEC_GEN_TURNS + 20))
+    log_file="$log_dir/spec-gen.retry.json"
+
+    prompt_file=$(mktemp /tmp/factory-prompt.XXXXXX)
+    cat > "$prompt_file" << __FACTORY_SPEC_RETRY__
+You are generating implementation specs from a PRD. A previous attempt failed to produce tasks.json.
+
+## PRD (from issue #$issue_number)
+
+**Title:** $issue_title
+
+$issue_body
+
+---
+
+## Instructions
+
+$skill_body
+
+CRITICAL: You MUST create the directory $SPEC_DIR and write:
+1. Spec .md files for each vertical slice
+2. tasks.json with all decomposed tasks
+3. metadata.json with { "prd_issue": $issue_number }
+
+Modifications:
+- Step 1: PRD is above, skip issue search
+- Step 5: Skip user quiz, use best judgment
+- Step 8: Always create tasks.json
+
+After generating, spawn the spec-reviewer agent (subagent_type 'spec-reviewer') to review
+your work. Pass it: "Review the spec in $SPEC_DIR. Read all .md files and tasks.json.
+The pass threshold for this review is $SPEC_PASS_THRESHOLD/60. Return your verdict."
+Fix blocking issues and re-review until PASS or $MAX_SPEC_ITERATIONS iterations.
+If review never passes, DELETE tasks.json (run: rm $TASKS_FILE) before stopping.
+__FACTORY_SPEC_RETRY__
+
+    claude -p --model opus "$(cat "$prompt_file")" \
+      --max-turns "$retry_turns" \
+      --output-format json > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log" || true
+
+    rm -f "$prompt_file"
+
+    local retry_cost
+    retry_cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
+    echo "  Retry cost: \$$retry_cost"
+  fi
+
+  # Final validation
+  if [[ ! -f "$TASKS_FILE" ]]; then
+    echo "=== SPEC GENERATION FAILED: no tasks.json after 2 attempts ==="
+    gh issue comment "$issue_number" --body "Spec generation failed after 2 attempts — no tasks.json produced. Manual intervention required." || true
+    gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
+    return 1
+  fi
+
+  if ! jq empty "$TASKS_FILE" 2>/dev/null; then
+    echo "=== SPEC GENERATION FAILED: tasks.json is not valid JSON ==="
+    gh issue comment "$issue_number" --body "Spec generation produced invalid tasks.json. Manual intervention required." || true
+    gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
+    return 1
+  fi
+
+  local task_count
+  task_count=$(jq 'length' "$TASKS_FILE")
+  if [[ "$task_count" -eq 0 ]]; then
+    echo "=== SPEC GENERATION FAILED: tasks.json is empty ==="
+    gh issue comment "$issue_number" --body "Spec generation produced an empty tasks.json. Manual intervention required." || true
+    gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
+    return 1
+  fi
+
+  echo "=== Spec generation complete: $task_count tasks in $SPEC_DIR ==="
+}
+
+# --- Multi-PRD dispatch ---
+sequential_execution() {
+  local issue_list="$1"
+  local succeeded=0
+  local failed=0
+
+  while IFS=$'\t' read -r issue_num title; do
+    echo ""
+    echo "========================================"
+    echo "Processing PRD issue #$issue_num: $title"
+    echo "========================================"
+    if "$0" --issue "$issue_num" --skip-settings-swap; then
+      succeeded=$((succeeded + 1))
+    else
+      failed=$((failed + 1))
+      echo "Pipeline failed for issue #$issue_num."
+    fi
+  done <<< "$issue_list"
+
+  echo ""
+  echo "=== Sequential execution complete: $succeeded succeeded, $failed failed ==="
+}
+
+parallel_worktree_execution() {
+  local issue_list="$1"
+  local pids=()
+  local worktrees=()
+  local issues=()
+
+  # Ensure staging branch ref exists for worktree base (staging setup runs later in main flow)
+  git fetch origin
+  if ! git show-ref --verify --quiet refs/heads/staging; then
+    if git show-ref --verify --quiet refs/remotes/origin/staging; then
+      git branch staging origin/staging
+    elif git show-ref --verify --quiet refs/heads/develop; then
+      git branch staging develop
+    else
+      git branch staging HEAD
+    fi
+  fi
+
+  while IFS=$'\t' read -r issue_num title; do
+    local slug
+    slug=$(slugify_title "$title")
+    local worktree_path="../factory-$slug"
+
+    if [[ -d "$worktree_path" ]]; then
+      echo "Worktree $worktree_path already exists (duplicate slug?), skipping issue #$issue_num."
+      continue
+    fi
+
+    echo "Creating worktree for issue #$issue_num at $worktree_path..."
+    if ! git worktree add "$worktree_path" staging; then
+      echo "Failed to create worktree for issue #$issue_num, skipping."
+      continue
+    fi
+    worktrees+=("$worktree_path")
+    issues+=("$issue_num")
+
+    # Launch factory in background (skip settings swap — parent manages settings)
+    (cd "$worktree_path" && .claude/run-factory.sh --issue "$issue_num") &
+    pids+=($!)
+    echo "  Launched PID ${pids[-1]}"
+  done <<< "$issue_list"
+
+  # Wait for all
+  local failed=0
+  local succeeded=0
+  for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then
+      succeeded=$((succeeded + 1))
+      echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) succeeded."
+    else
+      failed=$((failed + 1))
+      echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) failed."
+    fi
+  done
+
+  # Cleanup worktrees
+  for wt in "${worktrees[@]}"; do
+    git worktree remove "$wt" 2>/dev/null || true
+  done
+
+  echo ""
+  echo "=== Parallel execution complete: $succeeded succeeded, $failed failed ==="
+}
+
+discover_and_process_prds() {
+  local prd_issues
+  prd_issues=$(gh issue list --search "[PRD] in:title" --state open --json number,title \
+    -q '.[] | "\(.number)\t\(.title)"' 2>/dev/null || true)
+
+  if [[ -z "$prd_issues" ]]; then
+    echo "No open [PRD] issues found."
+    exit 0
+  fi
+
+  local count
+  count=$(echo "$prd_issues" | wc -l | tr -d ' ')
+
+  if [[ "$count" -eq 1 ]]; then
+    local single_issue
+    single_issue=$(echo "$prd_issues" | cut -f1)
+    local single_title
+    single_title=$(echo "$prd_issues" | cut -f2)
+    echo "Found one PRD issue: #$single_issue — $single_title"
+    # Intentionally set outer-scope variables so caller can proceed with spec generation
+    ISSUE_NUMBER="$single_issue"
+    MODE="issue"
+    return
+  fi
+
+  echo "Found $count PRD issues:"
+  echo "$prd_issues" | while IFS=$'\t' read -r num title; do
+    echo "  #$num — $title"
+  done
+  echo ""
+  echo "How to process?"
+  echo "  1) Sequential — process one at a time"
+  echo "  2) Parallel — each PRD in its own worktree"
+  read -rp "Choose [1/2]: " mode < /dev/tty
+
+  case "$mode" in
+    2)
+      parallel_worktree_execution "$prd_issues"
+      exit $?
+      ;;
+    *)
+      sequential_execution "$prd_issues"
+      exit $?
+      ;;
+  esac
+}
+
+# --- Resolve spec name based on mode ---
+case "$MODE" in
+  discover)
+    discover_and_process_prds
+    # If we get here, discover found exactly 1 issue and set MODE=issue
+    generate_and_review_spec "$ISSUE_NUMBER" || {
+      echo "Spec generation failed. Exiting."
+      exit 1
+    }
+    ;;
+  issue)
+    generate_and_review_spec "$ISSUE_NUMBER" || {
+      echo "Spec generation failed. Exiting."
+      exit 1
+    }
+    ;;
+  interactive)
+    AVAILABLE_SPECS=()
+    for tasks_file in specs/features/*/tasks.json; do
+      [[ -f "$tasks_file" ]] || continue
+      AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
+    done
+
+    if [[ ${#AVAILABLE_SPECS[@]} -eq 0 ]]; then
+      echo "No feature specs found in specs/features/."
+      echo "Create a spec first (try the prd-to-spec skill or --issue flag)."
+      exit 1
+    fi
+
+    if [[ ${#AVAILABLE_SPECS[@]} -eq 1 ]]; then
+      SPEC_NAME="${AVAILABLE_SPECS[0]}"
+      read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
+      if [[ "$confirm" =~ ^[Nn] ]]; then
+        echo "Aborted."
+        exit 0
+      fi
+    else
+      echo "Available feature specs:"
+      for i in "${!AVAILABLE_SPECS[@]}"; do
+        task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
+        echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
+      done
+      echo ""
+      read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
+      if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
+        echo "Invalid selection."
+        exit 1
+      fi
+      SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
+    fi
+    ;;
+  named)
+    # SPEC_NAME already set from argument
+    ;;
+esac
+
+SPEC_DIR="specs/features/$SPEC_NAME"
+TASKS_FILE="$SPEC_DIR/tasks.json"
+
+# --- Circuit breaker defaults (override via env vars) ---
+MAX_TASKS=${MAX_TASKS:-20}
+MAX_MINUTES=${MAX_MINUTES:-360}
+MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
+MAX_RETRIES=${MAX_RETRIES:-2}
+PIPELINE_START=$(date +%s)
+TASKS_RUN=0
+CONSECUTIVE_FAILURES=0
 
 # --- Smart staging functions ---
 reconcile_staging_with_develop() {
@@ -336,7 +721,10 @@ LOG_DIR="logs/$(date +%Y%m%d-%H%M%S)-$SPEC_NAME"
 mkdir -p "$LOG_DIR"
 
 # Topological sort of tasks by dependency order
-TASK_IDS=$(jq -r '
+TASK_IDS=()
+while IFS= read -r tid; do
+  TASK_IDS+=("$tid")
+done < <(jq -r '
   def topo:
     . as $tasks |
     [.[] | select(.depends_on | length == 0) | .task_id] as $ready |
@@ -346,7 +734,7 @@ TASK_IDS=$(jq -r '
   topo | .[]
 ' "$TASKS_FILE")
 
-for TASK_ID in $TASK_IDS; do
+for TASK_ID in "${TASK_IDS[@]}"; do
   echo ""
 
   # --- Circuit breakers ---
@@ -603,6 +991,7 @@ $TESTS" \
 
       if [[ -n "$PR_URL" ]]; then
         PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+        gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
         echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
         echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, cost \$$TASK_COST) ==="
         TASK_OUTCOME="ok"
@@ -712,7 +1101,7 @@ if [[ -f "$METADATA_FILE" ]]; then
       echo "=== Cleaning up completed feature artifacts ==="
 
       # Delete local feat/ branches
-      for tid in $TASK_IDS; do
+      for tid in "${TASK_IDS[@]}"; do
         branch="feat/$tid"
         if git show-ref --verify --quiet "refs/heads/$branch"; then
           git branch -D "$branch" 2>/dev/null && echo "  Deleted local branch: $branch"
@@ -720,7 +1109,7 @@ if [[ -f "$METADATA_FILE" ]]; then
       done
 
       # Delete remote feat/ branches (may already be gone via GitHub auto-delete)
-      for tid in $TASK_IDS; do
+      for tid in "${TASK_IDS[@]}"; do
         branch="feat/$tid"
         if git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
           git push origin --delete "$branch" 2>/dev/null \
