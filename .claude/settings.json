@@ -239,7 +239,7 @@
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
     ]
   },
-  "model": "sonnet",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
