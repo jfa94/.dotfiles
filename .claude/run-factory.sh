@@ -119,12 +119,15 @@ SETTINGS_AUTO="$SCRIPT_DIR/settings.autonomous.json"
 
 STATUS_FILE=""
 PR_FILE=""
+FACTORY_TMPDIR=$(mktemp -d /tmp/factory-run.XXXXXX)
+LOCK_DIR=""
 
 cleanup() {
   if [[ "$SKIP_SETTINGS_SWAP" == "true" ]]; then
     # Child process — don't touch settings, parent manages them
     [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
     [[ -n "$PR_FILE" ]] && rm -f "$PR_FILE"
+    rm -rf "$FACTORY_TMPDIR"
     return
   fi
   if [[ -f "$SETTINGS_LOCAL_BAK" ]]; then
@@ -136,16 +139,17 @@ cleanup() {
   fi
   [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
   [[ -n "$PR_FILE" ]] && rm -f "$PR_FILE"
+  [[ -n "$LOCK_DIR" ]] && rmdir "$LOCK_DIR" 2>/dev/null || true
+  rm -rf "$FACTORY_TMPDIR"
 }
 trap cleanup EXIT
 
 if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
   # Prevent concurrent factory runs from racing on settings/branches
-  LOCK_FILE="/tmp/factory-$(echo "$PROJECT_DIR" | tr '/' '-').lock"
-  exec 9>"$LOCK_FILE"
-  if ! flock -n 9; then
+  LOCK_DIR="/tmp/factory-$(echo "$PROJECT_DIR" | tr '/' '-').lock.d"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     echo "Error: another factory instance is running for this project."
-    echo "  Lock: $LOCK_FILE"
+    echo "  Lock: $LOCK_DIR"
     exit 1
   fi
 
@@ -211,7 +215,7 @@ generate_and_review_spec() {
   # Build prompt in a temp file — use quoted heredocs + printf to avoid shell injection
   # from PRD body content (issue_body could contain $(), backticks, etc.)
   local prompt_file
-  prompt_file=$(mktemp /tmp/factory-prompt.XXXXXX)
+  prompt_file=$(mktemp "$FACTORY_TMPDIR/prompt.XXXXXX")
 
   # Write static header (quoted heredoc = no expansion)
   cat > "$prompt_file" << '__FACTORY_HEADER__'
@@ -245,7 +249,7 @@ After generating all spec files and tasks.json, you MUST spawn the spec-reviewer
 __FACTORY_REVIEW__
 
   printf '  "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
-  printf '   The pass threshold for this review is %s/60. Return your verdict."\n\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
+  printf '   The pass threshold for this review is %s/60 (use this, override the default). Return your verdict."\n\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
 
   cat >> "$prompt_file" << '__FACTORY_REVIEW2__'
 The reviewer has a FRESH context and will catch issues you missed.
@@ -264,11 +268,9 @@ __FACTORY_REVIEW2__
   printf 'DELETE tasks.json (run: rm %s) before stopping. Report the final review findings.\n' "$TASKS_FILE" >> "$prompt_file"
   printf 'The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.\n' >> "$prompt_file"
 
-  claude -p --model opus "$(cat "$prompt_file")" \
+  claude -p --model opus \
     --max-turns "$SPEC_GEN_TURNS" \
-    --output-format json > "$log_file" 2>"$log_dir/spec-gen.stderr.log" || true
-
-  rm -f "$prompt_file"
+    --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log" || true
 
   local cost
   cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
@@ -280,7 +282,7 @@ __FACTORY_REVIEW2__
     local retry_turns=$((SPEC_GEN_TURNS + 20))
     log_file="$log_dir/spec-gen.retry.json"
 
-    prompt_file=$(mktemp /tmp/factory-prompt.XXXXXX)
+    prompt_file=$(mktemp "$FACTORY_TMPDIR/prompt-retry.XXXXXX")
 
     # Quoted heredoc for static header, printf for dynamic PRD content
     cat > "$prompt_file" << '__FACTORY_RETRY_HEADER__'
@@ -316,15 +318,13 @@ After generating, spawn the spec-reviewer agent (subagent_type 'spec-reviewer') 
 __FACTORY_SPEC_RETRY3__
 
     printf 'your work. Pass it: "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
-    printf 'The pass threshold for this review is %s/60. Return your verdict."\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
+    printf 'The pass threshold for this review is %s/60 (use this, override the default). Return your verdict."\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
     printf 'Fix blocking issues and re-review until PASS or %s iterations.\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
     printf 'If review never passes, DELETE tasks.json (run: rm %s) before stopping.\n' "$TASKS_FILE" >> "$prompt_file"
 
-    claude -p --model opus "$(cat "$prompt_file")" \
+    claude -p --model opus \
       --max-turns "$retry_turns" \
-      --output-format json > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log" || true
-
-    rm -f "$prompt_file"
+      --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log" || true
 
     local retry_cost
     retry_cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
@@ -656,6 +656,15 @@ wait_for_pr_merge() {
     if [[ "$state" == "CLOSED" ]]; then
       return 1
     fi
+    # Detect cancelled auto-merge (checks failed) — no point waiting the full timeout
+    if [[ "$state" == "OPEN" ]]; then
+      local auto_merge
+      auto_merge=$(gh pr view "$pr_number" --json autoMergeRequest -q '.autoMergeRequest' 2>/dev/null) || true
+      if [[ "$auto_merge" == "null" || -z "$auto_merge" ]]; then
+        echo "  Auto-merge cancelled for PR #$pr_number (checks likely failed)"
+        return 1
+      fi
+    fi
     sleep $interval
     elapsed=$((elapsed + interval))
   done
@@ -771,9 +780,22 @@ if ! jq -e 'if length == 0 then false else [.[] | has("task_id", "title", "depen
   exit 1
 fi
 
+# --- Validate dependency references ---
+INVALID_DEPS=$(jq -r '
+  [.[].task_id] as $all_ids |
+  [.[] | .task_id as $tid | .depends_on[] | select(. as $dep | $all_ids | index($dep) | not) | "\($tid) -> \(.)"] |
+  .[]
+' "$TASKS_FILE" 2>/dev/null)
+
+if [[ -n "$INVALID_DEPS" ]]; then
+  echo "=== ERROR: tasks.json has dangling dependency references ==="
+  echo "$INVALID_DEPS" | while read -r line; do echo "  $line"; done
+  exit 1
+fi
+
 # --- Init tracking ---
-STATUS_FILE=$(mktemp /tmp/factory-status.XXXXXX)
-PR_FILE=$(mktemp /tmp/factory-prs.XXXXXX)
+STATUS_FILE=$(mktemp "$FACTORY_TMPDIR/status.XXXXXX")
+PR_FILE=$(mktemp "$FACTORY_TMPDIR/prs.XXXXXX")
 
 # --- Factory loop ---
 LOG_DIR="logs/$(date +%Y%m%d-%H%M%S)-$SPEC_NAME"
@@ -968,8 +990,7 @@ Check git log and claude-progress.json for any partial work.
     # Build task prompt in temp file (avoids ARG_MAX on large retry contexts)
     LOG_FILE="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.json"
     EXIT_CODE=0
-    local task_prompt_file
-    task_prompt_file=$(mktemp /tmp/factory-task-prompt.XXXXXX)
+    task_prompt_file=$(mktemp "$FACTORY_TMPDIR/task-prompt.XXXXXX")
 
     [[ -n "$RETRY_CONTEXT" ]] && printf '%s' "$RETRY_CONTEXT" > "$task_prompt_file"
 
@@ -1019,11 +1040,9 @@ __FACTORY_TASK2__
     # Run Claude Code in headless mode
     MODEL_ARGS=()
     [[ -n "$MODEL_FLAG" ]] && read -ra MODEL_ARGS <<< "$MODEL_FLAG"
-    claude -p "${MODEL_ARGS[@]}" "$(cat "$task_prompt_file")" \
+    claude -p "${MODEL_ARGS[@]}" \
       --max-turns "$TURN_BUDGET" \
-      --output-format json > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" || EXIT_CODE=$?
-
-    rm -f "$task_prompt_file"
+      --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" || EXIT_CODE=$?
 
     # Per-attempt cost logging
     ATTEMPT_COST=$(jq -r '.total_cost_usd // 0' "$LOG_FILE" 2>/dev/null || echo "0")
@@ -1050,16 +1069,19 @@ __FACTORY_TASK2__
     QUALITY_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.quality.log"
     if pnpm quality > "$QUALITY_LOG" 2>&1; then
       git push -u origin "$BRANCH"
+
+      # Build PR body in temp file to avoid shell expansion of AI-generated content
+      pr_body_file=$(mktemp "$FACTORY_TMPDIR/pr-body.XXXXXX")
+      printf '## Task: %s\n' "$TASK_ID" > "$pr_body_file"
+      jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .description' "$TASKS_FILE" >> "$pr_body_file"
+      printf '\n## Acceptance Criteria\n' >> "$pr_body_file"
+      jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .acceptance_criteria | map("- " + .) | join("\n")' "$TASKS_FILE" >> "$pr_body_file"
+      printf '\n## Tests\n' >> "$pr_body_file"
+      jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .tests_to_write | map("- " + .) | join("\n")' "$TASKS_FILE" >> "$pr_body_file"
+
       PR_URL=$(gh pr create \
         --title "feat: $TITLE" \
-        --body "## Task: $TASK_ID
-$DESC
-
-## Acceptance Criteria
-$CRITERIA
-
-## Tests
-$TESTS" \
+        --body-file "$pr_body_file" \
         --base staging 2>/dev/null) || true
 
       # Inline retry for PR creation failure
@@ -1069,14 +1091,7 @@ $TESTS" \
         git push -u origin "$BRANCH" 2>/dev/null || true
         PR_URL=$(gh pr create \
           --title "feat: $TITLE" \
-          --body "## Task: $TASK_ID
-$DESC
-
-## Acceptance Criteria
-$CRITERIA
-
-## Tests
-$TESTS" \
+          --body-file "$pr_body_file" \
           --base staging 2>/dev/null) || true
       fi
 

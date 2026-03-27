@@ -229,14 +229,14 @@ if [[ -f "$TARGET/package.json" ]]; then
   done
 
   if [[ -f "$DOTFILES_DIR/package.scripts.json" ]]; then
-    node -e "
+    TARGET_PATH="$TARGET" DOTFILES_PATH="$DOTFILES_DIR" node -e "
       const fs = require('fs');
-      const pkg = JSON.parse(fs.readFileSync('$TARGET/package.json', 'utf8'));
-      const scripts = JSON.parse(fs.readFileSync('$DOTFILES_DIR/package.scripts.json', 'utf8'));
-      pkg.scripts = scripts.scripts;
-      fs.writeFileSync('$TARGET/package.json', JSON.stringify(pkg, null, 2) + '\n');
+      const pkg = JSON.parse(fs.readFileSync(process.env.TARGET_PATH + '/package.json', 'utf8'));
+      const scripts = JSON.parse(fs.readFileSync(process.env.DOTFILES_PATH + '/package.scripts.json', 'utf8'));
+      pkg.scripts = Object.assign({}, pkg.scripts || {}, scripts.scripts);
+      fs.writeFileSync(process.env.TARGET_PATH + '/package.json', JSON.stringify(pkg, null, 2) + '\n');
     "
-    echo "Updated scripts in package.json"
+    echo "Merged scripts into package.json"
   else
     echo "Warning: package.scripts.json not found, skipping scripts update"
   fi
