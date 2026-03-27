@@ -12,8 +12,8 @@
         "isolatedModules": true,
         "jsx": "preserve",
         "incremental": true,
-        "plugins": [{ "name": "next" }],
-        "paths": { "@/*": ["./src/*"] },
+        "plugins": [{"name": "next"}],
+        "paths": {"@/*": ["./src/*"]},
         "target": "ES2022",
 
         // Strictness — everything on

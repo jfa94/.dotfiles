@@ -320,7 +320,7 @@
     "supabase@claude-plugins-official": true,
     "figma@claude-plugins-official": true,
     "posthog@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true
   },

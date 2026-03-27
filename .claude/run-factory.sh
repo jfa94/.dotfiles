@@ -109,7 +109,7 @@ TASKS_FILE="$SPEC_DIR/tasks.json"
 
 # --- Circuit breaker defaults (override via env vars) ---
 MAX_TASKS=${MAX_TASKS:-20}
-MAX_MINUTES=${MAX_MINUTES:-120}
+MAX_MINUTES=${MAX_MINUTES:-360}
 MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
 PIPELINE_START=$(date +%s)
 TASKS_RUN=0
@@ -415,12 +415,12 @@ for TASK_ID in $TASK_IDS; do
   CRITERIA=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .acceptance_criteria | join(\"; \")" "$TASKS_FILE")
   TESTS=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .tests_to_write | join(\"; \")" "$TASKS_FILE")
 
-  # Model routing by task complexity
+  # Model + turn-budget routing by task complexity
   COMPLEXITY=$(jq -r ".[] | select(.task_id==\"$TASK_ID\") | .complexity // \"standard\"" "$TASKS_FILE")
   case "$COMPLEXITY" in
-    simple)  MODEL_FLAG="--model haiku" ;;
-    complex) MODEL_FLAG="--model opus" ;;
-    *)       MODEL_FLAG="" ;;
+    simple)  MODEL_FLAG="--model haiku"; TURN_BUDGET=40 ;;
+    complex) MODEL_FLAG="--model opus";  TURN_BUDGET=80 ;;
+    *)       MODEL_FLAG="";              TURN_BUDGET=60 ;;
   esac
 
   # Export task ID for audit log correlation
@@ -471,7 +471,7 @@ you MUST still leave the environment in a clean state:
 - Update claude-progress.json with status 'incomplete' and notes on
   what remains to be done
 - Do NOT leave broken code on the branch" \
-    --max-turns 40 \
+    --max-turns "$TURN_BUDGET" \
     --output-format json > "$LOG_DIR/$TASK_ID.json" 2>&1 || EXIT_CODE=$?
 
   if [ $EXIT_CODE -eq 0 ]; then
