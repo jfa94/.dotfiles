@@ -1,6 +1,9 @@
 # MacOS
 .DS_Store
 
+# Git worktrees
+.worktrees/
+
 # Claude Code
 .claude/worktrees/
 .claude/plugins/
