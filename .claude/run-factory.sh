@@ -50,8 +50,9 @@ Logs are written to logs/<timestamp>-<spec-name>/.
 
 Environment variables:
   MAX_TASKS                Max tasks before circuit breaker (default: 20)
-  MAX_MINUTES              Max pipeline runtime in minutes (default: 120)
+  MAX_MINUTES              Max pipeline runtime in minutes (default: 360)
   MAX_CONSECUTIVE_FAILURES Max consecutive failures before stop (default: 3)
+  MAX_RETRIES              Max retries per failed task (default: 2, 0 = no retry)
   MUTATION_FEEDBACK        Enable mutation testing feedback loop (default: false)
 HELP
 }
@@ -111,6 +112,7 @@ TASKS_FILE="$SPEC_DIR/tasks.json"
 MAX_TASKS=${MAX_TASKS:-20}
 MAX_MINUTES=${MAX_MINUTES:-360}
 MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
+MAX_RETRIES=${MAX_RETRIES:-2}
 PIPELINE_START=$(date +%s)
 TASKS_RUN=0
 CONSECUTIVE_FAILURES=0
@@ -426,13 +428,83 @@ for TASK_ID in $TASK_IDS; do
   # Export task ID for audit log correlation
   export FACTORY_TASK_ID="$TASK_ID"
 
-  # Create isolated branch from staging
+  # --- Ralph loop retry ---
   BRANCH="feat/$TASK_ID"
-  git checkout -b "$BRANCH"
+  ATTEMPT=0
+  TASK_OUTCOME=""
+  FAILURE_TYPE=""
+  PREV_QUALITY_LOG=""
+  PREV_EXIT_CODE=0
+  TASK_COST=0
 
-  # Run Claude Code in headless mode
-  EXIT_CODE=0
-  claude -p $MODEL_FLAG "You are implementing task '$TITLE' for this project.
+  while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
+    ATTEMPT=$((ATTEMPT + 1))
+
+    # Time circuit breaker inside retry loop
+    ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
+    if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
+      echo "=== CIRCUIT BREAKER: time limit hit during retry ==="
+      TASK_OUTCOME="failed"
+      break
+    fi
+
+    if [[ $ATTEMPT -gt 1 ]]; then
+      echo "--- $TASK_ID: retry $ATTEMPT/$((MAX_RETRIES + 1)) (reason: $FAILURE_TYPE) ---"
+    fi
+
+    # Branch handling
+    if [[ $ATTEMPT -eq 1 ]]; then
+      if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+        git checkout "$BRANCH"
+        git reset --hard staging
+      else
+        git checkout -b "$BRANCH"
+      fi
+    else
+      git checkout "$BRANCH"
+      git checkout -- . 2>/dev/null || true
+      git clean -fd 2>/dev/null || true
+    fi
+
+    # Build retry context
+    RETRY_CONTEXT=""
+    if [[ $ATTEMPT -gt 1 ]]; then
+      RETRY_CONTEXT="## IMPORTANT: This is retry attempt $ATTEMPT of $((MAX_RETRIES + 1))
+
+Previous attempt failed with: $FAILURE_TYPE
+"
+      case "$FAILURE_TYPE" in
+        max_turns)
+          RETRY_CONTEXT+="The previous session ran out of turns.
+Work was committed to this branch — check git log and claude-progress.json.
+Continue from where the last session stopped. Do NOT restart from scratch.
+
+"
+          ;;
+        quality_gate)
+          QUALITY_TAIL=$(tail -40 "$PREV_QUALITY_LOG" 2>/dev/null || echo "(no output captured)")
+          RETRY_CONTEXT+="The implementation completed but pnpm quality failed afterward.
+Quality gate output (last 40 lines):
+\`\`\`
+$QUALITY_TAIL
+\`\`\`
+Fix ALL quality failures. The previous work is committed on this branch.
+
+"
+          ;;
+        agent_error)
+          RETRY_CONTEXT+="The previous session ended with an error (exit code $PREV_EXIT_CODE).
+Check git log and claude-progress.json for any partial work.
+
+"
+          ;;
+      esac
+    fi
+
+    # Run Claude Code in headless mode
+    LOG_FILE="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.json"
+    EXIT_CODE=0
+    claude -p $MODEL_FLAG "${RETRY_CONTEXT}You are implementing task '$TITLE' for this project.
 
 ## Phase 1: Orient (do this BEFORE writing any code)
 1. Run pwd to confirm your working directory
@@ -471,12 +543,33 @@ you MUST still leave the environment in a clean state:
 - Update claude-progress.json with status 'incomplete' and notes on
   what remains to be done
 - Do NOT leave broken code on the branch" \
-    --max-turns "$TURN_BUDGET" \
-    --output-format json > "$LOG_DIR/$TASK_ID.json" 2>&1 || EXIT_CODE=$?
+      --max-turns "$TURN_BUDGET" \
+      --output-format json > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" || EXIT_CODE=$?
 
-  if [ $EXIT_CODE -eq 0 ]; then
+    # Per-attempt cost logging
+    ATTEMPT_COST=$(jq -r '.total_cost_usd // 0' "$LOG_FILE" 2>/dev/null || echo "0")
+    TASK_COST=$(echo "$TASK_COST + $ATTEMPT_COST" | bc 2>/dev/null || echo "$TASK_COST")
+    echo "  Cost: \$$ATTEMPT_COST (attempt $ATTEMPT, total \$$TASK_COST)"
+
+    # Classify result — check subtype even on exit 0 (error_max_turns can return 0)
+    RESULT_SUBTYPE=$(jq -r '.subtype // "unknown"' "$LOG_FILE" 2>/dev/null || echo "unknown")
+
+    if [[ $EXIT_CODE -ne 0 || "$RESULT_SUBTYPE" == error_* ]]; then
+      FAILURE_TYPE="agent_error"
+      [[ "$RESULT_SUBTYPE" == "error_max_turns" ]] && FAILURE_TYPE="max_turns"
+      PREV_EXIT_CODE=$EXIT_CODE
+      echo "=== $TASK_ID: AGENT FAILED (exit=$EXIT_CODE, subtype=$RESULT_SUBTYPE, attempt=$ATTEMPT) ==="
+
+      if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+        continue
+      fi
+      TASK_OUTCOME="failed"
+      break
+    fi
+
     # Quality gate
-    if pnpm quality; then
+    QUALITY_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.quality.log"
+    if pnpm quality > "$QUALITY_LOG" 2>&1; then
       git push -u origin "$BRANCH"
       PR_URL=$(gh pr create \
         --title "feat: $TITLE" \
@@ -488,25 +581,51 @@ $CRITERIA
 
 ## Tests
 $TESTS" \
-        --base staging) || true
+        --base staging 2>/dev/null) || true
+
+      # Inline retry for PR creation failure
+      if [[ -z "$PR_URL" ]]; then
+        echo "  PR creation failed, retrying in 5s..."
+        sleep 5
+        git push -u origin "$BRANCH" 2>/dev/null || true
+        PR_URL=$(gh pr create \
+          --title "feat: $TITLE" \
+          --body "## Task: $TASK_ID
+$DESC
+
+## Acceptance Criteria
+$CRITERIA
+
+## Tests
+$TESTS" \
+          --base staging 2>/dev/null) || true
+      fi
 
       if [[ -n "$PR_URL" ]]; then
         PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
-        echo "${TASK_ID}=ok" >> "$STATUS_FILE"
         echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
-        echo "=== $TASK_ID: PR #$PR_NUMBER created ==="
+        echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, cost \$$TASK_COST) ==="
+        TASK_OUTCOME="ok"
       else
         echo "=== $TASK_ID: PR CREATION FAILED ==="
-        echo "${TASK_ID}=failed" >> "$STATUS_FILE"
+        TASK_OUTCOME="failed"
       fi
+      break
     else
-      echo "=== $TASK_ID: QUALITY GATE FAILED ==="
-      echo "${TASK_ID}=failed" >> "$STATUS_FILE"
+      FAILURE_TYPE="quality_gate"
+      PREV_QUALITY_LOG="$QUALITY_LOG"
+      echo "=== $TASK_ID: QUALITY GATE FAILED (attempt $ATTEMPT) ==="
+
+      if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+        continue
+      fi
+      TASK_OUTCOME="failed"
+      break
     fi
-  else
-    echo "=== $TASK_ID: AGENT FAILED (exit $EXIT_CODE) ==="
-    echo "${TASK_ID}=failed" >> "$STATUS_FILE"
-  fi
+  done
+
+  # Record final outcome (only after all retries exhausted)
+  echo "${TASK_ID}=${TASK_OUTCOME}" >> "$STATUS_FILE"
 
   # --- Consecutive failure tracking ---
   TASK_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
