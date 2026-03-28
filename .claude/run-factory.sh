@@ -214,6 +214,14 @@ generate_and_review_spec() {
   SPEC_DIR="specs/features/$SPEC_NAME"
   TASKS_FILE="$SPEC_DIR/tasks.json"
 
+  # Skip generation if spec already exists with valid tasks
+  if [[ -f "$TASKS_FILE" ]] && jq -e 'length > 0' "$TASKS_FILE" >/dev/null 2>&1; then
+    local existing_count
+    existing_count=$(jq 'length' "$TASKS_FILE")
+    echo "=== Spec already exists: $SPEC_DIR ($existing_count tasks) — skipping generation ==="
+    return 0
+  fi
+
   echo "=== Generating spec from issue #$issue_number: $issue_title ==="
   echo "  Spec name: $SPEC_NAME"
 
@@ -295,14 +303,15 @@ __FACTORY_REVIEW2__
   printf 'The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.\n' >> "$prompt_file"
 
   echo "  Running: claude -p --model opus --max-turns $SPEC_GEN_TURNS (spec generation)..."
-  claude -p --model opus \
+  (trap - EXIT; claude -p --model opus \
     --max-turns "$SPEC_GEN_TURNS" \
-    --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log" &
+    --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log") &
   spin $! "Generating spec (opus, up to $SPEC_GEN_TURNS turns)..." || true
 
-  local cost
-  cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
-  echo "  Spec generation cost: \$$cost"
+  local spec_in spec_out
+  spec_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+  spec_out=$(jq -r '.usage.output_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+  echo "  Spec generation: $(( (spec_in + 500) / 1000 ))k in / $(( (spec_out + 500) / 1000 ))k out"
 
   # Validate output
   if [[ ! -f "$TASKS_FILE" ]]; then
@@ -351,14 +360,15 @@ __FACTORY_SPEC_RETRY3__
     printf 'If review never passes, DELETE tasks.json (run: rm %s) before stopping.\n' "$TASKS_FILE" >> "$prompt_file"
 
     echo "  Running: claude -p --model opus --max-turns $retry_turns (spec generation retry)..."
-    claude -p --model opus \
+    (trap - EXIT; claude -p --model opus \
       --max-turns "$retry_turns" \
-      --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log" &
+      --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log") &
     spin $! "Generating spec — retry (opus, up to $retry_turns turns)..." || true
 
-    local retry_cost
-    retry_cost=$(jq -r '.total_cost_usd // 0' "$log_file" 2>/dev/null || echo "0")
-    echo "  Retry cost: \$$retry_cost"
+    local retry_in retry_out
+    retry_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+    retry_out=$(jq -r '.usage.output_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+    echo "  Retry: $(( (retry_in + 500) / 1000 ))k in / $(( (retry_out + 500) / 1000 ))k out"
   fi
 
   # Final validation
@@ -824,7 +834,7 @@ if [[ "$NEEDS_SETUP" == "true" ]]; then
   mkdir -p logs
 
   echo "  Running: claude -p --max-turns 20 (project scaffolding)..."
-  claude -p "You are setting up a new project for autonomous AI development.
+  (trap - EXIT; claude -p "You are setting up a new project for autonomous AI development.
 
 Read the CLAUDE.md and all spec files in specs/features/.
 
@@ -856,8 +866,8 @@ Create the following files:
 Use JSON (not Markdown) for all status tracking files. The model is less
 likely to inappropriately edit structured JSON compared to Markdown." \
     --max-turns 20 \
-    --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log &
-  spin $! "Scaffolding project (up to 20 turns)..."
+    --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log) &
+  spin $! "Scaffolding project (up to 20 turns)..." || true
 
   echo "Project setup complete. Log: logs/initialiser.json"
 fi
@@ -1021,10 +1031,13 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   PREV_QUALITY_LOG=""
   PREV_REVIEW_FINDINGS=""
   PREV_EXIT_CODE=0
-  TASK_COST=0
+  TASK_TOKENS=0
 
   while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
     ATTEMPT=$((ATTEMPT + 1))
+
+    # Ensure tmpdir still exists (defensive against background subshell cleanup)
+    [[ -d "$FACTORY_TMPDIR" ]] || FACTORY_TMPDIR=$(mktemp -d /tmp/factory-run.XXXXXX)
 
     # Time circuit breaker inside retry loop
     ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
@@ -1050,7 +1063,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     else
       git checkout "$BRANCH"
       git checkout -- . 2>/dev/null || true
-      git clean -fd 2>/dev/null || true
+      git clean -fd -e .claude/ -e specs/ 2>/dev/null || true
     fi
 
     # Build retry context
@@ -1152,18 +1165,19 @@ you MUST still leave the environment in a clean state:
 __FACTORY_TASK2__
 
     # Run Claude Code in headless mode
-    MODEL_ARGS=()
-    [[ -n "$MODEL_FLAG" ]] && read -ra MODEL_ARGS <<< "$MODEL_FLAG"
     echo "  Running: claude -p ${MODEL_FLAG:---model default} --max-turns $TURN_BUDGET (task: $TASK_ID, attempt $ATTEMPT)..."
-    claude -p "${MODEL_ARGS[@]}" \
+    # shellcheck disable=SC2086  # intentional word splitting on MODEL_FLAG
+    (trap - EXIT; claude -p $MODEL_FLAG \
       --max-turns "$TURN_BUDGET" \
-      --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log" &
+      --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log") &
     spin $! "Task $TASK_ID, attempt $ATTEMPT (up to $TURN_BUDGET turns)..." || EXIT_CODE=$?
 
-    # Per-attempt cost logging
-    ATTEMPT_COST=$(jq -r '.total_cost_usd // 0' "$LOG_FILE" 2>/dev/null || echo "0")
-    TASK_COST=$(echo "$TASK_COST + $ATTEMPT_COST" | bc 2>/dev/null || echo "$TASK_COST")
-    echo "  Cost: \$$ATTEMPT_COST (attempt $ATTEMPT, total \$$TASK_COST)"
+    # Per-attempt token logging
+    ATTEMPT_IN=$(jq -r '.usage.input_tokens // 0' "$LOG_FILE" 2>/dev/null || echo "0")
+    ATTEMPT_OUT=$(jq -r '.usage.output_tokens // 0' "$LOG_FILE" 2>/dev/null || echo "0")
+    ATTEMPT_TOKENS=$((ATTEMPT_IN + ATTEMPT_OUT))
+    TASK_TOKENS=$((TASK_TOKENS + ATTEMPT_TOKENS))
+    echo "  Tokens: $(( (ATTEMPT_TOKENS + 500) / 1000 ))k (attempt $ATTEMPT, total $(( (TASK_TOKENS + 500) / 1000 ))k)"
 
     # Classify result — check subtype even on exit 0 (error_max_turns can return 0)
     RESULT_SUBTYPE=$(jq -r '.subtype // "unknown"' "$LOG_FILE" 2>/dev/null || echo "unknown")
@@ -1258,14 +1272,16 @@ __REVIEW_PROMPT__
           "$TITLE" "$BRANCH" "$CHANGED_FILES" "$DIFF_STAT" >> "$review_prompt_file"
 
         REVIEW_EXIT=0
-        claude -p --model sonnet \
+        (trap - EXIT; claude -p --model sonnet \
           --max-turns "$REVIEW_TURNS" \
-          --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log" &
+          --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log") &
         spin $! "Code review (sonnet, up to $REVIEW_TURNS turns)..." || REVIEW_EXIT=$?
 
-        REVIEW_COST=$(jq -r '.total_cost_usd // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
-        TASK_COST=$(echo "$TASK_COST + $REVIEW_COST" | bc 2>/dev/null || echo "$TASK_COST")
-        echo "  Review cost: \$$REVIEW_COST (task total \$$TASK_COST)"
+        REVIEW_IN=$(jq -r '.usage.input_tokens // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
+        REVIEW_OUT=$(jq -r '.usage.output_tokens // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
+        REVIEW_TOKENS=$((REVIEW_IN + REVIEW_OUT))
+        TASK_TOKENS=$((TASK_TOKENS + REVIEW_TOKENS))
+        echo "  Review: $(( (REVIEW_TOKENS + 500) / 1000 ))k tokens (task total $(( (TASK_TOKENS + 500) / 1000 ))k)"
 
         REVIEW_TEXT=$(jq -r '.result // ""' "$REVIEW_LOG" 2>/dev/null || echo "")
 
@@ -1349,7 +1365,7 @@ $REVIEW_TEXT
           gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
         fi
         echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
-        echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, cost \$$TASK_COST) ==="
+        echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, $(( (TASK_TOKENS + 500) / 1000 ))k tokens) ==="
         TASK_OUTCOME="ok"
       else
         echo "=== $TASK_ID: PR CREATION FAILED (code pushed to $BRANCH) ==="
