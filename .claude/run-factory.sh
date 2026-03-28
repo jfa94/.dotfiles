@@ -133,8 +133,6 @@ cleanup() {
 
   if [[ "$SKIP_SETTINGS_SWAP" == "true" ]]; then
     # Child process — don't touch settings, parent manages them
-    [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
-    [[ -n "$PR_FILE" ]] && rm -f "$PR_FILE"
     rm -rf "$FACTORY_TMPDIR"
     return
   fi
@@ -145,9 +143,10 @@ cleanup() {
     rm -f "$SETTINGS_LOCAL"
     echo "Settings restored."
   fi
-  [[ -n "$STATUS_FILE" ]] && rm -f "$STATUS_FILE"
-  [[ -n "$PR_FILE" ]] && rm -f "$PR_FILE"
-  [[ -n "$LOCK_DIR" ]] && rmdir "$LOCK_DIR" 2>/dev/null || true
+  if [[ -n "$LOCK_DIR" ]]; then
+    rm -f "$LOCK_DIR/pid" 2>/dev/null
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+  fi
   rm -rf "$FACTORY_TMPDIR"
 }
 trap cleanup EXIT
@@ -155,10 +154,25 @@ trap cleanup EXIT
 if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
   # Prevent concurrent factory runs from racing on settings/branches
   LOCK_DIR="/tmp/factory-$(echo "$PROJECT_DIR" | tr '/' '-').lock.d"
-  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    echo "Error: another factory instance is running for this project."
-    echo "  Lock: $LOCK_DIR"
-    exit 1
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo $$ > "$LOCK_DIR/pid"
+  else
+    # Lock exists — check if holder is alive
+    lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
+    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+      echo "Error: another factory instance is running (PID $lock_pid)."
+      echo "  Lock: $LOCK_DIR"
+      exit 1
+    fi
+    # Stale lock — reclaim
+    echo "Removing stale lock (previous PID: ${lock_pid:-unknown})..."
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+      echo "Error: could not reclaim lock at $LOCK_DIR"
+      exit 1
+    fi
+    echo $$ > "$LOCK_DIR/pid"
   fi
 
   if [[ ! -f "$SETTINGS_AUTO" ]]; then
@@ -306,7 +320,9 @@ __FACTORY_REVIEW2__
   (trap - EXIT; claude -p --model opus \
     --max-turns "$SPEC_GEN_TURNS" \
     --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log") &
-  spin $! "Generating spec (opus, up to $SPEC_GEN_TURNS turns)..." || true
+  local spec_exit=0
+  spin $! "Generating spec (opus, up to $SPEC_GEN_TURNS turns)..." || spec_exit=$?
+  [[ $spec_exit -ne 0 ]] && echo "  Warning: spec generation exited with code $spec_exit"
 
   local spec_in spec_out
   spec_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
@@ -363,7 +379,9 @@ __FACTORY_SPEC_RETRY3__
     (trap - EXIT; claude -p --model opus \
       --max-turns "$retry_turns" \
       --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log") &
-    spin $! "Generating spec — retry (opus, up to $retry_turns turns)..." || true
+    spec_exit=0
+    spin $! "Generating spec — retry (opus, up to $retry_turns turns)..." || spec_exit=$?
+    [[ $spec_exit -ne 0 ]] && echo "  Warning: spec generation retry exited with code $spec_exit"
 
     local retry_in retry_out
     retry_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
@@ -427,7 +445,7 @@ parallel_worktree_execution() {
   local worktrees=()
   local issues=()
 
-  # Ensure staging branch ref exists for worktree base (staging setup runs later in main flow)
+  # Parent does all staging setup before spawning workers (avoids concurrent push races)
   git fetch origin
   if ! git show-ref --verify --quiet refs/heads/staging; then
     if git show-ref --verify --quiet refs/remotes/origin/staging; then
@@ -437,6 +455,22 @@ parallel_worktree_execution() {
     else
       git branch staging HEAD
     fi
+  fi
+  git checkout staging
+  if git show-ref --verify --quiet refs/heads/develop; then
+    reconcile_staging_with_develop
+  fi
+
+  # Deploy quality gate workflow from parent (once, not per-worker)
+  local wf_src="$SCRIPT_DIR/quality-gate.yml"
+  local wf_dest=".github/workflows/quality-gate.yml"
+  if [[ -f "$wf_src" && ! -f "$wf_dest" ]]; then
+    echo "Deploying quality gate workflow..."
+    mkdir -p .github/workflows
+    cp "$wf_src" "$wf_dest"
+    git add "$wf_dest"
+    git commit -m "ci: add quality gate workflow"
+    git push origin staging
   fi
 
   while IFS=$'\t' read -r issue_num title; do
@@ -652,7 +686,11 @@ check_usage_and_wait() {
     fi
 
     echo "=== USAGE PAUSE: ${utilization}% >= ${threshold}% threshold ==="
-    echo "=== Sleeping $((wait_secs / 60))m until $(date -r $((now_epoch + wait_secs)) '+%H:%M:%S') ==="
+    local wake_time
+    wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
+      || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
+      || wake_time="unknown"
+    echo "=== USAGE PAUSE: Sleeping $((wait_secs / 60))m until $wake_time ==="
 
     local remaining=$wait_secs
     while [[ $remaining -gt 0 ]]; do
@@ -773,42 +811,44 @@ wait_for_pr_merge() {
   return 1
 }
 
-# --- Ensure develop branch is up to date ---
-if ! git show-ref --verify --quiet refs/heads/develop; then
-  echo "Creating develop branch from main..."
-  git checkout -b develop main
-  git push -u origin develop
-else
-  git checkout develop
-  git pull origin develop
-fi
+# --- Staging/develop setup (parent only — children skip via --skip-settings-swap) ---
+if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
+  # Ensure develop branch is up to date
+  if ! git show-ref --verify --quiet refs/heads/develop; then
+    echo "Creating develop branch from main..."
+    git checkout -b develop main
+    git push -u origin develop
+  else
+    git checkout develop
+    git pull origin develop
+  fi
 
-# --- Smart staging setup ---
-echo "Fetching from origin..."
-git fetch origin
-setup_staging
+  # Smart staging setup
+  echo "Fetching from origin..."
+  git fetch origin
+  setup_staging
 
-# --- Ensure quality gate workflow exists ---
-WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
-WORKFLOW_DEST=".github/workflows/quality-gate.yml"
+  # Ensure quality gate workflow exists
+  WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
+  WORKFLOW_DEST=".github/workflows/quality-gate.yml"
 
-if [[ -f "$WORKFLOW_SRC" && ! -f "$WORKFLOW_DEST" ]]; then
-  echo "Deploying quality gate workflow..."
-  mkdir -p .github/workflows
-  cp "$WORKFLOW_SRC" "$WORKFLOW_DEST"
-  git add "$WORKFLOW_DEST"
-  git commit -m "ci: add quality gate workflow"
-  git push origin staging
-fi
+  if [[ -f "$WORKFLOW_SRC" && ! -f "$WORKFLOW_DEST" ]]; then
+    echo "Deploying quality gate workflow..."
+    mkdir -p .github/workflows
+    cp "$WORKFLOW_SRC" "$WORKFLOW_DEST"
+    git add "$WORKFLOW_DEST"
+    git commit -m "ci: add quality gate workflow"
+    git push origin staging
+  fi
 
-# --- Ensure branch protection on staging ---
-REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
+  # Ensure branch protection on staging
+  REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
 
-echo "Ensuring branch protection on staging..."
-gh api "repos/$REPO/branches/staging/protection" \
-  --method PUT \
-  --silent \
-  --input - <<'EOF' || echo "Warning: could not set branch protection (may need admin access)"
+  echo "Ensuring branch protection on staging..."
+  gh api "repos/$REPO/branches/staging/protection" \
+    --method PUT \
+    --silent \
+    --input - <<'EOF' || echo "Warning: could not set branch protection (may need admin access)"
 {
   "required_status_checks": {
     "strict": false,
@@ -819,6 +859,7 @@ gh api "repos/$REPO/branches/staging/protection" \
   "restrictions": null
 }
 EOF
+fi
 
 # --- Scaffolding check ---
 NEEDS_SETUP=false
@@ -898,13 +939,28 @@ if [[ -n "$INVALID_DEPS" ]]; then
   exit 1
 fi
 
-# --- Init tracking ---
-STATUS_FILE=$(mktemp "$FACTORY_TMPDIR/status.XXXXXX")
-PR_FILE=$(mktemp "$FACTORY_TMPDIR/prs.XXXXXX")
+# --- Resume detection ---
+EXISTING_LOG_DIR=$(ls -1d logs/*-"$SPEC_NAME" 2>/dev/null | tail -1)
+if [[ -n "$EXISTING_LOG_DIR" && -f "$EXISTING_LOG_DIR/status" ]]; then
+  COMPLETED_TASKS=$(grep -c '=ok$' "$EXISTING_LOG_DIR/status" 2>/dev/null || echo 0)
+  TOTAL=$(jq 'length' "$TASKS_FILE")
+  if [[ $COMPLETED_TASKS -lt $TOTAL && $COMPLETED_TASKS -gt 0 ]]; then
+    echo "Found prior run: $EXISTING_LOG_DIR ($COMPLETED_TASKS/$TOTAL tasks completed)"
+    read -rp "Resume this run? [Y/n]: " resume_choice < /dev/tty 2>/dev/null || resume_choice="Y"
+    if [[ ! "$resume_choice" =~ ^[Nn] ]]; then
+      LOG_DIR="$EXISTING_LOG_DIR"
+    fi
+  fi
+fi
 
 # --- Factory loop ---
-LOG_DIR="logs/$(date +%Y%m%d-%H%M%S)-$SPEC_NAME"
+LOG_DIR="${LOG_DIR:-logs/$(date +%Y%m%d-%H%M%S)-$SPEC_NAME}"
 mkdir -p "$LOG_DIR"
+
+# --- Init tracking (persistent in LOG_DIR for crash recovery) ---
+STATUS_FILE="$LOG_DIR/status"
+PR_FILE="$LOG_DIR/prs"
+touch "$STATUS_FILE" "$PR_FILE"
 
 # Topological sort of tasks by dependency order
 TOTAL_TASKS=$(jq 'length' "$TASKS_FILE")
@@ -939,6 +995,13 @@ fi
 
 for TASK_ID in "${TASK_IDS[@]}"; do
   echo ""
+
+  # --- Skip already-completed tasks (resumed run) ---
+  EXISTING_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
+  if [[ "$EXISTING_STATUS" == "ok" ]]; then
+    echo "=== $TASK_ID: already completed (resumed run), skipping ==="
+    continue
+  fi
 
   # --- Circuit breakers ---
   TASKS_RUN=$((TASKS_RUN + 1))
@@ -1002,9 +1065,6 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   git checkout staging
   git pull origin staging
 
-  # Check usage before starting task — pause if 5h window is near exhausted
-  check_usage_and_wait
-
   # Extract task details
   TITLE=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .title' "$TASKS_FILE")
   DESC=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .description' "$TASKS_FILE")
@@ -1032,7 +1092,6 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   PREV_REVIEW_FINDINGS=""
   PREV_EXIT_CODE=0
   TASK_TOKENS=0
-  REVIEW_COUNT=0
 
   while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
     ATTEMPT=$((ATTEMPT + 1))
@@ -1048,16 +1107,28 @@ for TASK_ID in "${TASK_IDS[@]}"; do
       break
     fi
 
+    # Check usage before each attempt — pause if 5h window is near exhausted
+    check_usage_and_wait
+
     if [[ $ATTEMPT -gt 1 ]]; then
       echo "--- $TASK_ID: retry $ATTEMPT/$((MAX_RETRIES + 1)) (reason: $FAILURE_TYPE) ---"
     fi
 
     # Branch handling
+    RESUMING_PRIOR_RUN=false
     echo "  Switching to branch $BRANCH..."
     if [[ $ATTEMPT -eq 1 ]]; then
       if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-        git checkout "$BRANCH"
-        git reset --hard staging
+        PRIOR_COMMITS=$(git log --oneline staging.."$BRANCH" 2>/dev/null | head -5)
+        if [[ -n "$PRIOR_COMMITS" ]]; then
+          echo "  Found prior work on $BRANCH from a previous run:"
+          echo "$PRIOR_COMMITS" | sed 's/^/    /'
+          git checkout "$BRANCH"
+          RESUMING_PRIOR_RUN=true
+        else
+          git checkout "$BRANCH"
+          git reset --hard staging
+        fi
       else
         git checkout -b "$BRANCH"
       fi
@@ -1069,7 +1140,15 @@ for TASK_ID in "${TASK_IDS[@]}"; do
 
     # Build retry context
     RETRY_CONTEXT=""
-    if [[ $ATTEMPT -gt 1 ]]; then
+    if [[ "$RESUMING_PRIOR_RUN" == "true" ]]; then
+      RETRY_CONTEXT="## IMPORTANT: Resuming from a previous interrupted pipeline run
+
+A previous pipeline run left commits on this branch. Check git log and
+claude-progress.json for what was already done. Continue from where
+the last session stopped. Do NOT restart from scratch.
+
+"
+    elif [[ $ATTEMPT -gt 1 ]]; then
       RETRY_CONTEXT="## IMPORTANT: This is retry attempt $ATTEMPT of $((MAX_RETRIES + 1))
 
 Previous attempt failed with: $FAILURE_TYPE
@@ -1205,8 +1284,7 @@ __FACTORY_TASK2__
       REVIEW_VERDICT="APPROVE"  # default when review disabled
       REVIEW_TEXT=""
       if [[ "$ENABLE_CODE_REVIEW" == "true" ]]; then
-        REVIEW_COUNT=$((REVIEW_COUNT + 1))
-        echo "  Running code review #$REVIEW_COUNT ($TASK_ID, attempt $ATTEMPT)..."
+        echo "  Running code review ($TASK_ID, attempt $ATTEMPT)..."
         REVIEW_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.json"
 
         review_prompt_file=$(mktemp "$FACTORY_TMPDIR/review-prompt.XXXXXX")
@@ -1214,8 +1292,8 @@ __FACTORY_TASK2__
         DIFF_STAT=$(git diff staging...HEAD --stat 2>/dev/null || git diff --stat)
         CHANGED_FILES=$(git diff staging...HEAD --name-only 2>/dev/null || git diff --name-only)
 
-        if [[ $REVIEW_COUNT -eq 1 ]]; then
-          # First review: comprehensive
+        if [[ "$FAILURE_TYPE" != "code_review" ]]; then
+          # New implementation: comprehensive review
           cat > "$review_prompt_file" << '__REVIEW_PROMPT__'
 You are a senior engineer performing a code review. You have a FRESH context -- you did not write this code. This separation is intentional: AI-generated code escapes review because well-formatted code triggers "looks fine" approval bias.
 
@@ -1272,7 +1350,7 @@ Use REQUEST_CHANGES if there are CRITICAL or WARNING findings.
 Use NEEDS_DISCUSSION if you are uncertain about impact and a human should decide.
 __REVIEW_PROMPT__
         else
-          # Follow-up reviews: critical issues only
+          # Code review retry: critical issues only (prior review already caught non-critical)
           cat > "$review_prompt_file" << '__REVIEW_PROMPT_CRITICAL__'
 You are a senior engineer performing a FOLLOW-UP code review. A previous review already caught and addressed non-critical issues. Your job now is strictly limited to critical findings only.
 
@@ -1322,11 +1400,11 @@ __REVIEW_PROMPT_CRITICAL__
 
         REVIEW_TEXT=$(jq -r '.result // ""' "$REVIEW_LOG" 2>/dev/null || echo "")
 
-        if echo "$REVIEW_TEXT" | grep -q 'VERDICT: REQUEST_CHANGES'; then
+        if echo "$REVIEW_TEXT" | grep -q '^\*\*VERDICT: REQUEST_CHANGES\*\*'; then
           REVIEW_VERDICT="REQUEST_CHANGES"
-        elif echo "$REVIEW_TEXT" | grep -q 'VERDICT: NEEDS_DISCUSSION'; then
+        elif echo "$REVIEW_TEXT" | grep -q '^\*\*VERDICT: NEEDS_DISCUSSION\*\*'; then
           REVIEW_VERDICT="NEEDS_DISCUSSION"
-        elif echo "$REVIEW_TEXT" | grep -q 'VERDICT: APPROVE'; then
+        elif echo "$REVIEW_TEXT" | grep -q '^\*\*VERDICT: APPROVE\*\*'; then
           REVIEW_VERDICT="APPROVE"
         elif [[ $REVIEW_EXIT -ne 0 ]]; then
           echo "  Warning: review session failed (exit=$REVIEW_EXIT), treating as APPROVE"
