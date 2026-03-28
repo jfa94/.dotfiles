@@ -1032,6 +1032,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   PREV_REVIEW_FINDINGS=""
   PREV_EXIT_CODE=0
   TASK_TOKENS=0
+  REVIEW_COUNT=0
 
   while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
     ATTEMPT=$((ATTEMPT + 1))
@@ -1204,7 +1205,8 @@ __FACTORY_TASK2__
       REVIEW_VERDICT="APPROVE"  # default when review disabled
       REVIEW_TEXT=""
       if [[ "$ENABLE_CODE_REVIEW" == "true" ]]; then
-        echo "  Running code review ($TASK_ID, attempt $ATTEMPT)..."
+        REVIEW_COUNT=$((REVIEW_COUNT + 1))
+        echo "  Running code review #$REVIEW_COUNT ($TASK_ID, attempt $ATTEMPT)..."
         REVIEW_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.json"
 
         review_prompt_file=$(mktemp "$FACTORY_TMPDIR/review-prompt.XXXXXX")
@@ -1212,7 +1214,9 @@ __FACTORY_TASK2__
         DIFF_STAT=$(git diff staging...HEAD --stat 2>/dev/null || git diff --stat)
         CHANGED_FILES=$(git diff staging...HEAD --name-only 2>/dev/null || git diff --name-only)
 
-        cat > "$review_prompt_file" << '__REVIEW_PROMPT__'
+        if [[ $REVIEW_COUNT -eq 1 ]]; then
+          # First review: comprehensive
+          cat > "$review_prompt_file" << '__REVIEW_PROMPT__'
 You are a senior engineer performing a code review. You have a FRESH context -- you did not write this code. This separation is intentional: AI-generated code escapes review because well-formatted code triggers "looks fine" approval bias.
 
 ## Critical Principle: Signal Over Noise
@@ -1267,6 +1271,39 @@ Use APPROVE if changes are correct (explain WHY -- cite specific verification).
 Use REQUEST_CHANGES if there are CRITICAL or WARNING findings.
 Use NEEDS_DISCUSSION if you are uncertain about impact and a human should decide.
 __REVIEW_PROMPT__
+        else
+          # Follow-up reviews: critical issues only
+          cat > "$review_prompt_file" << '__REVIEW_PROMPT_CRITICAL__'
+You are a senior engineer performing a FOLLOW-UP code review. A previous review already caught and addressed non-critical issues. Your job now is strictly limited to critical findings only.
+
+## Scope: CRITICAL issues only
+
+ONLY flag issues that will:
+- Cause bugs or crashes in production
+- Cause data loss or corruption
+- Create security vulnerabilities
+- Break existing functionality (regressions)
+
+Do NOT flag: warnings, style issues, minor improvements, edge cases that are unlikely in practice, test quality suggestions, naming, documentation, or anything that is merely suboptimal but functional.
+
+## Review Process
+1. Read CLAUDE.md in the .claude/ directory
+2. Run git diff staging...HEAD to read ALL changes
+3. Look ONLY for the critical issues listed above
+
+## Verdict
+
+For each finding: file path, line number, one-sentence issue, why it matters, suggested fix.
+
+Your response MUST end with exactly one of these verdict lines (no other text after it):
+
+**VERDICT: APPROVE**
+**VERDICT: REQUEST_CHANGES**
+
+Use APPROVE unless you found issues that WILL cause production failures, data loss, or security holes.
+Use REQUEST_CHANGES ONLY for genuinely critical findings.
+__REVIEW_PROMPT_CRITICAL__
+        fi
 
         printf '\n## Task Context\n\nTask: %s\nBranch: %s\n\nChanged files:\n%s\n\nDiff stats:\n%s\n' \
           "$TITLE" "$BRANCH" "$CHANGED_FILES" "$DIFF_STAT" >> "$review_prompt_file"
