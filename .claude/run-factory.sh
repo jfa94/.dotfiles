@@ -945,7 +945,7 @@ fi
 # --- Resume detection ---
 EXISTING_LOG_DIR=$(ls -1d logs/*-"$SPEC_NAME" 2>/dev/null | tail -1)
 if [[ -n "$EXISTING_LOG_DIR" && -f "$EXISTING_LOG_DIR/status" ]]; then
-  COMPLETED_TASKS=$(grep -c '=ok$' "$EXISTING_LOG_DIR/status" 2>/dev/null || echo 0)
+  COMPLETED_TASKS=$(grep -c '=ok$' "$EXISTING_LOG_DIR/status" 2>/dev/null) || COMPLETED_TASKS=0
   TOTAL=$(jq 'length' "$TASKS_FILE")
   if [[ $COMPLETED_TASKS -lt $TOTAL && $COMPLETED_TASKS -gt 0 ]]; then
     echo "Found prior run: $EXISTING_LOG_DIR ($COMPLETED_TASKS/$TOTAL tasks completed)"
