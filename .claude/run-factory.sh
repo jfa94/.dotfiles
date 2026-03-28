@@ -761,7 +761,10 @@ setup_staging() {
   else
     echo "Staging exists, checking out and pulling..."
     git checkout staging
-    git pull origin staging
+    git pull --ff-only origin staging || {
+      echo "Error: staging diverged from origin. Resolve manually."
+      exit 1
+    }
     reconcile_staging_with_develop
   fi
 }
@@ -1003,13 +1006,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     continue
   fi
 
-  # --- Circuit breakers ---
-  TASKS_RUN=$((TASKS_RUN + 1))
-  if [[ $TASKS_RUN -gt $MAX_TASKS ]]; then
-    echo "=== CIRCUIT BREAKER: max tasks ($MAX_TASKS) reached ==="
-    break
-  fi
-
+  # --- Circuit breakers (time only — task count checked after skip guard) ---
   ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
   if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
     echo "=== CIRCUIT BREAKER: time limit (${MAX_MINUTES}m) reached ==="
@@ -1023,7 +1020,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   SKIP=false
 
   for DEP in $DEPS; do
-    DEP_LINE=$(grep "^${DEP}=" "$STATUS_FILE" || true)
+    DEP_LINE=$(grep "^${DEP}=" "$STATUS_FILE" | tail -1 || true)
     DEP_STATUS="${DEP_LINE#*=}"
 
     if [[ -z "$DEP_STATUS" ]]; then
@@ -1041,7 +1038,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     fi
 
     # Dep succeeded — wait for its PR to merge into staging
-    DEP_PR_LINE=$(grep "^${DEP}=" "$PR_FILE" || true)
+    DEP_PR_LINE=$(grep "^${DEP}=" "$PR_FILE" | tail -1 || true)
     DEP_PR="${DEP_PR_LINE#*=}"
 
     if [[ -n "$DEP_PR" ]]; then
@@ -1060,10 +1057,20 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     continue
   fi
 
+  # Task count circuit breaker (after skip guard so skipped tasks don't count)
+  TASKS_RUN=$((TASKS_RUN + 1))
+  if [[ $TASKS_RUN -gt $MAX_TASKS ]]; then
+    echo "=== CIRCUIT BREAKER: max tasks ($MAX_TASKS) reached ==="
+    break
+  fi
+
   # Pull latest staging (picks up merged dependency PRs)
   echo "  Pulling latest staging..."
   git checkout staging
-  git pull origin staging
+  git pull --ff-only origin staging || {
+    echo "Error: staging diverged from origin during task loop. Resolve manually."
+    exit 1
+  }
 
   # Extract task details
   TITLE=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .title' "$TASKS_FILE")
@@ -1400,11 +1407,13 @@ __REVIEW_PROMPT_CRITICAL__
 
         REVIEW_TEXT=$(jq -r '.result // ""' "$REVIEW_LOG" 2>/dev/null || echo "")
 
-        if echo "$REVIEW_TEXT" | grep -q '^\*\*VERDICT: REQUEST_CHANGES\*\*'; then
+        # Check only last 5 lines for verdict — earlier lines may quote other verdicts
+        REVIEW_TAIL=$(echo "$REVIEW_TEXT" | tail -5)
+        if echo "$REVIEW_TAIL" | grep -q '^\*\*VERDICT: REQUEST_CHANGES\*\*'; then
           REVIEW_VERDICT="REQUEST_CHANGES"
-        elif echo "$REVIEW_TEXT" | grep -q '^\*\*VERDICT: NEEDS_DISCUSSION\*\*'; then
+        elif echo "$REVIEW_TAIL" | grep -q '^\*\*VERDICT: NEEDS_DISCUSSION\*\*'; then
           REVIEW_VERDICT="NEEDS_DISCUSSION"
-        elif echo "$REVIEW_TEXT" | grep -q '^\*\*VERDICT: APPROVE\*\*'; then
+        elif echo "$REVIEW_TAIL" | grep -q '^\*\*VERDICT: APPROVE\*\*'; then
           REVIEW_VERDICT="APPROVE"
         elif [[ $REVIEW_EXIT -ne 0 ]]; then
           echo "  Warning: review session failed (exit=$REVIEW_EXIT), treating as APPROVE"
@@ -1430,6 +1439,17 @@ __REVIEW_PROMPT_CRITICAL__
       fi
 
       # APPROVE or NEEDS_DISCUSSION — proceed to push + PR
+      # Guard against empty PRs (e.g. Claude reverted everything on low turns)
+      if git diff --quiet staging...HEAD 2>/dev/null; then
+        echo "=== $TASK_ID: NO CHANGES produced (attempt $ATTEMPT) ==="
+        FAILURE_TYPE="no_changes"
+        if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+          continue
+        fi
+        TASK_OUTCOME="failed"
+        break
+      fi
+
       echo "  Pushing $BRANCH and creating PR..."
       git push -u origin "$BRANCH"
 
@@ -1467,15 +1487,9 @@ __REVIEW_PROMPT_CRITICAL__
         PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
         if [[ "$REVIEW_VERDICT" == "NEEDS_DISCUSSION" ]]; then
           echo "  Skipping auto-merge: code review returned NEEDS_DISCUSSION (needs human input)"
-          gh pr comment "$PR_NUMBER" --body "## Code Review: NEEDS_DISCUSSION
-
-This PR was flagged by automated code review as needing human discussion before merge.
-
-<details>
-<summary>Review findings</summary>
-
-$REVIEW_TEXT
-</details>" 2>/dev/null || true
+          comment_file=$(mktemp "$FACTORY_TMPDIR/pr-comment.XXXXXX")
+          printf '## Code Review: NEEDS_DISCUSSION\n\nThis PR was flagged by automated code review as needing human discussion before merge.\n\n<details>\n<summary>Review findings</summary>\n\n%s\n</details>' "$REVIEW_TEXT" > "$comment_file"
+          gh pr comment "$PR_NUMBER" --body-file "$comment_file" 2>/dev/null || true
         else
           gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
         fi
@@ -1530,7 +1544,7 @@ while IFS='=' read -r _ status; do
     failed) FAILED_COUNT=$((FAILED_COUNT + 1)) ;;
     skipped) SKIPPED_COUNT=$((SKIPPED_COUNT + 1)) ;;
   esac
-done < "$STATUS_FILE"
+done < <(awk -F= '{ s[$1]=$2 } END { for (k in s) print k "=" s[k] }' "$STATUS_FILE")
 
 echo ""
 echo "=== Pipeline complete ==="
@@ -1575,7 +1589,7 @@ if [[ -f "$METADATA_FILE" ]]; then
           TASK_DETAILS+=$'\n'"- \`${tid}\`: **skipped** — ${skip_reason:-unknown reason}"
           ;;
       esac
-    done < "$STATUS_FILE"
+    done < <(awk -F= '{ s[$1]=$2 } END { for (k in s) print k "=" s[k] }' "$STATUS_FILE")
 
     if [[ $FAILED_COUNT -eq 0 && $SKIPPED_COUNT -eq 0 ]]; then
       COMMENT_BODY="All $OK_COUNT tasks completed. PRs against staging: $PR_LIST"
@@ -1583,6 +1597,20 @@ if [[ -f "$METADATA_FILE" ]]; then
       gh issue close "$PRD_ISSUE" --reason completed
       echo "PRD issue #$PRD_ISSUE closed."
 
+      # --- Wait for all PRs to merge before cleanup ---
+      echo ""
+      echo "Waiting for all PRs to merge before cleanup..."
+      ALL_PRS_MERGED=true
+      while IFS='=' read -r tid pr_num; do
+        if ! wait_for_pr_merge "$pr_num" 2700; then
+          echo "  Warning: PR #$pr_num ($tid) did not merge within timeout"
+          ALL_PRS_MERGED=false
+        fi
+      done < "$PR_FILE"
+
+      if [[ "$ALL_PRS_MERGED" != "true" ]]; then
+        echo "  Some PRs not yet merged — skipping branch cleanup"
+      else
       # --- Post-closure cleanup ---
       echo ""
       echo "=== Cleaning up completed feature artifacts ==="
@@ -1624,8 +1652,10 @@ if [[ -f "$METADATA_FILE" ]]; then
 
       # Commit spec removal if there are tracked changes
       git checkout staging 2>/dev/null || true
-      if [[ -n "$(git ls-files --deleted -- specs/ 2>/dev/null)" ]] || \
-         [[ -n "$(git status --porcelain -- specs/ 2>/dev/null)" ]]; then
+      if [[ "$(git branch --show-current)" != "staging" ]]; then
+        echo "  Warning: could not checkout staging for cleanup, skipping spec commit"
+      elif [[ -n "$(git ls-files --deleted -- specs/ 2>/dev/null)" ]] || \
+           [[ -n "$(git status --porcelain -- specs/ 2>/dev/null)" ]]; then
         git add -A specs/
         git commit -m "chore: clean up $SPEC_NAME spec after completion"
         git push origin staging
@@ -1633,10 +1663,12 @@ if [[ -f "$METADATA_FILE" ]]; then
       fi
 
       echo "=== Cleanup complete ==="
+      fi  # ALL_PRS_MERGED
     else
-      COMMENT_BODY="$(printf "Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%s\n\n**PRs created:** %s" \
-        "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}")"
-      gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
+      comment_file=$(mktemp "$FACTORY_TMPDIR/issue-comment.XXXXXX")
+      printf 'Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%s\n\n**PRs created:** %s' \
+        "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}" > "$comment_file"
+      gh issue comment "$PRD_ISSUE" --body-file "$comment_file"
       echo "PRD issue #$PRD_ISSUE left open (not all tasks succeeded)."
     fi
   fi
