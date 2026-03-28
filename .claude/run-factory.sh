@@ -1000,7 +1000,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   echo ""
 
   # --- Skip already-completed tasks (resumed run) ---
-  EXISTING_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
+  EXISTING_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2 || true)
   if [[ "$EXISTING_STATUS" == "ok" ]]; then
     echo "=== $TASK_ID: already completed (resumed run), skipping ==="
     continue
@@ -1569,7 +1569,7 @@ if [[ -f "$METADATA_FILE" ]]; then
     while IFS='=' read -r tid status; do
       case "$status" in
         ok)
-          tid_pr=$(grep "^${tid}=" "$PR_FILE" | cut -d= -f2)
+          tid_pr=$(grep "^${tid}=" "$PR_FILE" | cut -d= -f2 || true)
           TASK_DETAILS+=$'\n'"- \`${tid}\`: ok (PR #${tid_pr})"
           ;;
         failed)
@@ -1580,7 +1580,7 @@ if [[ -f "$METADATA_FILE" ]]; then
           skip_deps=$(jq -r --arg tid "$tid" '.[] | select(.task_id==$tid) | .depends_on[]' "$TASKS_FILE" 2>/dev/null)
           skip_reason=""
           for sd in $skip_deps; do
-            sd_status=$(grep "^${sd}=" "$STATUS_FILE" | tail -1 | cut -d= -f2)
+            sd_status=$(grep "^${sd}=" "$STATUS_FILE" | tail -1 | cut -d= -f2 || true)
             if [[ "$sd_status" == "failed" || "$sd_status" == "skipped" ]]; then
               skip_reason="dependency \`${sd}\` ${sd_status}"
               break
