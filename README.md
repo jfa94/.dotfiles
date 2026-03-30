@@ -1,10 +1,10 @@
 # .dotfiles
+
 1. Install Apple's Command Line Tools, which are prerequisites for Git and Homebrew.
 
 ```zsh
 xcode-select --install
 ```
-
 
 2. Clone repo into new hidden directory.
 
@@ -15,7 +15,6 @@ git clone git@github.com:jfa94/.dotfiles.git ~/.dotfiles
 # ...or use HTTPS and switch remotes later.
 git clone https://github.com/jfa94/.dotfiles.git ~/.dotfiles
 ```
-
 
 3. Run the setup script to create symlinks, install Homebrew & Brewfile packages, and set up vim plugins.
 

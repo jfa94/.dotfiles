@@ -25,7 +25,6 @@
 - Never plan to drop a database table
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise
 
-
 ## When Implementing (after alignment)
 
 - If you discover an unforeseen issue, stop and discuss

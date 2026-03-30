@@ -147,6 +147,7 @@ For example: `specs/features/user-onboarding/metadata.json`. Skip this file if t
 ### 8. Create tasks
 
 Ask the user if they would like to decompose the specs into agent-friendly tasks. If yes, decompose ALL specs into a single flat list of implementation tasks where each task:
+
 1. is completable in under (approximately) 45 min
 2. has clear acceptance criteria that map to specific test assertions
 3. lists exact files to create or modify (max 3 files per task)
@@ -155,43 +156,44 @@ Ask the user if they would like to decompose the specs into agent-friendly tasks
 Tasks from later phases MUST list tasks from earlier phases in their `depends_on` array so the factory can execute them in the correct order.
 
 Output the entire list as a single JSON array in ONE file called `tasks.json` in the feature directory (e.g., `specs/features/user-onboarding/tasks.json`). Do NOT create separate task files per spec — all tasks go in this one file. Fields: task_id, title, description, files, acceptance_criteria, tests_to_write, depends_on (array of task_ids).
+
 ```json
 [
-  {
-    "task_id": "auth-001",
-    "title": "Auth domain types and password hashing",
-    "description": "Create auth type definitions and bcrypt-based password hashing utilities",
-    "files": ["src/domain/auth/types.ts", "src/domain/auth/password.ts"],
-    "acceptance_criteria": [
-      "Password hash uses bcrypt with min 12 rounds",
-      "Hash and verify functions are pure — no side effects",
-      "Types cover User, Session, AuthError"
-    ],
-    "tests_to_write": [
-      "password.test.ts: hash produces valid bcrypt string",
-      "password.test.ts: verify returns true for correct password",
-      "password.test.ts: verify returns false for wrong password",
-      "password.test.ts: hash with <12 rounds throws"
-    ],
-    "depends_on": []
-  },
-  {
-    "task_id": "auth-002",
-    "title": "Email validation and registration logic",
-    "description": "Create email validation in domain layer and registration service",
-    "files": ["src/domain/auth/validation.ts", "src/services/auth.service.ts"],
-    "acceptance_criteria": [
-      "Email validation rejects malformed addresses",
-      "Registration creates user with hashed password",
-      "Duplicate email returns typed AuthError"
-    ],
-    "tests_to_write": [
-      "validation.test.ts: valid emails pass",
-      "validation.test.ts: malformed emails fail",
-      "auth.service.test.ts: register creates user",
-      "auth.service.test.ts: duplicate email returns error tuple"
-    ],
-    "depends_on": ["auth-001"]
-  }
+    {
+        "task_id": "auth-001",
+        "title": "Auth domain types and password hashing",
+        "description": "Create auth type definitions and bcrypt-based password hashing utilities",
+        "files": ["src/domain/auth/types.ts", "src/domain/auth/password.ts"],
+        "acceptance_criteria": [
+            "Password hash uses bcrypt with min 12 rounds",
+            "Hash and verify functions are pure — no side effects",
+            "Types cover User, Session, AuthError"
+        ],
+        "tests_to_write": [
+            "password.test.ts: hash produces valid bcrypt string",
+            "password.test.ts: verify returns true for correct password",
+            "password.test.ts: verify returns false for wrong password",
+            "password.test.ts: hash with <12 rounds throws"
+        ],
+        "depends_on": []
+    },
+    {
+        "task_id": "auth-002",
+        "title": "Email validation and registration logic",
+        "description": "Create email validation in domain layer and registration service",
+        "files": ["src/domain/auth/validation.ts", "src/services/auth.service.ts"],
+        "acceptance_criteria": [
+            "Email validation rejects malformed addresses",
+            "Registration creates user with hashed password",
+            "Duplicate email returns typed AuthError"
+        ],
+        "tests_to_write": [
+            "validation.test.ts: valid emails pass",
+            "validation.test.ts: malformed emails fail",
+            "auth.service.test.ts: register creates user",
+            "auth.service.test.ts: duplicate email returns error tuple"
+        ],
+        "depends_on": ["auth-001"]
+    }
 ]
 ```

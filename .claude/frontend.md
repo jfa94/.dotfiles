@@ -19,9 +19,9 @@
 - TypeScript strict mode with noUncheckedIndexedAccess enabled
 - Use `globals.css` for global styles only, not component/page-specific styles.
 - Next.js Server functions return `[data, error]` tuples:
-  ```ts
-  Promise<[T | null, Error | null]>
-  ```
+    ```ts
+    Promise<[T | null, Error | null]>
+    ```
 
 ## Tailwind Guidelines
 
@@ -33,13 +33,12 @@
 
 - Use function-based React components with arrow functions for callbacks.
 - Define prop types as a separate interface above the component:
-  ```tsx
-  interface ButtonProps {
-    text: string
-  }
-  const Button = ({ text }: ButtonProps) => {
-    // component code
-  }
-  ```
+    ```tsx
+    interface ButtonProps {
+        text: string
+    }
+    const Button = ({text}: ButtonProps) => {
+        // component code
+    }
+    ```
 - Never import services directly from components — use hooks or server actions
-
