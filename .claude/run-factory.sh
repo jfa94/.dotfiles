@@ -232,10 +232,12 @@ generate_and_review_spec() {
   if [[ -f "$TASKS_FILE" ]] && jq -e 'length > 0' "$TASKS_FILE" >/dev/null 2>&1; then
     local existing_count
     existing_count=$(jq 'length' "$TASKS_FILE")
+    echo ""
     echo "=== Spec already exists: $SPEC_DIR ($existing_count tasks) — skipping generation ==="
     return 0
   fi
 
+  echo ""
   echo "=== Generating spec from issue #$issue_number: $issue_title ==="
   echo "  Spec name: $SPEC_NAME"
 
@@ -331,6 +333,7 @@ __FACTORY_REVIEW2__
 
   # Validate output
   if [[ ! -f "$TASKS_FILE" ]]; then
+    echo ""
     echo "=== Spec generation produced no tasks.json, retrying with more turns ==="
     local retry_turns=$((SPEC_GEN_TURNS + 20))
     log_file="$log_dir/spec-gen.retry.json"
@@ -391,6 +394,7 @@ __FACTORY_SPEC_RETRY3__
 
   # Final validation
   if [[ ! -f "$TASKS_FILE" ]]; then
+    echo ""
     echo "=== SPEC GENERATION FAILED: no tasks.json after 2 attempts ==="
     gh issue comment "$issue_number" --body "Spec generation failed after 2 attempts — no tasks.json produced. Manual intervention required." || true
     gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
@@ -398,6 +402,7 @@ __FACTORY_SPEC_RETRY3__
   fi
 
   if ! jq empty "$TASKS_FILE" 2>/dev/null; then
+    echo ""
     echo "=== SPEC GENERATION FAILED: tasks.json is not valid JSON ==="
     gh issue comment "$issue_number" --body "Spec generation produced invalid tasks.json. Manual intervention required." || true
     gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
@@ -407,12 +412,14 @@ __FACTORY_SPEC_RETRY3__
   local task_count
   task_count=$(jq 'length' "$TASKS_FILE")
   if [[ "$task_count" -eq 0 ]]; then
+    echo ""
     echo "=== SPEC GENERATION FAILED: tasks.json is empty ==="
     gh issue comment "$issue_number" --body "Spec generation produced an empty tasks.json. Manual intervention required." || true
     gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
     return 1
   fi
 
+  echo ""
   echo "=== Spec generation complete: $task_count tasks in $SPEC_DIR ==="
 }
 
@@ -685,11 +692,13 @@ check_usage_and_wait() {
       return 0
     fi
 
+    echo ""
     echo "=== USAGE PAUSE: ${utilization}% >= ${threshold}% threshold ==="
     local wake_time
     wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
       || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
       || wake_time="unknown"
+    echo ""
     echo "=== USAGE PAUSE: Sleeping $((wait_secs / 60))m until $wake_time ==="
 
     local remaining=$wait_secs
@@ -700,6 +709,7 @@ check_usage_and_wait() {
       [[ $remaining -gt 0 ]] && echo "  ... $((remaining / 60))m remaining"
     done
 
+    echo ""
     echo "=== USAGE PAUSE: resumed ==="
   fi
 }
@@ -937,6 +947,7 @@ INVALID_DEPS=$(jq -r '
 ' "$TASKS_FILE" 2>/dev/null)
 
 if [[ -n "$INVALID_DEPS" ]]; then
+  echo ""
   echo "=== ERROR: tasks.json has dangling dependency references ==="
   echo "$INVALID_DEPS" | while read -r line; do echo "  $line"; done
   exit 1
@@ -982,6 +993,7 @@ done < <(jq -r '
 
 # Cycle detection: if topo sort produced fewer IDs than tasks, there's a cycle
 if [[ ${#TASK_IDS[@]} -lt $TOTAL_TASKS ]]; then
+  echo ""
   echo "=== ERROR: Dependency cycle detected in tasks.json ==="
   echo "  Sorted ${#TASK_IDS[@]} of $TOTAL_TASKS tasks. Unsorted tasks have circular dependencies."
   # Show which tasks weren't sorted
@@ -997,11 +1009,11 @@ if [[ ${#TASK_IDS[@]} -lt $TOTAL_TASKS ]]; then
 fi
 
 for TASK_ID in "${TASK_IDS[@]}"; do
-  echo ""
 
   # --- Skip already-completed tasks (resumed run) ---
   EXISTING_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2 || true)
   if [[ "$EXISTING_STATUS" == "ok" ]]; then
+    echo ""
     echo "=== $TASK_ID: already completed (resumed run), skipping ==="
     continue
   fi
@@ -1009,10 +1021,12 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   # --- Circuit breakers (time only — task count checked after skip guard) ---
   ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
   if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
+    echo ""
     echo "=== CIRCUIT BREAKER: time limit (${MAX_MINUTES}m) reached ==="
     break
   fi
 
+  echo ""
   echo "=== Starting task: $TASK_ID ==="
 
   # --- Dependency check ---
@@ -1024,6 +1038,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     DEP_STATUS="${DEP_LINE#*=}"
 
     if [[ -z "$DEP_STATUS" ]]; then
+      echo ""
       echo "=== $TASK_ID: SKIPPED (dependency $DEP has no status) ==="
       echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
       SKIP=true
@@ -1031,6 +1046,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     fi
 
     if [[ "$DEP_STATUS" == "failed" || "$DEP_STATUS" == "skipped" ]]; then
+      echo ""
       echo "=== $TASK_ID: SKIPPED (dependency $DEP $DEP_STATUS) ==="
       echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
       SKIP=true
@@ -1044,6 +1060,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     if [[ -n "$DEP_PR" ]]; then
       echo "Waiting for $DEP PR #$DEP_PR to merge..."
       if ! wait_for_pr_merge "$DEP_PR"; then
+        echo ""
         echo "=== $TASK_ID: SKIPPED ($DEP PR #$DEP_PR did not merge within timeout) ==="
         echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
         SKIP=true
@@ -1060,6 +1077,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   # Task count circuit breaker (after skip guard so skipped tasks don't count)
   TASKS_RUN=$((TASKS_RUN + 1))
   if [[ $TASKS_RUN -gt $MAX_TASKS ]]; then
+    echo ""
     echo "=== CIRCUIT BREAKER: max tasks ($MAX_TASKS) reached ==="
     break
   fi
@@ -1109,6 +1127,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     # Time circuit breaker inside retry loop
     ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
     if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
+      echo ""
       echo "=== CIRCUIT BREAKER: time limit hit during retry ==="
       TASK_OUTCOME="failed"
       break
@@ -1273,6 +1292,7 @@ __FACTORY_TASK2__
       FAILURE_TYPE="agent_error"
       [[ "$RESULT_SUBTYPE" == "error_max_turns" ]] && FAILURE_TYPE="max_turns"
       PREV_EXIT_CODE=$EXIT_CODE
+      echo ""
       echo "=== $TASK_ID: AGENT FAILED (exit=$EXIT_CODE, subtype=$RESULT_SUBTYPE, attempt=$ATTEMPT) ==="
 
       if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
@@ -1430,6 +1450,7 @@ __REVIEW_PROMPT_CRITICAL__
       if [[ "$REVIEW_VERDICT" == "REQUEST_CHANGES" ]]; then
         FAILURE_TYPE="code_review"
         PREV_REVIEW_FINDINGS="$REVIEW_TEXT"
+        echo ""
         echo "=== $TASK_ID: CODE REVIEW REJECTED (attempt $ATTEMPT) ==="
         if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
           continue
@@ -1441,6 +1462,7 @@ __REVIEW_PROMPT_CRITICAL__
       # APPROVE or NEEDS_DISCUSSION — proceed to push + PR
       # Guard against empty PRs (e.g. Claude reverted everything on low turns)
       if git diff --quiet staging...HEAD 2>/dev/null; then
+        echo ""
         echo "=== $TASK_ID: NO CHANGES produced (attempt $ATTEMPT) ==="
         FAILURE_TYPE="no_changes"
         if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
@@ -1494,9 +1516,11 @@ __REVIEW_PROMPT_CRITICAL__
           gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
         fi
         echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
+        echo ""
         echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, $(( (TASK_TOKENS + 500) / 1000 ))k tokens) ==="
         TASK_OUTCOME="ok"
       else
+        echo ""
         echo "=== $TASK_ID: PR CREATION FAILED (code pushed to $BRANCH) ==="
         echo "  Manual recovery: gh pr create --head $BRANCH --base staging"
         TASK_OUTCOME="failed"
@@ -1505,6 +1529,7 @@ __REVIEW_PROMPT_CRITICAL__
     else
       FAILURE_TYPE="quality_gate"
       PREV_QUALITY_LOG="$QUALITY_LOG"
+      echo ""
       echo "=== $TASK_ID: QUALITY GATE FAILED (attempt $ATTEMPT) ==="
 
       if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
@@ -1523,6 +1548,7 @@ __REVIEW_PROMPT_CRITICAL__
     failed)
       CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
       if [[ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]]; then
+        echo ""
         echo "=== CIRCUIT BREAKER: $MAX_CONSECUTIVE_FAILURES consecutive failures ==="
         break
       fi
@@ -1662,6 +1688,7 @@ if [[ -f "$METADATA_FILE" ]]; then
         echo "  Cleanup committed and pushed."
       fi
 
+      echo ""
       echo "=== Cleanup complete ==="
       fi  # ALL_PRS_MERGED
     else
