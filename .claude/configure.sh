@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # --- Resolve paths ---
-SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd -P)"
 DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 
 # --- Helper: list tracked .claude/ files eligible for distribution ---
@@ -144,7 +144,7 @@ if [[ ${#conflicts[@]} -gt 0 ]]; then
   echo "  2) Skip — add new files only, leave existing files untouched"
   echo "  3) Prompt — decide file-by-file"
   echo ""
-  read -rp "Choose [1/2/3]: " choice
+  read -rp "Choose [1/2/3]: " choice < /dev/tty
 
   case "$choice" in
     1) MODE="replace" ;;

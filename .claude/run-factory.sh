@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # --- Resolve paths ---
-SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd -P)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
@@ -62,7 +62,9 @@ Environment variables:
   MAX_SPEC_ITERATIONS      Max spec review-refine iterations (default: 3)
   SPEC_GEN_TURNS           Turn budget for spec generation session (default: 80)
   SPEC_PASS_THRESHOLD      Min total score for spec approval, out of 60 (default: 48)
-  USAGE_PAUSE_THRESHOLD    5-hour utilization % that triggers pause (default: 90)
+  USAGE_PAUSE_THRESHOLD    Hard-cap % triggering full pause until API window
+                           reset (default: 90). Hourly thresholds scale with
+                           position in 5h window (20/40/60/80/90% per hour).
 HELP
 }
 
@@ -675,17 +677,30 @@ check_usage_and_wait() {
   resets_at=$(printf '%s' "$response" | jq -r '.five_hour.resets_at // empty' 2>/dev/null)
   [[ -z "$utilization" || -z "$resets_at" ]] && { echo "⚠ Usage check: unexpected API response, skipping"; return 0; }
 
-  echo "Usage: ${utilization}% (5h window, resets at $resets_at)"
+  # --- Window-based hourly thresholds ---
+  local now_epoch reset_epoch
+  now_epoch=$(date +%s)
+  # macOS date -j; fallback to GNU date -d for Linux
+  reset_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${resets_at%%.*}" "+%s" 2>/dev/null) \
+    || reset_epoch=$(date -d "$resets_at" "+%s" 2>/dev/null) \
+    || { echo "⚠ Usage check: can't parse reset time, skipping"; return 0; }
 
-  # Pause if at or above threshold
-  if (( $(echo "$utilization >= $threshold" | bc -l) )); then
-    local reset_epoch now_epoch wait_secs
-    # macOS date -j; fallback to GNU date -d for Linux
-    reset_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${resets_at%%.*}" "+%s" 2>/dev/null) \
-      || reset_epoch=$(date -d "$resets_at" "+%s" 2>/dev/null) \
-      || { echo "⚠ Usage check: can't parse reset time, skipping"; return 0; }
-    now_epoch=$(date +%s)
-    wait_secs=$(( reset_epoch - now_epoch + 60 ))  # +60s buffer past reset
+  local window_start=$(( reset_epoch - 5 * 3600 ))
+  local window_elapsed=$(( now_epoch - window_start ))
+  local window_hour=$(( window_elapsed / 3600 + 1 ))
+  (( window_hour < 1 )) && window_hour=1
+  (( window_hour > 5 )) && window_hour=5
+
+  local hourly_threshold=$(( window_hour * 20 ))
+  (( hourly_threshold > 90 )) && hourly_threshold=90
+
+  local hard_cap=$threshold  # from USAGE_PAUSE_THRESHOLD (default 90)
+
+  echo "Usage: ${utilization}% (5h window hour ${window_hour}, threshold ${hourly_threshold}%, hard cap ${hard_cap}%, resets at $resets_at)"
+
+  # Full pause: at or above hard cap — wait until API window resets
+  if (( $(echo "$utilization >= $hard_cap" | bc -l) )); then
+    local wait_secs=$(( reset_epoch - now_epoch + 60 ))  # +60s buffer past reset
 
     if [[ $wait_secs -le 0 ]]; then
       echo "Usage reset already passed, continuing."
@@ -693,24 +708,77 @@ check_usage_and_wait() {
     fi
 
     echo ""
-    echo "=== USAGE PAUSE: ${utilization}% >= ${threshold}% threshold ==="
+    echo "=== USAGE PAUSE (FULL): ${utilization}% >= ${hard_cap}% hard cap ==="
     local wake_time
     wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
       || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
       || wake_time="unknown"
-    echo ""
-    echo "=== USAGE PAUSE: Sleeping $((wait_secs / 60))m until $wake_time ==="
+    if [[ $wait_secs -ge 60 ]]; then
+      echo "=== Sleeping $((wait_secs / 60))m until API window reset at $wake_time ==="
+    else
+      echo "=== Sleeping ${wait_secs}s until API window reset at $wake_time ==="
+    fi
 
     local remaining=$wait_secs
     while [[ $remaining -gt 0 ]]; do
       local chunk=$(( remaining > 300 ? 300 : remaining ))
       sleep "$chunk"
       remaining=$(( remaining - chunk ))
-      [[ $remaining -gt 0 ]] && echo "  ... $((remaining / 60))m remaining"
+      if [[ $remaining -gt 0 ]]; then
+        if [[ $remaining -ge 60 ]]; then
+          echo "  ... $((remaining / 60))m remaining"
+        else
+          echo "  ... ${remaining}s remaining"
+        fi
+      fi
     done
 
     echo ""
-    echo "=== USAGE PAUSE: resumed ==="
+    echo "=== USAGE PAUSE (FULL): resumed ==="
+
+  # Hourly pause: above hourly threshold — wait until next window hour boundary
+  elif (( $(echo "$utilization >= $hourly_threshold" | bc -l) )); then
+    local next_window_hour_epoch=$(( window_start + window_hour * 3600 ))
+    local wait_secs=$(( next_window_hour_epoch - now_epoch + 10 ))  # +10s buffer
+
+    if [[ $wait_secs -le 0 ]]; then
+      echo "Next window hour already passed, continuing."
+      return 0
+    fi
+
+    # Cap intermediate pause at 30 minutes (except hour 5 — wait until reset)
+    (( window_hour < 5 && wait_secs > 1800 )) && wait_secs=1800
+
+    echo ""
+    echo "=== USAGE PAUSE (HOURLY): ${utilization}% >= ${hourly_threshold}% (window hour $window_hour) ==="
+    local wake_time
+    wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
+      || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
+      || wake_time="unknown"
+    local next_hour=$(( window_hour + 1 ))
+    (( next_hour > 5 )) && next_hour=5
+    if [[ $wait_secs -ge 60 ]]; then
+      echo "=== Sleeping $((wait_secs / 60))m until window hour ${next_hour} at $wake_time ==="
+    else
+      echo "=== Sleeping ${wait_secs}s until window hour ${next_hour} at $wake_time ==="
+    fi
+
+    local remaining=$wait_secs
+    while [[ $remaining -gt 0 ]]; do
+      local chunk=$(( remaining > 300 ? 300 : remaining ))
+      sleep "$chunk"
+      remaining=$(( remaining - chunk ))
+      if [[ $remaining -gt 0 ]]; then
+        if [[ $remaining -ge 60 ]]; then
+          echo "  ... $((remaining / 60))m remaining"
+        else
+          echo "  ... ${remaining}s remaining"
+        fi
+      fi
+    done
+
+    echo ""
+    echo "=== USAGE PAUSE (HOURLY): resumed — now in window hour ${next_hour} ==="
   fi
 }
 
@@ -1306,6 +1374,27 @@ __FACTORY_TASK2__
       fi
       TASK_OUTCOME="failed"
       break
+    fi
+
+    # --- Auto-fix formatting and lint before quality gate ---
+    echo "  Auto-fixing format and lint..."
+    AUTOFIX_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.autofix.log"
+    {
+      pnpm format 2>&1 || true
+      pnpm lint:fix 2>&1 || true
+    } | tee "$AUTOFIX_LOG"
+
+    if ! git diff --quiet HEAD; then
+      git add -u
+      UNTRACKED=$(git ls-files --others --exclude-standard)
+      if [[ -n "$UNTRACKED" ]]; then
+        echo "  Warning: auto-fix left untracked files:"
+        echo "$UNTRACKED" | sed 's/^/    /'
+      fi
+      git commit -m "style: auto-format and lint fixes"
+      echo "  Auto-fix: committed formatting/lint changes"
+    else
+      echo "  Auto-fix: no changes needed"
     fi
 
     # Quality gate

@@ -33,6 +33,12 @@ link_file() {
   local dest="$2"
   local label="$3"
 
+  if [[ ! -e "$src" ]]; then
+    warn "$label source not found, skipping"
+    skipped+=("$label (source missing)")
+    return
+  fi
+
   if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
     skipped+=("$label")
     success "$label already linked"
@@ -52,7 +58,7 @@ link_file() {
         return
       fi
     fi
-    rm -rf "$dest"
+    rm -f "$dest"
     replaced+=("$label")
   fi
 
@@ -93,7 +99,7 @@ for file in "${DOTFILES[@]}"; do
   fi
 done
 
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
   src="$DOTFILES_DIR/$file"
   rel="${file#.claude/}"
   dest="$HOME/.claude/$rel"
@@ -103,7 +109,7 @@ while IFS= read -r file; do
   if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=("~/.claude/$rel")
   fi
-done < <(git -C "$DOTFILES_DIR" ls-files .claude/)
+done < <(git -C "$DOTFILES_DIR" ls-files -z .claude/)
 
 MODE="replace"
 if [[ ${#conflicts[@]} -gt 0 ]]; then
@@ -147,12 +153,12 @@ done
 info "Creating Claude Code symlinks..."
 mkdir -p ~/.claude
 
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
   rel="${file#.claude/}"
   dest="$HOME/.claude/$rel"
   mkdir -p "$(dirname "$dest")"
   link_file "$DOTFILES_DIR/$file" "$dest" "~/.claude/$rel"
-done < <(git -C "$DOTFILES_DIR" ls-files .claude/)
+done < <(git -C "$DOTFILES_DIR" ls-files -z .claude/)
 
 # =============================================================================
 # Section 5: Create Required Directories
