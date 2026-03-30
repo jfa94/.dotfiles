@@ -47,7 +47,7 @@ What gets copied:
   eslint.config.mjs            ESLint flat config
   tsconfig.json                TypeScript config
   vitest.config.ts             Vitest config
-  + Merges scripts from package.scripts.json into package.json
+  + Merges scripts and devDependencies from package.scaffold.json into package.json
 
 Additionally:
   - Makes run-factory.sh executable in the target
@@ -228,17 +228,18 @@ if [[ -f "$TARGET/package.json" ]]; then
     fi
   done
 
-  if [[ -f "$DOTFILES_DIR/package.scripts.json" ]]; then
+  if [[ -f "$DOTFILES_DIR/package.scaffold.json" ]]; then
     TARGET_PATH="$TARGET" DOTFILES_PATH="$DOTFILES_DIR" node -e "
       const fs = require('fs');
       const pkg = JSON.parse(fs.readFileSync(process.env.TARGET_PATH + '/package.json', 'utf8'));
-      const scripts = JSON.parse(fs.readFileSync(process.env.DOTFILES_PATH + '/package.scripts.json', 'utf8'));
-      pkg.scripts = Object.assign({}, pkg.scripts || {}, scripts.scripts);
+      const scaffold = JSON.parse(fs.readFileSync(process.env.DOTFILES_PATH + '/package.scaffold.json', 'utf8'));
+      pkg.scripts = Object.assign({}, pkg.scripts || {}, scaffold.scripts);
+      pkg.devDependencies = Object.assign({}, pkg.devDependencies || {}, scaffold.devDependencies);
       fs.writeFileSync(process.env.TARGET_PATH + '/package.json', JSON.stringify(pkg, null, 2) + '\n');
     "
-    echo "Merged scripts into package.json"
+    echo "Merged scripts and devDependencies into package.json"
   else
-    echo "Warning: package.scripts.json not found, skipping scripts update"
+    echo "Warning: package.scaffold.json not found, skipping scripts update"
   fi
 else
   echo "Skipping JS/TS config files (no package.json found in target)"

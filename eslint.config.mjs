@@ -120,7 +120,7 @@ export default defineConfig(
             'boundaries/ignore': ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts'],
         },
         rules: {
-            'boundaries/element-types': [
+            'boundaries/dependencies': [
                 2,
                 {
                     default: 'disallow',

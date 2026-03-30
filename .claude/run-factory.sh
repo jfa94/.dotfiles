@@ -9,7 +9,7 @@ cd "$PROJECT_DIR"
 
 # --- Help ---
 show_help() {
-  cat <<'HELP'
+    cat <<'HELP'
 Usage: .claude/run-factory.sh [<feature-spec-name>]
        .claude/run-factory.sh --issue <number>
        .claude/run-factory.sh --discover
@@ -74,43 +74,43 @@ ISSUE_NUMBER=""
 SKIP_SETTINGS_SWAP=false
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --issue)
-      if [[ -z "${2:-}" ]]; then
-        echo "Error: --issue requires an issue number."
-        exit 1
-      fi
-      MODE="issue"
-      ISSUE_NUMBER="$2"
-      shift 2
-      ;;
-    --discover)
-      MODE="discover"
-      shift
-      ;;
-    --skip-settings-swap)
-      SKIP_SETTINGS_SWAP=true
-      shift
-      ;;
-    -*)
-      echo "Unknown flag: $1"
-      echo "Run with --help for usage."
-      exit 1
-      ;;
-    *)
-      MODE="named"
-      SPEC_NAME="$1"
-      shift
-      ;;
-  esac
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --issue)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --issue requires an issue number."
+                exit 1
+            fi
+            MODE="issue"
+            ISSUE_NUMBER="$2"
+            shift 2
+            ;;
+        --discover)
+            MODE="discover"
+            shift
+            ;;
+        --skip-settings-swap)
+            SKIP_SETTINGS_SWAP=true
+            shift
+            ;;
+        -*)
+            echo "Unknown flag: $1"
+            echo "Run with --help for usage."
+            exit 1
+            ;;
+        *)
+            MODE="named"
+            SPEC_NAME="$1"
+            shift
+            ;;
+    esac
 done
 
 if [[ -z "$MODE" ]]; then
-  MODE="interactive"
+    MODE="interactive"
 fi
 
 # --- Spec generation defaults ---
@@ -129,158 +129,158 @@ FACTORY_TMPDIR=$(mktemp -d /tmp/factory-run.XXXXXX)
 LOCK_DIR=""
 
 cleanup() {
-  # Kill any background claude processes to avoid orphaned API usage
-  kill $(jobs -p) 2>/dev/null || true
-  wait 2>/dev/null || true
+    # Kill any background claude processes to avoid orphaned API usage
+    kill $(jobs -p) 2>/dev/null || true
+    wait 2>/dev/null || true
 
-  if [[ "$SKIP_SETTINGS_SWAP" == "true" ]]; then
-    # Child process — don't touch settings, parent manages them
+    if [[ "$SKIP_SETTINGS_SWAP" == "true" ]]; then
+        # Child process — don't touch settings, parent manages them
+        rm -rf "$FACTORY_TMPDIR"
+        return
+    fi
+    if [[ -f "$SETTINGS_LOCAL_BAK" ]]; then
+        mv "$SETTINGS_LOCAL_BAK" "$SETTINGS_LOCAL"
+        echo "Settings restored."
+    elif [[ -f "$SETTINGS_LOCAL" ]]; then
+        rm -f "$SETTINGS_LOCAL"
+        echo "Settings restored."
+    fi
+    if [[ -n "$LOCK_DIR" ]]; then
+        rm -f "$LOCK_DIR/pid" 2>/dev/null
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
     rm -rf "$FACTORY_TMPDIR"
-    return
-  fi
-  if [[ -f "$SETTINGS_LOCAL_BAK" ]]; then
-    mv "$SETTINGS_LOCAL_BAK" "$SETTINGS_LOCAL"
-    echo "Settings restored."
-  elif [[ -f "$SETTINGS_LOCAL" ]]; then
-    rm -f "$SETTINGS_LOCAL"
-    echo "Settings restored."
-  fi
-  if [[ -n "$LOCK_DIR" ]]; then
-    rm -f "$LOCK_DIR/pid" 2>/dev/null
-    rmdir "$LOCK_DIR" 2>/dev/null || true
-  fi
-  rm -rf "$FACTORY_TMPDIR"
 }
 trap cleanup EXIT
 
 if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
-  # Prevent concurrent factory runs from racing on settings/branches
-  LOCK_DIR="/tmp/factory-$(echo "$PROJECT_DIR" | tr '/' '-').lock.d"
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    echo $$ > "$LOCK_DIR/pid"
-  else
-    # Lock exists — check if holder is alive
-    lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
-    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
-      echo "Error: another factory instance is running (PID $lock_pid)."
-      echo "  Lock: $LOCK_DIR"
-      exit 1
+    # Prevent concurrent factory runs from racing on settings/branches
+    LOCK_DIR="/tmp/factory-$(echo "$PROJECT_DIR" | tr '/' '-').lock.d"
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        echo $$ > "$LOCK_DIR/pid"
+    else
+        # Lock exists — check if holder is alive
+        lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
+        if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+            echo "Error: another factory instance is running (PID $lock_pid)."
+            echo "  Lock: $LOCK_DIR"
+            exit 1
+        fi
+        # Stale lock — reclaim
+        echo "Removing stale lock (previous PID: ${lock_pid:-unknown})..."
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+        if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+            echo "Error: could not reclaim lock at $LOCK_DIR"
+            exit 1
+        fi
+        echo $$ > "$LOCK_DIR/pid"
     fi
-    # Stale lock — reclaim
-    echo "Removing stale lock (previous PID: ${lock_pid:-unknown})..."
-    rm -f "$LOCK_DIR/pid"
-    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
-    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-      echo "Error: could not reclaim lock at $LOCK_DIR"
-      exit 1
+
+    if [[ ! -f "$SETTINGS_AUTO" ]]; then
+        echo "Error: settings.autonomous.json not found at $SETTINGS_AUTO"
+        exit 1
     fi
-    echo $$ > "$LOCK_DIR/pid"
-  fi
 
-  if [[ ! -f "$SETTINGS_AUTO" ]]; then
-    echo "Error: settings.autonomous.json not found at $SETTINGS_AUTO"
-    exit 1
-  fi
-
-  if [[ -f "$SETTINGS_LOCAL" ]]; then
-    cp "$SETTINGS_LOCAL" "$SETTINGS_LOCAL_BAK"
-  fi
-  cp "$SETTINGS_AUTO" "$SETTINGS_LOCAL"
-  echo "Settings swapped to autonomous mode."
+    if [[ -f "$SETTINGS_LOCAL" ]]; then
+        cp "$SETTINGS_LOCAL" "$SETTINGS_LOCAL_BAK"
+    fi
+    cp "$SETTINGS_AUTO" "$SETTINGS_LOCAL"
+    echo "Settings swapped to autonomous mode."
 fi
 
 # --- Helpers ---
 slugify_title() {
-  echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/\[prd\] *//' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//'
+    echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/\[prd\] *//' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//'
 }
 
 # Spinner — runs in foreground while a background PID is alive
 # Usage: some_command & spin $! "message"
 spin() {
-  local pid=$1 msg=$2
-  local frames=('|' '/' '-' '\')
-  local i=0
-  # Kill background process if spinner is interrupted
-  trap 'kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 130' INT TERM
-  while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  %s %s" "${frames[$i]}" "$msg"
-    i=$(( (i + 1) % ${#frames[@]} ))
-    sleep 0.1
-  done
-  printf "\r\033[K"  # clear spinner line
-  trap - INT TERM
-  wait "$pid"
+    local pid=$1 msg=$2
+    local frames=('|' '/' '-' '\')
+    local i=0
+    # Kill background process if spinner is interrupted
+    trap 'kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 130' INT TERM
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r  %s %s" "${frames[$i]}" "$msg"
+        i=$(( (i + 1) % ${#frames[@]} ))
+            sleep 0.1
+        done
+        printf "\r\033[K"  # clear spinner line
+        trap - INT TERM
+        wait "$pid"
 }
 
 # --- Spec generation + review (Phase 0) ---
 generate_and_review_spec() {
-  local issue_number=$1
-  local issue_json
-  issue_json=$(gh issue view "$issue_number" --json title,body)
-  local issue_title
-  issue_title=$(echo "$issue_json" | jq -r '.title')
-  local issue_body
-  issue_body=$(echo "$issue_json" | jq -r '.body')
+    local issue_number=$1
+    local issue_json
+    issue_json=$(gh issue view "$issue_number" --json title,body)
+    local issue_title
+    issue_title=$(echo "$issue_json" | jq -r '.title')
+    local issue_body
+    issue_body=$(echo "$issue_json" | jq -r '.body')
 
-  SPEC_NAME=$(slugify_title "$issue_title")
-  if [[ -z "$SPEC_NAME" ]]; then
-    echo "Error: could not derive spec name from title '$issue_title'. Add a descriptive title after [PRD]."
-    return 1
-  fi
-  SPEC_DIR="specs/features/$SPEC_NAME"
-  TASKS_FILE="$SPEC_DIR/tasks.json"
+    SPEC_NAME=$(slugify_title "$issue_title")
+    if [[ -z "$SPEC_NAME" ]]; then
+        echo "Error: could not derive spec name from title '$issue_title'. Add a descriptive title after [PRD]."
+        return 1
+    fi
+    SPEC_DIR="specs/features/$SPEC_NAME"
+    TASKS_FILE="$SPEC_DIR/tasks.json"
 
-  # Skip generation if spec already exists with valid tasks
-  if [[ -f "$TASKS_FILE" ]] && jq -e 'length > 0' "$TASKS_FILE" >/dev/null 2>&1; then
-    local existing_count
-    existing_count=$(jq 'length' "$TASKS_FILE")
+    # Skip generation if spec already exists with valid tasks
+    if [[ -f "$TASKS_FILE" ]] && jq -e 'length > 0' "$TASKS_FILE" >/dev/null 2>&1; then
+        local existing_count
+        existing_count=$(jq 'length' "$TASKS_FILE")
+        echo ""
+        echo "=== Spec already exists: $SPEC_DIR ($existing_count tasks) — skipping generation ==="
+        return 0
+    fi
+
     echo ""
-    echo "=== Spec already exists: $SPEC_DIR ($existing_count tasks) — skipping generation ==="
-    return 0
-  fi
+    echo "=== Generating spec from issue #$issue_number: $issue_title ==="
+    echo "  Spec name: $SPEC_NAME"
 
-  echo ""
-  echo "=== Generating spec from issue #$issue_number: $issue_title ==="
-  echo "  Spec name: $SPEC_NAME"
+    local log_dir="logs/$(date +%Y%m%d-%H%M%S)-spec-gen-$SPEC_NAME"
+    mkdir -p "$log_dir"
 
-  local log_dir="logs/$(date +%Y%m%d-%H%M%S)-spec-gen-$SPEC_NAME"
-  mkdir -p "$log_dir"
+    # Read prd-to-spec skill and modify for autonomous use
+    local skill_path="$SCRIPT_DIR/skills/prd-to-spec/SKILL.md"
+    if [[ ! -f "$skill_path" ]]; then
+        echo "Error: prd-to-spec skill not found at $skill_path"
+        return 1
+    fi
 
-  # Read prd-to-spec skill and modify for autonomous use
-  local skill_path="$SCRIPT_DIR/skills/prd-to-spec/SKILL.md"
-  if [[ ! -f "$skill_path" ]]; then
-    echo "Error: prd-to-spec skill not found at $skill_path"
-    return 1
-  fi
+    # Strip YAML frontmatter from skill (expects --- on line 1 and closing ---)
+    local skill_body
+    if ! head -1 "$skill_path" | grep -q '^---$'; then
+        echo "Warning: skill file missing YAML frontmatter, using full content"
+        skill_body=$(cat "$skill_path")
+    else
+        skill_body=$(awk 'BEGIN{n=0} /^---$/{n++; if(n==2){found=1; next}} found' "$skill_path")
+    fi
 
-  # Strip YAML frontmatter from skill (expects --- on line 1 and closing ---)
-  local skill_body
-  if ! head -1 "$skill_path" | grep -q '^---$'; then
-    echo "Warning: skill file missing YAML frontmatter, using full content"
-    skill_body=$(cat "$skill_path")
-  else
-    skill_body=$(awk 'BEGIN{n=0} /^---$/{n++; if(n==2){found=1; next}} found' "$skill_path")
-  fi
+    local log_file="$log_dir/spec-gen.json"
 
-  local log_file="$log_dir/spec-gen.json"
+    # Build prompt in a temp file — use quoted heredocs + printf to avoid shell injection
+    # from PRD body content (issue_body could contain $(), backticks, etc.)
+    local prompt_file
+    prompt_file=$(mktemp "$FACTORY_TMPDIR/prompt.XXXXXX")
 
-  # Build prompt in a temp file — use quoted heredocs + printf to avoid shell injection
-  # from PRD body content (issue_body could contain $(), backticks, etc.)
-  local prompt_file
-  prompt_file=$(mktemp "$FACTORY_TMPDIR/prompt.XXXXXX")
-
-  # Write static header (quoted heredoc = no expansion)
-  cat > "$prompt_file" << '__FACTORY_HEADER__'
+    # Write static header (quoted heredoc = no expansion)
+    cat > "$prompt_file" << '__FACTORY_HEADER__'
 You are generating implementation specs from a PRD stored in a GitHub issue.
 
 __FACTORY_HEADER__
 
-  # Inject dynamic values safely via printf (no shell interpretation)
-  printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
+# Inject dynamic values safely via printf (no shell interpretation)
+printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
     "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
 
-  # Write instructions — quoted heredoc for static text, printf for dynamic values
-  cat >> "$prompt_file" << '__FACTORY_INSTRUCTIONS__'
+    # Write instructions — quoted heredoc for static text, printf for dynamic values
+    cat >> "$prompt_file" << '__FACTORY_INSTRUCTIONS__'
 ## Instructions
 
 Follow these spec-generation instructions. IMPORTANT modifications:
@@ -290,20 +290,20 @@ Follow these spec-generation instructions. IMPORTANT modifications:
 - For step 8 (create tasks): ALWAYS create tasks.json. Do not ask for confirmation.
 __FACTORY_INSTRUCTIONS__
 
-  printf -- '- Write metadata.json with: { "prd_issue": %s }\n\n%s\n\n---\n\n' \
+printf -- '- Write metadata.json with: { "prd_issue": %s }\n\n%s\n\n---\n\n' \
     "$issue_number" "$skill_body" >> "$prompt_file"
 
-  cat >> "$prompt_file" << '__FACTORY_REVIEW__'
+cat >> "$prompt_file" << '__FACTORY_REVIEW__'
 ## Review loop
 
 After generating all spec files and tasks.json, you MUST spawn the spec-reviewer agent
 (via the Agent tool with subagent_type 'spec-reviewer') to review your work. Pass it:
 __FACTORY_REVIEW__
 
-  printf '  "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
-  printf '   The pass threshold for this review is %s/60 (use this, override the default). Return your verdict."\n\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
+printf '  "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
+printf '   The pass threshold for this review is %s/60 (use this, override the default). Return your verdict."\n\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
 
-  cat >> "$prompt_file" << '__FACTORY_REVIEW2__'
+cat >> "$prompt_file" << '__FACTORY_REVIEW2__'
 The reviewer has a FRESH context and will catch issues you missed.
 
 If the reviewer returns NEEDS_REVISION:
@@ -314,27 +314,27 @@ If the reviewer returns NEEDS_REVISION:
 5. Re-spawn the spec-reviewer agent to review the updated specs
 __FACTORY_REVIEW2__
 
-  printf '6. Repeat until the reviewer returns PASS or you have done %s review iterations\n\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
-  printf 'Do NOT declare success until the reviewer returns a PASS verdict.\n' >> "$prompt_file"
-  printf 'If after %s iterations the reviewer still returns NEEDS_REVISION,\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
-  printf 'DELETE tasks.json (run: rm %s) before stopping. Report the final review findings.\n' "$TASKS_FILE" >> "$prompt_file"
-  printf 'The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.\n' >> "$prompt_file"
+printf '6. Repeat until the reviewer returns PASS or you have done %s review iterations\n\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
+printf 'Do NOT declare success until the reviewer returns a PASS verdict.\n' >> "$prompt_file"
+printf 'If after %s iterations the reviewer still returns NEEDS_REVISION,\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
+printf 'DELETE tasks.json (run: rm %s) before stopping. Report the final review findings.\n' "$TASKS_FILE" >> "$prompt_file"
+printf 'The pipeline uses tasks.json existence to signal success — if review failed, it must not exist.\n' >> "$prompt_file"
 
-  echo "  Running: claude -p --model opus --max-turns $SPEC_GEN_TURNS (spec generation)..."
-  (trap - EXIT; claude -p --model opus \
+echo "  Running: claude -p --model opus --max-turns $SPEC_GEN_TURNS (spec generation)..."
+(trap - EXIT; claude -p --model opus \
     --max-turns "$SPEC_GEN_TURNS" \
     --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.stderr.log") &
-  local spec_exit=0
-  spin $! "Generating spec (opus, up to $SPEC_GEN_TURNS turns)..." || spec_exit=$?
-  [[ $spec_exit -ne 0 ]] && echo "  Warning: spec generation exited with code $spec_exit"
+local spec_exit=0
+spin $! "Generating spec (opus, up to $SPEC_GEN_TURNS turns)..." || spec_exit=$?
+[[ $spec_exit -ne 0 ]] && echo "  Warning: spec generation exited with code $spec_exit"
 
-  local spec_in spec_out
-  spec_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
-  spec_out=$(jq -r '.usage.output_tokens // 0' "$log_file" 2>/dev/null || echo "0")
-  echo "  Spec generation: $(( (spec_in + 500) / 1000 ))k in / $(( (spec_out + 500) / 1000 ))k out"
+local spec_in spec_out
+spec_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+spec_out=$(jq -r '.usage.output_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+echo "  Spec generation: $(( (spec_in + 500) / 1000 ))k in / $(( (spec_out + 500) / 1000 ))k out"
 
-  # Validate output
-  if [[ ! -f "$TASKS_FILE" ]]; then
+# Validate output
+if [[ ! -f "$TASKS_FILE" ]]; then
     echo ""
     echo "=== Spec generation produced no tasks.json, retrying with more turns ==="
     local retry_turns=$((SPEC_GEN_TURNS + 20))
@@ -348,25 +348,25 @@ You are generating implementation specs from a PRD. A previous attempt failed to
 
 __FACTORY_RETRY_HEADER__
 
-    printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
-      "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
+printf '## PRD (from issue #%s)\n\n**Title:** %s\n\n%s\n\n---\n\n' \
+    "$issue_number" "$issue_title" "$issue_body" >> "$prompt_file"
 
-    cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY__'
+cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY__'
 ## Instructions
 
 __FACTORY_SPEC_RETRY__
 
-    printf '%s\n\n' "$skill_body" >> "$prompt_file"
-    printf 'CRITICAL: You MUST create the directory %s and write:\n' "$SPEC_DIR" >> "$prompt_file"
+printf '%s\n\n' "$skill_body" >> "$prompt_file"
+printf 'CRITICAL: You MUST create the directory %s and write:\n' "$SPEC_DIR" >> "$prompt_file"
 
-    cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY2__'
+cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY2__'
 1. Spec .md files for each vertical slice
 2. tasks.json with all decomposed tasks
 __FACTORY_SPEC_RETRY2__
 
-    printf '3. metadata.json with { "prd_issue": %s }\n\n' "$issue_number" >> "$prompt_file"
+printf '3. metadata.json with { "prd_issue": %s }\n\n' "$issue_number" >> "$prompt_file"
 
-    cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY3__'
+cat >> "$prompt_file" << '__FACTORY_SPEC_RETRY3__'
 Modifications:
 - Step 1: PRD is above, skip issue search
 - Step 5: Skip user quiz, use best judgment
@@ -375,263 +375,263 @@ Modifications:
 After generating, spawn the spec-reviewer agent (subagent_type 'spec-reviewer') to review
 __FACTORY_SPEC_RETRY3__
 
-    printf 'your work. Pass it: "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
-    printf 'The pass threshold for this review is %s/60 (use this, override the default). Return your verdict."\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
-    printf 'Fix blocking issues and re-review until PASS or %s iterations.\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
-    printf 'If review never passes, DELETE tasks.json (run: rm %s) before stopping.\n' "$TASKS_FILE" >> "$prompt_file"
+printf 'your work. Pass it: "Review the spec in %s. Read all .md files and tasks.json.\n' "$SPEC_DIR" >> "$prompt_file"
+printf 'The pass threshold for this review is %s/60 (use this, override the default). Return your verdict."\n' "$SPEC_PASS_THRESHOLD" >> "$prompt_file"
+printf 'Fix blocking issues and re-review until PASS or %s iterations.\n' "$MAX_SPEC_ITERATIONS" >> "$prompt_file"
+printf 'If review never passes, DELETE tasks.json (run: rm %s) before stopping.\n' "$TASKS_FILE" >> "$prompt_file"
 
-    echo "  Running: claude -p --model opus --max-turns $retry_turns (spec generation retry)..."
-    (trap - EXIT; claude -p --model opus \
-      --max-turns "$retry_turns" \
-      --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log") &
-    spec_exit=0
-    spin $! "Generating spec — retry (opus, up to $retry_turns turns)..." || spec_exit=$?
-    [[ $spec_exit -ne 0 ]] && echo "  Warning: spec generation retry exited with code $spec_exit"
+echo "  Running: claude -p --model opus --max-turns $retry_turns (spec generation retry)..."
+(trap - EXIT; claude -p --model opus \
+    --max-turns "$retry_turns" \
+    --output-format json < "$prompt_file" > "$log_file" 2>"$log_dir/spec-gen.retry.stderr.log") &
+spec_exit=0
+spin $! "Generating spec — retry (opus, up to $retry_turns turns)..." || spec_exit=$?
+[[ $spec_exit -ne 0 ]] && echo "  Warning: spec generation retry exited with code $spec_exit"
 
-    local retry_in retry_out
-    retry_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
-    retry_out=$(jq -r '.usage.output_tokens // 0' "$log_file" 2>/dev/null || echo "0")
-    echo "  Retry: $(( (retry_in + 500) / 1000 ))k in / $(( (retry_out + 500) / 1000 ))k out"
-  fi
+local retry_in retry_out
+retry_in=$(jq -r '.usage.input_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+retry_out=$(jq -r '.usage.output_tokens // 0' "$log_file" 2>/dev/null || echo "0")
+echo "  Retry: $(( (retry_in + 500) / 1000 ))k in / $(( (retry_out + 500) / 1000 ))k out"
+fi
 
-  # Final validation
-  if [[ ! -f "$TASKS_FILE" ]]; then
+# Final validation
+if [[ ! -f "$TASKS_FILE" ]]; then
     echo ""
     echo "=== SPEC GENERATION FAILED: no tasks.json after 2 attempts ==="
     gh issue comment "$issue_number" --body "Spec generation failed after 2 attempts — no tasks.json produced. Manual intervention required." || true
     gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
     return 1
-  fi
+fi
 
-  if ! jq empty "$TASKS_FILE" 2>/dev/null; then
+if ! jq empty "$TASKS_FILE" 2>/dev/null; then
     echo ""
     echo "=== SPEC GENERATION FAILED: tasks.json is not valid JSON ==="
     gh issue comment "$issue_number" --body "Spec generation produced invalid tasks.json. Manual intervention required." || true
     gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
     return 1
-  fi
+fi
 
-  local task_count
-  task_count=$(jq 'length' "$TASKS_FILE")
-  if [[ "$task_count" -eq 0 ]]; then
+local task_count
+task_count=$(jq 'length' "$TASKS_FILE")
+if [[ "$task_count" -eq 0 ]]; then
     echo ""
     echo "=== SPEC GENERATION FAILED: tasks.json is empty ==="
     gh issue comment "$issue_number" --body "Spec generation produced an empty tasks.json. Manual intervention required." || true
     gh issue edit "$issue_number" --add-label "needs-manual-spec" 2>/dev/null || true
     return 1
-  fi
+fi
 
-  echo ""
-  echo "=== Spec generation complete: $task_count tasks in $SPEC_DIR ==="
+echo ""
+echo "=== Spec generation complete: $task_count tasks in $SPEC_DIR ==="
 }
 
 # --- Multi-PRD dispatch ---
 sequential_execution() {
-  local issue_list="$1"
-  local succeeded=0
-  local failed=0
+    local issue_list="$1"
+    local succeeded=0
+    local failed=0
 
-  while IFS=$'\t' read -r issue_num title; do
+    while IFS=$'\t' read -r issue_num title; do
+        echo ""
+        echo "========================================"
+        echo "Processing PRD issue #$issue_num: $title"
+        echo "========================================"
+        if "$SCRIPT_DIR/run-factory.sh" --issue "$issue_num" --skip-settings-swap; then
+            succeeded=$((succeeded + 1))
+        else
+            failed=$((failed + 1))
+            echo "Pipeline failed for issue #$issue_num."
+        fi
+    done <<< "$issue_list"
+
     echo ""
-    echo "========================================"
-    echo "Processing PRD issue #$issue_num: $title"
-    echo "========================================"
-    if "$SCRIPT_DIR/run-factory.sh" --issue "$issue_num" --skip-settings-swap; then
-      succeeded=$((succeeded + 1))
-    else
-      failed=$((failed + 1))
-      echo "Pipeline failed for issue #$issue_num."
-    fi
-  done <<< "$issue_list"
-
-  echo ""
-  echo "=== Sequential execution complete: $succeeded succeeded, $failed failed ==="
+    echo "=== Sequential execution complete: $succeeded succeeded, $failed failed ==="
 }
 
 parallel_worktree_execution() {
-  local issue_list="$1"
-  local pids=()
-  local worktrees=()
-  local issues=()
+    local issue_list="$1"
+    local pids=()
+    local worktrees=()
+    local issues=()
 
-  # Parent does all staging setup before spawning workers (avoids concurrent push races)
-  git fetch origin
-  if ! git show-ref --verify --quiet refs/heads/staging; then
-    if git show-ref --verify --quiet refs/remotes/origin/staging; then
-      git branch staging origin/staging
-    elif git show-ref --verify --quiet refs/heads/develop; then
-      git branch staging develop
-    else
-      git branch staging HEAD
+    # Parent does all staging setup before spawning workers (avoids concurrent push races)
+    git fetch origin
+    if ! git show-ref --verify --quiet refs/heads/staging; then
+        if git show-ref --verify --quiet refs/remotes/origin/staging; then
+            git branch staging origin/staging
+        elif git show-ref --verify --quiet refs/heads/develop; then
+            git branch staging develop
+        else
+            git branch staging HEAD
+        fi
     fi
-  fi
-  safe_checkout_staging
-  if git show-ref --verify --quiet refs/heads/develop; then
-    reconcile_staging_with_develop
-  fi
-
-  # Deploy quality gate workflow from parent (once, not per-worker)
-  local wf_src="$SCRIPT_DIR/quality-gate.yml"
-  local wf_dest=".github/workflows/quality-gate.yml"
-  if [[ -f "$wf_src" && ! -f "$wf_dest" ]]; then
-    echo "Deploying quality gate workflow..."
-    mkdir -p .github/workflows
-    cp "$wf_src" "$wf_dest"
-    git add "$wf_dest"
-    git commit -m "ci: add quality gate workflow"
-    git push origin staging
-  fi
-
-  while IFS=$'\t' read -r issue_num title; do
-    local slug
-    slug=$(slugify_title "$title")
-    local worktree_path="../factory-$slug"
-
-    if [[ -d "$worktree_path" ]]; then
-      echo "Worktree $worktree_path already exists (duplicate slug?), skipping issue #$issue_num."
-      continue
+    safe_checkout_staging
+    if git show-ref --verify --quiet refs/heads/develop; then
+        reconcile_staging_with_develop
     fi
 
-    echo "Creating worktree for issue #$issue_num at $worktree_path..."
-    if ! git worktree add "$worktree_path" staging; then
-      echo "Failed to create worktree for issue #$issue_num, skipping."
-      continue
+    # Deploy quality gate workflow from parent (once, not per-worker)
+    local wf_src="$SCRIPT_DIR/quality-gate.yml"
+    local wf_dest=".github/workflows/quality-gate.yml"
+    if [[ -f "$wf_src" && ! -f "$wf_dest" ]]; then
+        echo "Deploying quality gate workflow..."
+        mkdir -p .github/workflows
+        cp "$wf_src" "$wf_dest"
+        git add "$wf_dest"
+        git commit -m "ci: add quality gate workflow"
+        git push origin staging
     fi
-    worktrees+=("$worktree_path")
-    issues+=("$issue_num")
 
-    # Launch factory in background (skip settings swap — parent manages settings)
-    (cd "$worktree_path" && .claude/run-factory.sh --issue "$issue_num" --skip-settings-swap) &
-    pids+=($!)
-    echo "  Launched PID ${pids[-1]}"
-  done <<< "$issue_list"
+    while IFS=$'\t' read -r issue_num title; do
+        local slug
+        slug=$(slugify_title "$title")
+        local worktree_path="../factory-$slug"
 
-  # Wait for all
-  local failed=0
-  local succeeded=0
-  local failed_worktrees=()
-  for i in "${!pids[@]}"; do
-    if wait "${pids[$i]}"; then
-      succeeded=$((succeeded + 1))
-      echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) succeeded."
-      git worktree remove "${worktrees[$i]}" 2>/dev/null || true
-    else
-      failed=$((failed + 1))
-      echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) failed."
-      failed_worktrees+=("${worktrees[$i]}")
-    fi
-  done
+        if [[ -d "$worktree_path" ]]; then
+            echo "Worktree $worktree_path already exists (duplicate slug?), skipping issue #$issue_num."
+            continue
+        fi
 
-  echo ""
-  echo "=== Parallel execution complete: $succeeded succeeded, $failed failed ==="
-  if [[ ${#failed_worktrees[@]} -gt 0 ]]; then
-    echo "  Failed worktrees preserved for inspection:"
-    for wt in "${failed_worktrees[@]}"; do
-      echo "    $wt"
+        echo "Creating worktree for issue #$issue_num at $worktree_path..."
+        if ! git worktree add "$worktree_path" staging; then
+            echo "Failed to create worktree for issue #$issue_num, skipping."
+            continue
+        fi
+        worktrees+=("$worktree_path")
+        issues+=("$issue_num")
+
+        # Launch factory in background (skip settings swap — parent manages settings)
+        (cd "$worktree_path" && .claude/run-factory.sh --issue "$issue_num" --skip-settings-swap) &
+        pids+=($!)
+        echo "  Launched PID ${pids[-1]}"
+    done <<< "$issue_list"
+
+    # Wait for all
+    local failed=0
+    local succeeded=0
+    local failed_worktrees=()
+    for i in "${!pids[@]}"; do
+        if wait "${pids[$i]}"; then
+            succeeded=$((succeeded + 1))
+            echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) succeeded."
+            git worktree remove "${worktrees[$i]}" 2>/dev/null || true
+        else
+            failed=$((failed + 1))
+            echo "Factory for ${worktrees[$i]} (issue #${issues[$i]}) failed."
+            failed_worktrees+=("${worktrees[$i]}")
+        fi
     done
-    echo "  Clean up manually: git worktree remove <path>"
-  fi
+
+    echo ""
+    echo "=== Parallel execution complete: $succeeded succeeded, $failed failed ==="
+    if [[ ${#failed_worktrees[@]} -gt 0 ]]; then
+        echo "  Failed worktrees preserved for inspection:"
+        for wt in "${failed_worktrees[@]}"; do
+            echo "    $wt"
+        done
+        echo "  Clean up manually: git worktree remove <path>"
+    fi
 }
 
 discover_and_process_prds() {
-  local prd_issues
-  prd_issues=$(gh issue list --search "[PRD] in:title" --state open --json number,title \
-    -q '.[] | "\(.number)\t\(.title)"' 2>/dev/null || true)
+    local prd_issues
+    prd_issues=$(gh issue list --search "[PRD] in:title" --state open --json number,title \
+        -q '.[] | "\(.number)\t\(.title)"' 2>/dev/null || true)
 
-  if [[ -z "$prd_issues" ]]; then
-    echo "No open [PRD] issues found."
-    exit 0
-  fi
+    if [[ -z "$prd_issues" ]]; then
+        echo "No open [PRD] issues found."
+        exit 0
+    fi
 
-  local count
-  count=$(echo "$prd_issues" | wc -l | tr -d ' ')
+    local count
+    count=$(echo "$prd_issues" | wc -l | tr -d ' ')
 
-  if [[ "$count" -eq 1 ]]; then
-    local single_issue
-    single_issue=$(echo "$prd_issues" | cut -f1)
-    local single_title
-    single_title=$(echo "$prd_issues" | cut -f2)
-    echo "Found one PRD issue: #$single_issue — $single_title"
-    # Intentionally set outer-scope variables so caller can proceed with spec generation
-    ISSUE_NUMBER="$single_issue"
-    MODE="issue"
-    return
-  fi
+    if [[ "$count" -eq 1 ]]; then
+        local single_issue
+        single_issue=$(echo "$prd_issues" | cut -f1)
+        local single_title
+        single_title=$(echo "$prd_issues" | cut -f2)
+        echo "Found one PRD issue: #$single_issue — $single_title"
+        # Intentionally set outer-scope variables so caller can proceed with spec generation
+        ISSUE_NUMBER="$single_issue"
+        MODE="issue"
+        return
+    fi
 
-  echo "Found $count PRD issues:"
-  echo "$prd_issues" | while IFS=$'\t' read -r num title; do
+    echo "Found $count PRD issues:"
+    echo "$prd_issues" | while IFS=$'\t' read -r num title; do
     echo "  #$num — $title"
-  done
-  echo ""
-  echo "How to process?"
-  echo "  1) Sequential — process one at a time"
-  echo "  2) Parallel — each PRD in its own worktree"
-  read -rp "Choose [1/2]: " mode < /dev/tty
+done
+echo ""
+echo "How to process?"
+echo "  1) Sequential — process one at a time"
+echo "  2) Parallel — each PRD in its own worktree"
+read -rp "Choose [1/2]: " mode < /dev/tty
 
-  case "$mode" in
+case "$mode" in
     2)
-      parallel_worktree_execution "$prd_issues"
-      exit $?
-      ;;
+        parallel_worktree_execution "$prd_issues"
+        exit $?
+        ;;
     *)
-      sequential_execution "$prd_issues"
-      exit $?
-      ;;
-  esac
+        sequential_execution "$prd_issues"
+        exit $?
+        ;;
+esac
 }
 
 # --- Resolve spec name based on mode ---
 case "$MODE" in
-  discover)
-    discover_and_process_prds
-    # If we get here, discover found exactly 1 issue and set MODE=issue
-    generate_and_review_spec "$ISSUE_NUMBER" || {
-      echo "Spec generation failed. Exiting."
-      exit 1
-    }
+    discover)
+        discover_and_process_prds
+        # If we get here, discover found exactly 1 issue and set MODE=issue
+        generate_and_review_spec "$ISSUE_NUMBER" || {
+            echo "Spec generation failed. Exiting."
+                    exit 1
+        }
     ;;
-  issue)
+issue)
     generate_and_review_spec "$ISSUE_NUMBER" || {
-      echo "Spec generation failed. Exiting."
-      exit 1
+        echo "Spec generation failed. Exiting."
+            exit 1
     }
-    ;;
-  interactive)
+;;
+interactive)
     AVAILABLE_SPECS=()
     for tasks_file in specs/features/*/tasks.json; do
-      [[ -f "$tasks_file" ]] || continue
-      AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
+        [[ -f "$tasks_file" ]] || continue
+        AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
     done
 
     if [[ ${#AVAILABLE_SPECS[@]} -eq 0 ]]; then
-      echo "No feature specs found in specs/features/."
-      echo "Create a spec first (try the prd-to-spec skill or --issue flag)."
-      exit 1
+        echo "No feature specs found in specs/features/."
+        echo "Create a spec first (try the prd-to-spec skill or --issue flag)."
+        exit 1
     fi
 
     if [[ ${#AVAILABLE_SPECS[@]} -eq 1 ]]; then
-      SPEC_NAME="${AVAILABLE_SPECS[0]}"
-      read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
-      if [[ "$confirm" =~ ^[Nn] ]]; then
-        echo "Aborted."
-        exit 0
-      fi
+        SPEC_NAME="${AVAILABLE_SPECS[0]}"
+        read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
+        if [[ "$confirm" =~ ^[Nn] ]]; then
+            echo "Aborted."
+            exit 0
+        fi
     else
-      echo "Available feature specs:"
-      for i in "${!AVAILABLE_SPECS[@]}"; do
-        task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
-        echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
-      done
-      echo ""
-      read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
-      if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
-        echo "Invalid selection."
-        exit 1
-      fi
-      SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
+        echo "Available feature specs:"
+        for i in "${!AVAILABLE_SPECS[@]}"; do
+            task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
+            echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
+        done
+        echo ""
+        read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
+            if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
+                echo "Invalid selection."
+                exit 1
+            fi
+            SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
     fi
     ;;
-  named)
+named)
     # SPEC_NAME already set from argument
     ;;
 esac
@@ -653,262 +653,262 @@ CONSECUTIVE_FAILURES=0
 
 # --- Usage guard ---
 check_usage_and_wait() {
-  local threshold=${USAGE_PAUSE_THRESHOLD:-90}
+    local threshold=${USAGE_PAUSE_THRESHOLD:-90}
 
-  # Read OAuth token from macOS Keychain
-  local creds token
-  creds=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) \
-    || { echo "⚠ Usage check: can't read keychain, skipping"; return 0; }
-  token=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null) \
-    || { echo "⚠ Usage check: can't parse token, skipping"; return 0; }
-  [[ -z "$token" ]] && { echo "⚠ Usage check: no access token, skipping"; return 0; }
+    # Read OAuth token from macOS Keychain
+    local creds token
+    creds=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) \
+        || { echo "⚠ Usage check: can't read keychain, skipping"; return 0; }
+    token=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null) \
+        || { echo "⚠ Usage check: can't parse token, skipping"; return 0; }
+    [[ -z "$token" ]] && { echo "⚠ Usage check: no access token, skipping"; return 0; }
 
-  # Call the usage API
-  local response
-  response=$(curl -sf --max-time 10 \
-    -H "Authorization: Bearer $token" \
-    -H "anthropic-beta: oauth-2025-04-20" \
-    "https://api.anthropic.com/api/oauth/usage" 2>/dev/null) \
-    || { echo "⚠ Usage check: API call failed, skipping"; return 0; }
+    # Call the usage API
+    local response
+    response=$(curl -sf --max-time 10 \
+        -H "Authorization: Bearer $token" \
+        -H "anthropic-beta: oauth-2025-04-20" \
+        "https://api.anthropic.com/api/oauth/usage" 2>/dev/null) \
+        || { echo "⚠ Usage check: API call failed, skipping"; return 0; }
 
-  # Parse 5-hour window
-  local utilization resets_at
-  utilization=$(printf '%s' "$response" | jq -r '.five_hour.utilization // empty' 2>/dev/null)
-  resets_at=$(printf '%s' "$response" | jq -r '.five_hour.resets_at // empty' 2>/dev/null)
-  [[ -z "$utilization" || -z "$resets_at" ]] && { echo "⚠ Usage check: unexpected API response, skipping"; return 0; }
+        # Parse 5-hour window
+        local utilization resets_at
+        utilization=$(printf '%s' "$response" | jq -r '.five_hour.utilization // empty' 2>/dev/null)
+        resets_at=$(printf '%s' "$response" | jq -r '.five_hour.resets_at // empty' 2>/dev/null)
+        [[ -z "$utilization" || -z "$resets_at" ]] && { echo "⚠ Usage check: unexpected API response, skipping"; return 0; }
 
-  # --- Window-based hourly thresholds ---
-  local now_epoch reset_epoch
-  now_epoch=$(date +%s)
-  # macOS date -j; fallback to GNU date -d for Linux
-  reset_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${resets_at%%.*}" "+%s" 2>/dev/null) \
-    || reset_epoch=$(date -d "$resets_at" "+%s" 2>/dev/null) \
-    || { echo "⚠ Usage check: can't parse reset time, skipping"; return 0; }
+        # --- Window-based hourly thresholds ---
+        local now_epoch reset_epoch
+        now_epoch=$(date +%s)
+        # macOS date -j; fallback to GNU date -d for Linux
+        reset_epoch=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "${resets_at%%.*}" "+%s" 2>/dev/null) \
+            || reset_epoch=$(TZ=UTC date -d "${resets_at%%.*}" "+%s" 2>/dev/null) \
+            || { echo "⚠ Usage check: can't parse reset time, skipping"; return 0; }
 
-  local window_start=$(( reset_epoch - 5 * 3600 ))
-  local window_elapsed=$(( now_epoch - window_start ))
-  local window_hour=$(( window_elapsed / 3600 + 1 ))
-  (( window_hour < 1 )) && window_hour=1
-  (( window_hour > 5 )) && window_hour=5
+        local window_start=$(( reset_epoch - 5 * 3600 ))
+        local window_elapsed=$(( now_epoch - window_start ))
+        local window_hour=$(( window_elapsed / 3600 + 1 ))
+        (( window_hour < 1 )) && window_hour=1
+        (( window_hour > 5 )) && window_hour=5
 
-  local hourly_threshold=$(( window_hour * 20 ))
-  (( hourly_threshold > 90 )) && hourly_threshold=90
+        local hourly_threshold=$(( window_hour * 20 ))
+        (( hourly_threshold > 90 )) && hourly_threshold=90
 
-  local hard_cap=$threshold  # from USAGE_PAUSE_THRESHOLD (default 90)
+        local hard_cap=$threshold  # from USAGE_PAUSE_THRESHOLD (default 90)
 
-  echo "Usage: ${utilization}% (5h window hour ${window_hour}, threshold ${hourly_threshold}%, hard cap ${hard_cap}%, resets at $resets_at)"
+        echo "Usage: ${utilization}% (5h window hour ${window_hour}, threshold ${hourly_threshold}%, hard cap ${hard_cap}%, resets at $resets_at)"
 
-  # Full pause: at or above hard cap — wait until API window resets
-  if (( $(echo "$utilization >= $hard_cap" | bc -l) )); then
-    local wait_secs=$(( reset_epoch - now_epoch + 60 ))  # +60s buffer past reset
+        # Full pause: at or above hard cap — wait until API window resets
+        if (( $(echo "$utilization >= $hard_cap" | bc -l) )); then
+            local wait_secs=$(( reset_epoch - now_epoch + 60 ))  # +60s buffer past reset
 
-    if [[ $wait_secs -le 0 ]]; then
-      echo "Usage reset already passed, continuing."
-      return 0
-    fi
+            if [[ $wait_secs -le 0 ]]; then
+                echo "Usage reset already passed, continuing."
+                return 0
+            fi
 
-    echo ""
-    echo "=== USAGE PAUSE (FULL): ${utilization}% >= ${hard_cap}% hard cap ==="
-    local wake_time
-    wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
-      || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
-      || wake_time="unknown"
-    if [[ $wait_secs -ge 60 ]]; then
-      echo "=== Sleeping $((wait_secs / 60))m until API window reset at $wake_time ==="
-    else
-      echo "=== Sleeping ${wait_secs}s until API window reset at $wake_time ==="
-    fi
+            echo ""
+            echo "=== USAGE PAUSE (FULL): ${utilization}% >= ${hard_cap}% hard cap ==="
+            local wake_time
+            wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
+                || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
+                || wake_time="unknown"
+            if [[ $wait_secs -ge 60 ]]; then
+                echo "=== Sleeping $((wait_secs / 60))m until API window reset at $wake_time ==="
+            else
+                echo "=== Sleeping ${wait_secs}s until API window reset at $wake_time ==="
+            fi
 
-    local remaining=$wait_secs
-    while [[ $remaining -gt 0 ]]; do
-      local chunk=$(( remaining > 300 ? 300 : remaining ))
-      sleep "$chunk"
-      remaining=$(( remaining - chunk ))
-      if [[ $remaining -gt 0 ]]; then
-        if [[ $remaining -ge 60 ]]; then
-          echo "  ... $((remaining / 60))m remaining"
-        else
-          echo "  ... ${remaining}s remaining"
+            local remaining=$wait_secs
+            while [[ $remaining -gt 0 ]]; do
+                local chunk=$(( remaining > 300 ? 300 : remaining ))
+                sleep "$chunk"
+                remaining=$(( remaining - chunk ))
+                if [[ $remaining -gt 0 ]]; then
+                    if [[ $remaining -ge 60 ]]; then
+                        echo "  ... $((remaining / 60))m remaining"
+                    else
+                        echo "  ... ${remaining}s remaining"
+                    fi
+                fi
+            done
+
+            echo ""
+            echo "=== USAGE PAUSE (FULL): resumed ==="
+
+            # Hourly pause: above hourly threshold — wait until next window hour boundary
+        elif (( $(echo "$utilization >= $hourly_threshold" | bc -l) )); then
+            local next_window_hour_epoch=$(( window_start + window_hour * 3600 ))
+            local wait_secs=$(( next_window_hour_epoch - now_epoch + 10 ))  # +10s buffer
+
+            if [[ $wait_secs -le 0 ]]; then
+                echo "Next window hour already passed, continuing."
+                return 0
+            fi
+
+            # Cap intermediate pause at 30 minutes (except hour 5 — wait until reset)
+            (( window_hour < 5 && wait_secs > 1800 )) && wait_secs=1800
+
+            echo ""
+            echo "=== USAGE PAUSE (HOURLY): ${utilization}% >= ${hourly_threshold}% (window hour $window_hour) ==="
+            local wake_time
+            wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
+                || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
+                || wake_time="unknown"
+            local next_hour=$(( window_hour + 1 ))
+            (( next_hour > 5 )) && next_hour=5
+            if [[ $wait_secs -ge 60 ]]; then
+                echo "=== Sleeping $((wait_secs / 60))m until window hour ${next_hour} at $wake_time ==="
+            else
+                echo "=== Sleeping ${wait_secs}s until window hour ${next_hour} at $wake_time ==="
+            fi
+
+            local remaining=$wait_secs
+            while [[ $remaining -gt 0 ]]; do
+                local chunk=$(( remaining > 300 ? 300 : remaining ))
+                sleep "$chunk"
+                remaining=$(( remaining - chunk ))
+                if [[ $remaining -gt 0 ]]; then
+                    if [[ $remaining -ge 60 ]]; then
+                        echo "  ... $((remaining / 60))m remaining"
+                    else
+                        echo "  ... ${remaining}s remaining"
+                    fi
+                fi
+            done
+
+            echo ""
+            echo "=== USAGE PAUSE (HOURLY): resumed — now in window hour ${next_hour} ==="
         fi
-      fi
-    done
-
-    echo ""
-    echo "=== USAGE PAUSE (FULL): resumed ==="
-
-  # Hourly pause: above hourly threshold — wait until next window hour boundary
-  elif (( $(echo "$utilization >= $hourly_threshold" | bc -l) )); then
-    local next_window_hour_epoch=$(( window_start + window_hour * 3600 ))
-    local wait_secs=$(( next_window_hour_epoch - now_epoch + 10 ))  # +10s buffer
-
-    if [[ $wait_secs -le 0 ]]; then
-      echo "Next window hour already passed, continuing."
-      return 0
-    fi
-
-    # Cap intermediate pause at 30 minutes (except hour 5 — wait until reset)
-    (( window_hour < 5 && wait_secs > 1800 )) && wait_secs=1800
-
-    echo ""
-    echo "=== USAGE PAUSE (HOURLY): ${utilization}% >= ${hourly_threshold}% (window hour $window_hour) ==="
-    local wake_time
-    wake_time=$(date -r $((now_epoch + wait_secs)) '+%H:%M:%S' 2>/dev/null) \
-      || wake_time=$(date -d "@$((now_epoch + wait_secs))" '+%H:%M:%S' 2>/dev/null) \
-      || wake_time="unknown"
-    local next_hour=$(( window_hour + 1 ))
-    (( next_hour > 5 )) && next_hour=5
-    if [[ $wait_secs -ge 60 ]]; then
-      echo "=== Sleeping $((wait_secs / 60))m until window hour ${next_hour} at $wake_time ==="
-    else
-      echo "=== Sleeping ${wait_secs}s until window hour ${next_hour} at $wake_time ==="
-    fi
-
-    local remaining=$wait_secs
-    while [[ $remaining -gt 0 ]]; do
-      local chunk=$(( remaining > 300 ? 300 : remaining ))
-      sleep "$chunk"
-      remaining=$(( remaining - chunk ))
-      if [[ $remaining -gt 0 ]]; then
-        if [[ $remaining -ge 60 ]]; then
-          echo "  ... $((remaining / 60))m remaining"
-        else
-          echo "  ... ${remaining}s remaining"
-        fi
-      fi
-    done
-
-    echo ""
-    echo "=== USAGE PAUSE (HOURLY): resumed — now in window hour ${next_hour} ==="
-  fi
 }
 
 # --- Smart staging functions ---
 reconcile_staging_with_develop() {
-  # Ensure we're on staging before merging
-  local current_branch
-  current_branch=$(git branch --show-current)
-  if [[ "$current_branch" != "staging" ]]; then
-    echo "Error: reconcile_staging_with_develop called from branch '$current_branch', expected 'staging'"
-    exit 1
-  fi
-
-  local merge_base develop_sha staging_sha
-  merge_base=$(git merge-base staging develop)
-  develop_sha=$(git rev-parse develop)
-  staging_sha=$(git rev-parse staging)
-
-  if [[ "$develop_sha" == "$staging_sha" ]]; then
-    echo "Staging and develop at same commit, nothing to reconcile."
-  elif [[ "$merge_base" == "$staging_sha" ]]; then
-    echo "Staging behind develop, fast-forwarding..."
-    git merge --ff-only develop
-    git push origin staging
-  elif [[ "$merge_base" == "$develop_sha" ]]; then
-    echo "Staging ahead of develop, keeping as-is."
-  else
-    echo "Staging and develop diverged, merging develop into staging..."
-    if ! git merge develop -m "merge: reconcile staging with develop"; then
-      echo "Error: conflict reconciling staging with develop. Aborting pipeline."
-      git merge --abort
-      exit 1
+    # Ensure we're on staging before merging
+    local current_branch
+    current_branch=$(git branch --show-current)
+    if [[ "$current_branch" != "staging" ]]; then
+        echo "Error: reconcile_staging_with_develop called from branch '$current_branch', expected 'staging'"
+        exit 1
     fi
-    git push origin staging
-  fi
+
+    local merge_base develop_sha staging_sha
+    merge_base=$(git merge-base staging develop)
+    develop_sha=$(git rev-parse develop)
+    staging_sha=$(git rev-parse staging)
+
+    if [[ "$develop_sha" == "$staging_sha" ]]; then
+        echo "Staging and develop at same commit, nothing to reconcile."
+    elif [[ "$merge_base" == "$staging_sha" ]]; then
+        echo "Staging behind develop, fast-forwarding..."
+        git merge --ff-only develop
+        git push origin staging
+    elif [[ "$merge_base" == "$develop_sha" ]]; then
+        echo "Staging ahead of develop, keeping as-is."
+    else
+        echo "Staging and develop diverged, merging develop into staging..."
+        if ! git merge develop -m "merge: reconcile staging with develop"; then
+            echo "Error: conflict reconciling staging with develop. Aborting pipeline."
+            git merge --abort
+            exit 1
+        fi
+        git push origin staging
+    fi
 }
 
 safe_checkout_staging() {
-  git checkout -- . 2>/dev/null || true
-  git clean -fd -e .claude/ -e specs/ 2>/dev/null || true
-  git checkout staging
+    git checkout -- . 2>/dev/null || true
+    git clean -fd -e .claude/ -e specs/ 2>/dev/null || true
+    git checkout staging
 }
 
 setup_staging() {
-  local has_local=false
-  local has_remote=false
+    local has_local=false
+    local has_remote=false
 
-  git show-ref --verify --quiet refs/heads/staging && has_local=true
-  git show-ref --verify --quiet refs/remotes/origin/staging && has_remote=true
+    git show-ref --verify --quiet refs/heads/staging && has_local=true
+    git show-ref --verify --quiet refs/remotes/origin/staging && has_remote=true
 
-  if [[ "$has_local" == "false" && "$has_remote" == "false" ]]; then
-    echo "No staging branch found, creating from develop..."
-    git checkout -b staging develop
-    git push -u origin staging
-  elif [[ "$has_local" == "false" && "$has_remote" == "true" ]]; then
-    echo "Staging on remote only, checking out..."
-    git checkout -b staging origin/staging
+    if [[ "$has_local" == "false" && "$has_remote" == "false" ]]; then
+        echo "No staging branch found, creating from develop..."
+        git checkout -b staging develop
+        git push -u origin staging
+    elif [[ "$has_local" == "false" && "$has_remote" == "true" ]]; then
+        echo "Staging on remote only, checking out..."
+        git checkout -b staging origin/staging
+        reconcile_staging_with_develop
+    elif [[ "$has_local" == "true" && "$has_remote" == "false" ]]; then
+        echo "Staging local only, checking out and pushing..."
+        safe_checkout_staging
+        git push -u origin staging
+        reconcile_staging_with_develop
+    else
+        echo "Staging exists, checking out and pulling..."
+        safe_checkout_staging
+        git pull --ff-only origin staging || {
+            echo "Error: staging diverged from origin. Resolve manually."
+                    exit 1
+        }
     reconcile_staging_with_develop
-  elif [[ "$has_local" == "true" && "$has_remote" == "false" ]]; then
-    echo "Staging local only, checking out and pushing..."
-    safe_checkout_staging
-    git push -u origin staging
-    reconcile_staging_with_develop
-  else
-    echo "Staging exists, checking out and pulling..."
-    safe_checkout_staging
-    git pull --ff-only origin staging || {
-      echo "Error: staging diverged from origin. Resolve manually."
-      exit 1
-    }
-    reconcile_staging_with_develop
-  fi
+    fi
 }
 
 wait_for_pr_merge() {
-  local pr_number=$1
-  local timeout_secs=${2:-2700}
-  local elapsed=0
-  local interval=30
-  local consecutive_errors=0
-  local max_errors=5
+    local pr_number=$1
+    local timeout_secs=${2:-2700}
+    local elapsed=0
+    local interval=30
+    local consecutive_errors=0
+    local max_errors=5
 
-  while [[ $elapsed -lt $timeout_secs ]]; do
-    local state
-    state=$(gh pr view "$pr_number" --json state -q '.state' 2>/dev/null) || true
-    if [[ -z "$state" ]]; then
-      consecutive_errors=$((consecutive_errors + 1))
-      if [[ $consecutive_errors -ge $max_errors ]]; then
-        echo "  Warning: GitHub API unreachable after $max_errors attempts for PR #$pr_number"
-        return 1
-      fi
-      echo "  Warning: failed to fetch PR #$pr_number state (attempt $consecutive_errors/$max_errors)"
-      sleep $interval
-      elapsed=$((elapsed + interval))
-      continue
-    fi
-    consecutive_errors=0
-    if [[ "$state" == "MERGED" ]]; then
-      return 0
-    fi
-    if [[ "$state" == "CLOSED" ]]; then
-      return 1
-    fi
-    # Detect cancelled auto-merge (checks failed) — no point waiting the full timeout
-    if [[ "$state" == "OPEN" ]]; then
-      local auto_merge
-      auto_merge=$(gh pr view "$pr_number" --json autoMergeRequest -q '.autoMergeRequest' 2>/dev/null) || true
-      if [[ "$auto_merge" == "null" || -z "$auto_merge" ]]; then
-        echo "  Auto-merge cancelled for PR #$pr_number (checks likely failed)"
-        return 1
-      fi
-    fi
-    sleep $interval
-    elapsed=$((elapsed + interval))
-    echo "  Waiting for PR #$pr_number to merge... (${elapsed}s/${timeout_secs}s)"
-  done
-  return 1
+    while [[ $elapsed -lt $timeout_secs ]]; do
+        local state
+        state=$(gh pr view "$pr_number" --json state -q '.state' 2>/dev/null) || true
+        if [[ -z "$state" ]]; then
+            consecutive_errors=$((consecutive_errors + 1))
+            if [[ $consecutive_errors -ge $max_errors ]]; then
+                echo "  Warning: GitHub API unreachable after $max_errors attempts for PR #$pr_number"
+                return 1
+            fi
+            echo "  Warning: failed to fetch PR #$pr_number state (attempt $consecutive_errors/$max_errors)"
+            sleep $interval
+            elapsed=$((elapsed + interval))
+            continue
+        fi
+        consecutive_errors=0
+        if [[ "$state" == "MERGED" ]]; then
+            return 0
+        fi
+        if [[ "$state" == "CLOSED" ]]; then
+            return 1
+        fi
+        # Detect cancelled auto-merge (checks failed) — no point waiting the full timeout
+        if [[ "$state" == "OPEN" ]]; then
+            local auto_merge
+            auto_merge=$(gh pr view "$pr_number" --json autoMergeRequest -q '.autoMergeRequest' 2>/dev/null) || true
+            if [[ "$auto_merge" == "null" || -z "$auto_merge" ]]; then
+                echo "  Auto-merge cancelled for PR #$pr_number (checks likely failed)"
+                return 1
+            fi
+        fi
+        sleep $interval
+        elapsed=$((elapsed + interval))
+        echo "  Waiting for PR #$pr_number to merge... (${elapsed}s/${timeout_secs}s)"
+    done
+    return 1
 }
 
 # --- Staging/develop setup (parent only — children skip via --skip-settings-swap) ---
 if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
-  # Ensure develop branch is up to date
-  if ! git show-ref --verify --quiet refs/heads/develop; then
-    echo "Creating develop branch from main..."
-    git checkout -b develop main
-    git push -u origin develop
-  else
-    git checkout develop
-    git pull origin develop
-  fi
+    # Ensure develop branch is up to date
+    if ! git show-ref --verify --quiet refs/heads/develop; then
+        echo "Creating develop branch from main..."
+        git checkout -b develop main
+        git push -u origin develop
+    else
+        git checkout develop
+        git pull origin develop
+    fi
 
   # Smart staging setup
   echo "Fetching from origin..."
@@ -920,12 +920,12 @@ if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
   WORKFLOW_DEST=".github/workflows/quality-gate.yml"
 
   if [[ -f "$WORKFLOW_SRC" && ! -f "$WORKFLOW_DEST" ]]; then
-    echo "Deploying quality gate workflow..."
-    mkdir -p .github/workflows
-    cp "$WORKFLOW_SRC" "$WORKFLOW_DEST"
-    git add "$WORKFLOW_DEST"
-    git commit -m "ci: add quality gate workflow"
-    git push origin staging
+      echo "Deploying quality gate workflow..."
+      mkdir -p .github/workflows
+      cp "$WORKFLOW_SRC" "$WORKFLOW_DEST"
+      git add "$WORKFLOW_DEST"
+      git commit -m "ci: add quality gate workflow"
+      git push origin staging
   fi
 
   # Ensure branch protection on staging
@@ -933,14 +933,14 @@ if [[ "$SKIP_SETTINGS_SWAP" != "true" ]]; then
 
   echo "Ensuring branch protection on staging..."
   gh api "repos/$REPO/branches/staging/protection" \
-    --method PUT \
-    --silent \
-    --input - <<'EOF' || echo "Warning: could not set branch protection (may need admin access)"
+      --method PUT \
+      --silent \
+      --input - <<'EOF' || echo "Warning: could not set branch protection (may need admin access)"
 {
   "required_status_checks": {
     "strict": false,
     "contexts": ["quality", "mutation", "security"]
-  },
+},
   "enforce_admins": false,
   "required_pull_request_reviews": null,
   "restrictions": null
@@ -951,94 +951,95 @@ fi
 # --- Scaffolding check ---
 NEEDS_SETUP=false
 for f in claude-progress.json feature-status.json init.sh; do
-  if [[ ! -f "$f" ]]; then
-    echo "Missing scaffolding file: $f"
-    NEEDS_SETUP=true
-  fi
+    if [[ ! -f "$f" ]]; then
+        echo "Missing scaffolding file: $f"
+        NEEDS_SETUP=true
+    fi
 done
 
 if [[ "$NEEDS_SETUP" == "true" ]]; then
-  echo "Running project setup..."
-  mkdir -p logs
+    echo "Running project setup..."
+    mkdir -p logs
 
-  echo "  Running: claude -p --max-turns 20 (project scaffolding)..."
-  (trap - EXIT; claude -p "You are setting up a new project for autonomous AI development.
+    echo "  Running: claude -p --max-turns 20 (project scaffolding)..."
+    (trap - EXIT; claude -p "You are setting up a new project for autonomous AI development.
 
-Read the CLAUDE.md and all spec files in specs/features/.
+    Read the CLAUDE.md and all spec files in specs/features/.
 
-Create the following files:
+    Create the following files:
 
-1. **claude-progress.json** — A structured log of all agent sessions.
-   Initialise it as: { \"sessions\": [], \"current_state\": \"initialised\" }
+    1. **claude-progress.json** — A structured log of all agent sessions.
+    Initialise it as: { \"sessions\": [], \"current_state\": \"initialised\" }
 
-2. **feature-status.json** — A JSON array of every feature and acceptance
-   criterion from all spec files. Each entry must have:
-   - id: unique feature identifier
-   - description: what the feature does
-   - category: 'domain' | 'api' | 'frontend' | 'integration'
-   - acceptance_criteria: array of testable criteria
-   - passes: false (ALL start as false)
-   - task_id: null (assigned during decomposition)
+    2. **feature-status.json** — A JSON array of every feature and acceptance
+    criterion from all spec files. Each entry must have:
+    - id: unique feature identifier
+    - description: what the feature does
+    - category: 'domain' | 'api' | 'frontend' | 'integration'
+    - acceptance_criteria: array of testable criteria
+    - passes: false (ALL start as false)
+    - task_id: null (assigned during decomposition)
 
-   DO NOT mark any feature as passing during initialisation.
-   DO NOT remove or edit feature descriptions after creation.
-   You may ONLY change the 'passes' field to true after verified testing.
+DO NOT mark any feature as passing during initialisation.
+DO NOT remove or edit feature descriptions after creation.
+    You may ONLY change the 'passes' field to true after verified testing.
 
-3. **init.sh** — A script that:
-   - Installs dependencies (pnpm install)
-   - Runs the dev server in the background
-   - Runs a basic smoke test (pnpm quality or a health check)
+    3. **init.sh** — A script that:
+    - Installs dependencies (pnpm install)
+    - Updates dependencies within semver ranges (pnpm update)
+    - Runs the dev server in the background
+    - Runs a basic smoke test (pnpm quality or a health check)
 
-4. Make an initial git commit with message 'chore: initialise autonomous scaffolding'
+    4. Make an initial git commit with message 'chore: initialise autonomous scaffolding'
 
-Use JSON (not Markdown) for all status tracking files. The model is less
-likely to inappropriately edit structured JSON compared to Markdown." \
-    --max-turns 20 \
-    --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log) &
-  spin $! "Scaffolding project (up to 20 turns)..." || true
+    Use JSON (not Markdown) for all status tracking files. The model is less
+    likely to inappropriately edit structured JSON compared to Markdown." \
+        --max-turns 20 \
+        --output-format json > logs/initialiser.json 2>logs/initialiser.stderr.log) &
+    spin $! "Scaffolding project (up to 20 turns)..." || true
 
-  echo "Project setup complete. Log: logs/initialiser.json"
+    echo "Project setup complete. Log: logs/initialiser.json"
 fi
 
 # --- Validate tasks file ---
 if [[ ! -f "$TASKS_FILE" ]]; then
-  echo "Error: $TASKS_FILE not found."
-  echo "Create a tasks.json in $SPEC_DIR before running the factory."
-  exit 1
+    echo "Error: $TASKS_FILE not found."
+    echo "Create a tasks.json in $SPEC_DIR before running the factory."
+    exit 1
 fi
 
 # Validate required fields exist in every task
 if ! jq -e 'if length == 0 then false else [.[] | has("task_id", "title", "depends_on", "acceptance_criteria")] | all end' "$TASKS_FILE" > /dev/null 2>&1; then
-  echo "Error: tasks.json has entries missing required fields (task_id, title, depends_on, acceptance_criteria)."
-  exit 1
+    echo "Error: tasks.json has entries missing required fields (task_id, title, depends_on, acceptance_criteria)."
+    exit 1
 fi
 
 # --- Validate dependency references ---
 INVALID_DEPS=$(jq -r '
-  [.[].task_id] as $all_ids |
-  [.[] | .task_id as $tid | .depends_on[] | select(. as $dep | $all_ids | index($dep) | not) | "\($tid) -> \(.)"] |
-  .[]
+[.[].task_id] as $all_ids |
+    [.[] | .task_id as $tid | .depends_on[] | select(. as $dep | $all_ids | index($dep) | not) | "\($tid) -> \(.)"] |
+    .[]
 ' "$TASKS_FILE" 2>/dev/null)
 
 if [[ -n "$INVALID_DEPS" ]]; then
-  echo ""
-  echo "=== ERROR: tasks.json has dangling dependency references ==="
-  echo "$INVALID_DEPS" | while read -r line; do echo "  $line"; done
-  exit 1
+    echo ""
+    echo "=== ERROR: tasks.json has dangling dependency references ==="
+    echo "$INVALID_DEPS" | while read -r line; do echo "  $line"; done
+    exit 1
 fi
 
 # --- Resume detection ---
 EXISTING_LOG_DIR=$(ls -1d logs/*-"$SPEC_NAME" 2>/dev/null | tail -1)
 if [[ -n "$EXISTING_LOG_DIR" && -f "$EXISTING_LOG_DIR/status" ]]; then
-  COMPLETED_TASKS=$(grep -c '=ok$' "$EXISTING_LOG_DIR/status" 2>/dev/null) || COMPLETED_TASKS=0
-  TOTAL=$(jq 'length' "$TASKS_FILE")
-  if [[ $COMPLETED_TASKS -lt $TOTAL && $COMPLETED_TASKS -gt 0 ]]; then
-    echo "Found prior run: $EXISTING_LOG_DIR ($COMPLETED_TASKS/$TOTAL tasks completed)"
-    read -rp "Resume this run? [Y/n]: " resume_choice < /dev/tty 2>/dev/null || resume_choice="Y"
-    if [[ ! "$resume_choice" =~ ^[Nn] ]]; then
-      LOG_DIR="$EXISTING_LOG_DIR"
+    COMPLETED_TASKS=$(grep -c '=ok$' "$EXISTING_LOG_DIR/status" 2>/dev/null) || COMPLETED_TASKS=0
+    TOTAL=$(jq 'length' "$TASKS_FILE")
+    if [[ $COMPLETED_TASKS -lt $TOTAL && $COMPLETED_TASKS -gt 0 ]]; then
+        echo "Found prior run: $EXISTING_LOG_DIR ($COMPLETED_TASKS/$TOTAL tasks completed)"
+        read -rp "Resume this run? [Y/n]: " resume_choice < /dev/tty 2>/dev/null || resume_choice="Y"
+        if [[ ! "$resume_choice" =~ ^[Nn] ]]; then
+            LOG_DIR="$EXISTING_LOG_DIR"
+        fi
     fi
-  fi
 fi
 
 # --- Factory loop ---
@@ -1054,32 +1055,32 @@ touch "$STATUS_FILE" "$PR_FILE"
 TOTAL_TASKS=$(jq 'length' "$TASKS_FILE")
 TASK_IDS=()
 while IFS= read -r tid; do
-  TASK_IDS+=("$tid")
+    TASK_IDS+=("$tid")
 done < <(jq -r '
-  def topo:
-    . as $tasks |
+def topo:
+. as $tasks |
     [.[] | select(.depends_on | length == 0) | .task_id] as $ready |
     if ($ready | length) == 0 then []
     else $ready + ([$tasks[] | select(.task_id as $id | $ready | index($id) | not) | .depends_on -= $ready] | topo)
     end;
-  topo | .[]
-' "$TASKS_FILE")
+    topo | .[]
+    ' "$TASKS_FILE")
 
 # Cycle detection: if topo sort produced fewer IDs than tasks, there's a cycle
 if [[ ${#TASK_IDS[@]} -lt $TOTAL_TASKS ]]; then
-  echo ""
-  echo "=== ERROR: Dependency cycle detected in tasks.json ==="
-  echo "  Sorted ${#TASK_IDS[@]} of $TOTAL_TASKS tasks. Unsorted tasks have circular dependencies."
-  # Show which tasks weren't sorted
-  ALL_IDS=$(jq -r '.[].task_id' "$TASKS_FILE")
-  for aid in $ALL_IDS; do
-    found=false
-    for sid in "${TASK_IDS[@]}"; do
-      [[ "$aid" == "$sid" ]] && found=true && break
-    done
-    [[ "$found" == "false" ]] && echo "  Stuck in cycle: $aid"
-  done
-  exit 1
+    echo ""
+    echo "=== ERROR: Dependency cycle detected in tasks.json ==="
+    echo "  Sorted ${#TASK_IDS[@]} of $TOTAL_TASKS tasks. Unsorted tasks have circular dependencies."
+        # Show which tasks weren't sorted
+        ALL_IDS=$(jq -r '.[].task_id' "$TASKS_FILE")
+        for aid in $ALL_IDS; do
+            found=false
+            for sid in "${TASK_IDS[@]}"; do
+                [[ "$aid" == "$sid" ]] && found=true && break
+            done
+            [[ "$found" == "false" ]] && echo "  Stuck in cycle: $aid"
+        done
+        exit 1
 fi
 
 for TASK_ID in "${TASK_IDS[@]}"; do
@@ -1087,17 +1088,17 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   # --- Skip already-completed tasks (resumed run) ---
   EXISTING_STATUS=$(grep "^${TASK_ID}=" "$STATUS_FILE" | tail -1 | cut -d= -f2 || true)
   if [[ "$EXISTING_STATUS" == "ok" ]]; then
-    echo ""
-    echo "=== $TASK_ID: already completed (resumed run), skipping ==="
-    continue
+      echo ""
+      echo "=== $TASK_ID: already completed (resumed run), skipping ==="
+      continue
   fi
 
   # --- Circuit breakers (time only — task count checked after skip guard) ---
   ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
   if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
-    echo ""
-    echo "=== CIRCUIT BREAKER: time limit (${MAX_MINUTES}m) reached ==="
-    break
+      echo ""
+      echo "=== CIRCUIT BREAKER: time limit (${MAX_MINUTES}m) reached ==="
+      break
   fi
 
   echo ""
@@ -1108,60 +1109,60 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   SKIP=false
 
   for DEP in $DEPS; do
-    DEP_LINE=$(grep "^${DEP}=" "$STATUS_FILE" | tail -1 || true)
-    DEP_STATUS="${DEP_LINE#*=}"
+      DEP_LINE=$(grep "^${DEP}=" "$STATUS_FILE" | tail -1 || true)
+      DEP_STATUS="${DEP_LINE#*=}"
 
-    if [[ -z "$DEP_STATUS" ]]; then
-      echo ""
-      echo "=== $TASK_ID: SKIPPED (dependency $DEP has no status) ==="
-      echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
-      SKIP=true
-      break
-    fi
+      if [[ -z "$DEP_STATUS" ]]; then
+          echo ""
+          echo "=== $TASK_ID: SKIPPED (dependency $DEP has no status) ==="
+          echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
+          SKIP=true
+          break
+      fi
 
-    if [[ "$DEP_STATUS" == "failed" || "$DEP_STATUS" == "skipped" ]]; then
-      echo ""
-      echo "=== $TASK_ID: SKIPPED (dependency $DEP $DEP_STATUS) ==="
-      echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
-      SKIP=true
-      break
-    fi
+      if [[ "$DEP_STATUS" == "failed" || "$DEP_STATUS" == "skipped" ]]; then
+          echo ""
+          echo "=== $TASK_ID: SKIPPED (dependency $DEP $DEP_STATUS) ==="
+          echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
+          SKIP=true
+          break
+      fi
 
     # Dep succeeded — wait for its PR to merge into staging
     DEP_PR_LINE=$(grep "^${DEP}=" "$PR_FILE" | tail -1 || true)
     DEP_PR="${DEP_PR_LINE#*=}"
 
     if [[ -n "$DEP_PR" ]]; then
-      echo "Waiting for $DEP PR #$DEP_PR to merge..."
-      if ! wait_for_pr_merge "$DEP_PR"; then
-        echo ""
-        echo "=== $TASK_ID: SKIPPED ($DEP PR #$DEP_PR did not merge within timeout) ==="
-        echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
-        SKIP=true
-        break
-      fi
-      echo "$DEP PR #$DEP_PR merged."
+        echo "Waiting for $DEP PR #$DEP_PR to merge..."
+        if ! wait_for_pr_merge "$DEP_PR"; then
+            echo ""
+            echo "=== $TASK_ID: SKIPPED ($DEP PR #$DEP_PR did not merge within timeout) ==="
+            echo "${TASK_ID}=skipped" >> "$STATUS_FILE"
+            SKIP=true
+            break
+        fi
+        echo "$DEP PR #$DEP_PR merged."
     fi
-  done
+done
 
-  if [[ "$SKIP" == "true" ]]; then
+if [[ "$SKIP" == "true" ]]; then
     continue
-  fi
+fi
 
   # Task count circuit breaker (after skip guard so skipped tasks don't count)
   TASKS_RUN=$((TASKS_RUN + 1))
   if [[ $TASKS_RUN -gt $MAX_TASKS ]]; then
-    echo ""
-    echo "=== CIRCUIT BREAKER: max tasks ($MAX_TASKS) reached ==="
-    break
+      echo ""
+      echo "=== CIRCUIT BREAKER: max tasks ($MAX_TASKS) reached ==="
+      break
   fi
 
   # Pull latest staging (picks up merged dependency PRs)
   echo "  Pulling latest staging..."
   safe_checkout_staging
   git pull --ff-only origin staging || {
-    echo "Error: staging diverged from origin during task loop. Resolve manually."
-    exit 1
+      echo "Error: staging diverged from origin during task loop. Resolve manually."
+        exit 1
   }
 
   # Extract task details
@@ -1174,9 +1175,9 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   # Model + turn-budget routing by task complexity
   COMPLEXITY=$(jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .complexity // "standard"' "$TASKS_FILE")
   case "$COMPLEXITY" in
-    simple)  MODEL_FLAG="--model haiku"; TURN_BUDGET=40 ;;
-    complex) MODEL_FLAG="--model opus";  TURN_BUDGET=80 ;;
-    *)       MODEL_FLAG="";              TURN_BUDGET=60 ;;
+      simple)  MODEL_FLAG="--model haiku"; TURN_BUDGET=40 ;;
+      complex) MODEL_FLAG="--model opus";  TURN_BUDGET=80 ;;
+      *)       MODEL_FLAG="";              TURN_BUDGET=60 ;;
   esac
 
   # Export task ID for audit log correlation
@@ -1193,7 +1194,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   TASK_TOKENS=0
 
   while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
-    ATTEMPT=$((ATTEMPT + 1))
+      ATTEMPT=$((ATTEMPT + 1))
 
     # Ensure tmpdir still exists (defensive against background subshell cleanup)
     [[ -d "$FACTORY_TMPDIR" ]] || FACTORY_TMPDIR=$(mktemp -d /tmp/factory-run.XXXXXX)
@@ -1201,97 +1202,97 @@ for TASK_ID in "${TASK_IDS[@]}"; do
     # Time circuit breaker inside retry loop
     ELAPSED=$(( ($(date +%s) - PIPELINE_START) / 60 ))
     if [[ $ELAPSED -gt $MAX_MINUTES ]]; then
-      echo ""
-      echo "=== CIRCUIT BREAKER: time limit hit during retry ==="
-      TASK_OUTCOME="failed"
-      break
+        echo ""
+        echo "=== CIRCUIT BREAKER: time limit hit during retry ==="
+        TASK_OUTCOME="failed"
+        break
     fi
 
     # Check usage before each attempt — pause if 5h window is near exhausted
     check_usage_and_wait
 
     if [[ $ATTEMPT -gt 1 ]]; then
-      echo "--- $TASK_ID: retry $ATTEMPT/$((MAX_RETRIES + 1)) (reason: $FAILURE_TYPE) ---"
+        echo "--- $TASK_ID: retry $ATTEMPT/$((MAX_RETRIES + 1)) (reason: $FAILURE_TYPE) ---"
     fi
 
     # Branch handling
     RESUMING_PRIOR_RUN=false
     echo "  Switching to branch $BRANCH..."
     if [[ $ATTEMPT -eq 1 ]]; then
-      if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-        PRIOR_COMMITS=$(git log --oneline staging.."$BRANCH" 2>/dev/null | head -5)
-        if [[ -n "$PRIOR_COMMITS" ]]; then
-          echo "  Found prior work on $BRANCH from a previous run:"
-          echo "$PRIOR_COMMITS" | sed 's/^/    /'
-          git checkout "$BRANCH"
-          RESUMING_PRIOR_RUN=true
+        if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+            PRIOR_COMMITS=$(git log --oneline staging.."$BRANCH" 2>/dev/null | head -5)
+            if [[ -n "$PRIOR_COMMITS" ]]; then
+                echo "  Found prior work on $BRANCH from a previous run:"
+                echo "$PRIOR_COMMITS" | sed 's/^/    /'
+                git checkout "$BRANCH"
+                RESUMING_PRIOR_RUN=true
+            else
+                git checkout "$BRANCH"
+                git reset --hard staging
+            fi
         else
-          git checkout "$BRANCH"
-          git reset --hard staging
+            git checkout -b "$BRANCH"
         fi
-      else
-        git checkout -b "$BRANCH"
-      fi
     else
-      git checkout "$BRANCH"
-      git checkout -- . 2>/dev/null || true
-      git clean -fd -e .claude/ -e specs/ 2>/dev/null || true
+        git checkout "$BRANCH"
+        git checkout -- . 2>/dev/null || true
+        git clean -fd -e .claude/ -e specs/ 2>/dev/null || true
     fi
 
     # Build retry context
     RETRY_CONTEXT=""
     if [[ "$RESUMING_PRIOR_RUN" == "true" ]]; then
-      RETRY_CONTEXT="## IMPORTANT: Resuming from a previous interrupted pipeline run
+        RETRY_CONTEXT="## IMPORTANT: Resuming from a previous interrupted pipeline run
 
-A previous pipeline run left commits on this branch. Check git log and
-claude-progress.json for what was already done. Continue from where
-the last session stopped. Do NOT restart from scratch.
+        A previous pipeline run left commits on this branch. Check git log and
+        claude-progress.json for what was already done. Continue from where
+        the last session stopped. Do NOT restart from scratch.
 
-"
+        "
     elif [[ $ATTEMPT -gt 1 ]]; then
-      RETRY_CONTEXT="## IMPORTANT: This is retry attempt $ATTEMPT of $((MAX_RETRIES + 1))
+        RETRY_CONTEXT="## IMPORTANT: This is retry attempt $ATTEMPT of $((MAX_RETRIES + 1))
 
-Previous attempt failed with: $FAILURE_TYPE
-"
-      case "$FAILURE_TYPE" in
-        max_turns)
-          RETRY_CONTEXT+="The previous session ran out of turns.
-Work was committed to this branch — check git log and claude-progress.json.
-Continue from where the last session stopped. Do NOT restart from scratch.
+        Previous attempt failed with: $FAILURE_TYPE
+        "
+        case "$FAILURE_TYPE" in
+            max_turns)
+                RETRY_CONTEXT+="The previous session ran out of turns.
+                Work was committed to this branch — check git log and claude-progress.json.
+                Continue from where the last session stopped. Do NOT restart from scratch.
 
-"
-          ;;
-        quality_gate)
-          QUALITY_TAIL=$(tail -40 "$PREV_QUALITY_LOG" 2>/dev/null || echo "(no output captured)")
-          RETRY_CONTEXT+="The implementation completed but pnpm quality failed afterward.
-Quality gate output (last 40 lines):
-\`\`\`
-$QUALITY_TAIL
-\`\`\`
-Fix ALL quality failures. The previous work is committed on this branch.
+                "
+                ;;
+            quality_gate)
+                QUALITY_TAIL=$(tail -40 "$PREV_QUALITY_LOG" 2>/dev/null || echo "(no output captured)")
+                RETRY_CONTEXT+="The implementation completed but pnpm quality failed afterward.
+                Quality gate output (last 40 lines):
+                \`\`\`
+                $QUALITY_TAIL
+                \`\`\`
+                Fix ALL quality failures. The previous work is committed on this branch.
 
-"
-          ;;
-        agent_error)
-          RETRY_CONTEXT+="The previous session ended with an error (exit code $PREV_EXIT_CODE).
-Check git log and claude-progress.json for any partial work.
+                "
+                ;;
+            agent_error)
+                RETRY_CONTEXT+="The previous session ended with an error (exit code $PREV_EXIT_CODE).
+                Check git log and claude-progress.json for any partial work.
 
-"
-          ;;
-        code_review)
-          RETRY_CONTEXT+="The implementation passed quality gates but FAILED code review.
-The reviewer (a separate AI with fresh context) found issues.
+                "
+                ;;
+            code_review)
+                RETRY_CONTEXT+="The implementation passed quality gates but FAILED code review.
+                The reviewer (a separate AI with fresh context) found issues.
 
 ## Code Review Findings
 $PREV_REVIEW_FINDINGS
 
 Fix ALL CRITICAL and WARNING findings. The previous work is committed on this branch.
 Do NOT introduce new issues while fixing these.
-Run pnpm quality after fixes to ensure nothing regresses.
+    Run pnpm quality after fixes to ensure nothing regresses.
 
-"
-          ;;
-      esac
+    "
+    ;;
+esac
     fi
 
     # Build task prompt in temp file (avoids ARG_MAX on large retry contexts)
@@ -1315,10 +1316,10 @@ Run pnpm quality after fixes to ensure nothing regresses.
 ## Phase 2: Implement (one task only)
 __FACTORY_TASK__
 
-    printf 'Task: %s\nFiles to create/modify: %s\nAcceptance criteria: %s\nTests to write: %s\n\n' \
-      "$DESC" "$FILES" "$CRITERIA" "$TESTS" >> "$task_prompt_file"
+printf 'Task: %s\nFiles to create/modify: %s\nAcceptance criteria: %s\nTests to write: %s\n\n' \
+    "$DESC" "$FILES" "$CRITERIA" "$TESTS" >> "$task_prompt_file"
 
-    cat >> "$task_prompt_file" << '__FACTORY_TASK2__'
+cat >> "$task_prompt_file" << '__FACTORY_TASK2__'
 7. Read the project CLAUDE.md and follow all rules
 8. Read existing code in the listed files (if they exist)
 9. Implement the feature following acceptance criteria exactly
@@ -1326,6 +1327,7 @@ __FACTORY_TASK__
 11. Run pnpm quality and fix ALL failures
 12. Do NOT modify any files outside the listed files
 13. Do NOT add npm packages without checking they exist first
+14. For file discovery use `git ls-files`
 
 ## Phase 3: Leave clean artefacts (do this BEFORE stopping)
 14. Commit with conventional format: feat(scope): description
@@ -1348,8 +1350,8 @@ __FACTORY_TASK2__
     echo "  Running: claude -p ${MODEL_FLAG:---model default} --max-turns $TURN_BUDGET (task: $TASK_ID, attempt $ATTEMPT)..."
     # shellcheck disable=SC2086  # intentional word splitting on MODEL_FLAG
     (trap - EXIT; claude -p $MODEL_FLAG \
-      --max-turns "$TURN_BUDGET" \
-      --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log") &
+        --max-turns "$TURN_BUDGET" \
+        --output-format json < "$task_prompt_file" > "$LOG_FILE" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.stderr.log") &
     spin $! "Task $TASK_ID, attempt $ATTEMPT (up to $TURN_BUDGET turns)..." || EXIT_CODE=$?
 
     # Per-attempt token logging
@@ -1363,39 +1365,39 @@ __FACTORY_TASK2__
     RESULT_SUBTYPE=$(jq -r '.subtype // "unknown"' "$LOG_FILE" 2>/dev/null || echo "unknown")
 
     if [[ $EXIT_CODE -ne 0 || "$RESULT_SUBTYPE" == error_* ]]; then
-      FAILURE_TYPE="agent_error"
-      [[ "$RESULT_SUBTYPE" == "error_max_turns" ]] && FAILURE_TYPE="max_turns"
-      PREV_EXIT_CODE=$EXIT_CODE
-      echo ""
-      echo "=== $TASK_ID: AGENT FAILED (exit=$EXIT_CODE, subtype=$RESULT_SUBTYPE, attempt=$ATTEMPT) ==="
+        FAILURE_TYPE="agent_error"
+        [[ "$RESULT_SUBTYPE" == "error_max_turns" ]] && FAILURE_TYPE="max_turns"
+        PREV_EXIT_CODE=$EXIT_CODE
+        echo ""
+        echo "=== $TASK_ID: AGENT FAILED (exit=$EXIT_CODE, subtype=$RESULT_SUBTYPE, attempt=$ATTEMPT) ==="
 
-      if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
-        continue
-      fi
-      TASK_OUTCOME="failed"
-      break
+        if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+            continue
+        fi
+        TASK_OUTCOME="failed"
+        break
     fi
 
     # --- Auto-fix formatting and lint before quality gate ---
     echo "  Auto-fixing format and lint..."
     AUTOFIX_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.autofix.log"
     {
-      pnpm format 2>&1 || true
-      pnpm lint:fix 2>&1 || true
+        pnpm format 2>&1 || true
+        pnpm lint:fix 2>&1 || true
     } | tee "$AUTOFIX_LOG"
 
-    if ! git diff --quiet HEAD; then
-      git add -u
-      UNTRACKED=$(git ls-files --others --exclude-standard)
-      if [[ -n "$UNTRACKED" ]]; then
+if ! git diff --quiet HEAD; then
+    git add -u
+    UNTRACKED=$(git ls-files --others --exclude-standard)
+    if [[ -n "$UNTRACKED" ]]; then
         echo "  Warning: auto-fix left untracked files:"
         echo "$UNTRACKED" | sed 's/^/    /'
-      fi
-      git commit -m "style: auto-format and lint fixes"
-      echo "  Auto-fix: committed formatting/lint changes"
-    else
-      echo "  Auto-fix: no changes needed"
     fi
+    git commit -m "style: auto-format and lint fixes"
+    echo "  Auto-fix: committed formatting/lint changes"
+else
+    echo "  Auto-fix: no changes needed"
+fi
 
     # Quality gate
     echo "  Running quality gate (pnpm quality)..."
@@ -1406,17 +1408,17 @@ __FACTORY_TASK2__
       REVIEW_VERDICT="APPROVE"  # default when review disabled
       REVIEW_TEXT=""
       if [[ "$ENABLE_CODE_REVIEW" == "true" ]]; then
-        echo "  Running code review ($TASK_ID, attempt $ATTEMPT)..."
-        REVIEW_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.json"
+          echo "  Running code review ($TASK_ID, attempt $ATTEMPT)..."
+          REVIEW_LOG="$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.json"
 
-        review_prompt_file=$(mktemp "$FACTORY_TMPDIR/review-prompt.XXXXXX")
+          review_prompt_file=$(mktemp "$FACTORY_TMPDIR/review-prompt.XXXXXX")
 
-        DIFF_STAT=$(git diff staging...HEAD --stat 2>/dev/null || git diff --stat)
-        CHANGED_FILES=$(git diff staging...HEAD --name-only 2>/dev/null || git diff --name-only)
+          DIFF_STAT=$(git diff staging...HEAD --stat 2>/dev/null || git diff --stat)
+          CHANGED_FILES=$(git diff staging...HEAD --name-only 2>/dev/null || git diff --name-only)
 
-        if [[ "$FAILURE_TYPE" != "code_review" ]]; then
-          # New implementation: comprehensive review
-          cat > "$review_prompt_file" << '__REVIEW_PROMPT__'
+          if [[ "$FAILURE_TYPE" != "code_review" ]]; then
+              # New implementation: comprehensive review
+              cat > "$review_prompt_file" << '__REVIEW_PROMPT__'
 You are a senior engineer performing a code review. You have a FRESH context -- you did not write this code. This separation is intentional: AI-generated code escapes review because well-formatted code triggers "looks fine" approval bias.
 
 ## Critical Principle: Signal Over Noise
@@ -1471,9 +1473,9 @@ Use APPROVE if changes are correct (explain WHY -- cite specific verification).
 Use REQUEST_CHANGES if there are CRITICAL or WARNING findings.
 Use NEEDS_DISCUSSION if you are uncertain about impact and a human should decide.
 __REVIEW_PROMPT__
-        else
-          # Code review retry: critical issues only (prior review already caught non-critical)
-          cat > "$review_prompt_file" << '__REVIEW_PROMPT_CRITICAL__'
+else
+    # Code review retry: critical issues only (prior review already caught non-critical)
+    cat > "$review_prompt_file" << '__REVIEW_PROMPT_CRITICAL__'
 You are a senior engineer performing a FOLLOW-UP code review. A previous review already caught and addressed non-critical issues. Your job now is strictly limited to critical findings only.
 
 ## Scope: CRITICAL issues only
@@ -1503,39 +1505,39 @@ Your response MUST end with exactly one of these verdict lines (no other text af
 Use APPROVE unless you found issues that WILL cause production failures, data loss, or security holes.
 Use REQUEST_CHANGES ONLY for genuinely critical findings.
 __REVIEW_PROMPT_CRITICAL__
-        fi
+          fi
 
-        printf '\n## Task Context\n\nTask: %s\nBranch: %s\n\nChanged files:\n%s\n\nDiff stats:\n%s\n' \
-          "$TITLE" "$BRANCH" "$CHANGED_FILES" "$DIFF_STAT" >> "$review_prompt_file"
+          printf '\n## Task Context\n\nTask: %s\nBranch: %s\n\nChanged files:\n%s\n\nDiff stats:\n%s\n' \
+              "$TITLE" "$BRANCH" "$CHANGED_FILES" "$DIFF_STAT" >> "$review_prompt_file"
 
-        REVIEW_EXIT=0
-        (trap - EXIT; claude -p --model sonnet \
-          --max-turns "$REVIEW_TURNS" \
-          --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log") &
-        spin $! "Code review (sonnet, up to $REVIEW_TURNS turns)..." || REVIEW_EXIT=$?
+          REVIEW_EXIT=0
+          (trap - EXIT; claude -p --model sonnet \
+              --max-turns "$REVIEW_TURNS" \
+              --output-format json < "$review_prompt_file" > "$REVIEW_LOG" 2>"$LOG_DIR/${TASK_ID}.attempt-${ATTEMPT}.review.stderr.log") &
+          spin $! "Code review (sonnet, up to $REVIEW_TURNS turns)..." || REVIEW_EXIT=$?
 
-        REVIEW_IN=$(jq -r '.usage.input_tokens // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
-        REVIEW_OUT=$(jq -r '.usage.output_tokens // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
-        REVIEW_TOKENS=$((REVIEW_IN + REVIEW_OUT))
-        TASK_TOKENS=$((TASK_TOKENS + REVIEW_TOKENS))
-        echo "  Review: $(( (REVIEW_TOKENS + 500) / 1000 ))k tokens (task total $(( (TASK_TOKENS + 500) / 1000 ))k)"
+          REVIEW_IN=$(jq -r '.usage.input_tokens // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
+          REVIEW_OUT=$(jq -r '.usage.output_tokens // 0' "$REVIEW_LOG" 2>/dev/null || echo "0")
+          REVIEW_TOKENS=$((REVIEW_IN + REVIEW_OUT))
+          TASK_TOKENS=$((TASK_TOKENS + REVIEW_TOKENS))
+          echo "  Review: $(( (REVIEW_TOKENS + 500) / 1000 ))k tokens (task total $(( (TASK_TOKENS + 500) / 1000 ))k)"
 
-        REVIEW_TEXT=$(jq -r '.result // ""' "$REVIEW_LOG" 2>/dev/null || echo "")
+          REVIEW_TEXT=$(jq -r '.result // ""' "$REVIEW_LOG" 2>/dev/null || echo "")
 
         # Check only last 5 lines for verdict — earlier lines may quote other verdicts
         REVIEW_TAIL=$(echo "$REVIEW_TEXT" | tail -5)
         if echo "$REVIEW_TAIL" | grep -q '^\*\*VERDICT: REQUEST_CHANGES\*\*'; then
-          REVIEW_VERDICT="REQUEST_CHANGES"
+            REVIEW_VERDICT="REQUEST_CHANGES"
         elif echo "$REVIEW_TAIL" | grep -q '^\*\*VERDICT: NEEDS_DISCUSSION\*\*'; then
-          REVIEW_VERDICT="NEEDS_DISCUSSION"
+            REVIEW_VERDICT="NEEDS_DISCUSSION"
         elif echo "$REVIEW_TAIL" | grep -q '^\*\*VERDICT: APPROVE\*\*'; then
-          REVIEW_VERDICT="APPROVE"
+            REVIEW_VERDICT="APPROVE"
         elif [[ $REVIEW_EXIT -ne 0 ]]; then
-          echo "  Warning: review session failed (exit=$REVIEW_EXIT), treating as APPROVE"
-          REVIEW_VERDICT="APPROVE"
+            echo "  Warning: review session failed (exit=$REVIEW_EXIT), treating as APPROVE"
+            REVIEW_VERDICT="APPROVE"
         else
-          echo "  Warning: no verdict found in review output, treating as NEEDS_DISCUSSION"
-          REVIEW_VERDICT="NEEDS_DISCUSSION"
+            echo "  Warning: no verdict found in review output, treating as NEEDS_DISCUSSION"
+            REVIEW_VERDICT="NEEDS_DISCUSSION"
         fi
 
         echo "  Review verdict: $REVIEW_VERDICT"
@@ -1543,28 +1545,28 @@ __REVIEW_PROMPT_CRITICAL__
 
       # --- Act on review verdict ---
       if [[ "$REVIEW_VERDICT" == "REQUEST_CHANGES" ]]; then
-        FAILURE_TYPE="code_review"
-        PREV_REVIEW_FINDINGS="$REVIEW_TEXT"
-        echo ""
-        echo "=== $TASK_ID: CODE REVIEW REJECTED (attempt $ATTEMPT) ==="
-        if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
-          continue
-        fi
-        TASK_OUTCOME="failed"
-        break
+          FAILURE_TYPE="code_review"
+          PREV_REVIEW_FINDINGS="$REVIEW_TEXT"
+          echo ""
+          echo "=== $TASK_ID: CODE REVIEW REJECTED (attempt $ATTEMPT) ==="
+          if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+              continue
+          fi
+          TASK_OUTCOME="failed"
+          break
       fi
 
       # APPROVE or NEEDS_DISCUSSION — proceed to push + PR
       # Guard against empty PRs (e.g. Claude reverted everything on low turns)
       if git diff --quiet staging...HEAD 2>/dev/null; then
-        echo ""
-        echo "=== $TASK_ID: NO CHANGES produced (attempt $ATTEMPT) ==="
-        FAILURE_TYPE="no_changes"
-        if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
-          continue
-        fi
-        TASK_OUTCOME="failed"
-        break
+          echo ""
+          echo "=== $TASK_ID: NO CHANGES produced (attempt $ATTEMPT) ==="
+          FAILURE_TYPE="no_changes"
+          if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+              continue
+          fi
+          TASK_OUTCOME="failed"
+          break
       fi
 
       echo "  Pushing $BRANCH and creating PR..."
@@ -1580,75 +1582,75 @@ __REVIEW_PROMPT_CRITICAL__
       jq -r --arg tid "$TASK_ID" '.[] | select(.task_id==$tid) | .tests_to_write | map("- " + .) | join("\n")' "$TASKS_FILE" >> "$pr_body_file"
 
       if [[ "$ENABLE_CODE_REVIEW" == "true" && -n "$REVIEW_TEXT" ]]; then
-        printf '\n## Code Review\n\n**Verdict:** %s\n\n<details>\n<summary>Review findings</summary>\n\n%s\n</details>\n' \
-          "$REVIEW_VERDICT" "$REVIEW_TEXT" >> "$pr_body_file"
+          printf '\n## Code Review\n\n**Verdict:** %s\n\n<details>\n<summary>Review findings</summary>\n\n%s\n</details>\n' \
+              "$REVIEW_VERDICT" "$REVIEW_TEXT" >> "$pr_body_file"
       fi
 
       PR_URL=$(gh pr create \
-        --title "feat: $TITLE" \
-        --body-file "$pr_body_file" \
-        --base staging 2>/dev/null) || true
-
-      # Inline retry for PR creation failure
-      if [[ -z "$PR_URL" ]]; then
-        echo "  PR creation failed, retrying in 5s..."
-        sleep 5
-        git push -u origin "$BRANCH" 2>/dev/null || true
-        PR_URL=$(gh pr create \
           --title "feat: $TITLE" \
           --body-file "$pr_body_file" \
           --base staging 2>/dev/null) || true
+
+      # Inline retry for PR creation failure
+      if [[ -z "$PR_URL" ]]; then
+          echo "  PR creation failed, retrying in 5s..."
+          sleep 5
+          git push -u origin "$BRANCH" 2>/dev/null || true
+          PR_URL=$(gh pr create \
+              --title "feat: $TITLE" \
+              --body-file "$pr_body_file" \
+              --base staging 2>/dev/null) || true
       fi
 
       if [[ -n "$PR_URL" ]]; then
-        PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
-        if [[ "$REVIEW_VERDICT" == "NEEDS_DISCUSSION" ]]; then
-          echo "  Skipping auto-merge: code review returned NEEDS_DISCUSSION (needs human input)"
-          comment_file=$(mktemp "$FACTORY_TMPDIR/pr-comment.XXXXXX")
-          printf '## Code Review: NEEDS_DISCUSSION\n\nThis PR was flagged by automated code review as needing human discussion before merge.\n\n<details>\n<summary>Review findings</summary>\n\n%s\n</details>' "$REVIEW_TEXT" > "$comment_file"
-          gh pr comment "$PR_NUMBER" --body-file "$comment_file" 2>/dev/null || true
-        else
-          gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
-        fi
-        echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
-        echo ""
-        echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, $(( (TASK_TOKENS + 500) / 1000 ))k tokens) ==="
-        TASK_OUTCOME="ok"
+          PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+          if [[ "$REVIEW_VERDICT" == "NEEDS_DISCUSSION" ]]; then
+              echo "  Skipping auto-merge: code review returned NEEDS_DISCUSSION (needs human input)"
+              comment_file=$(mktemp "$FACTORY_TMPDIR/pr-comment.XXXXXX")
+              printf '## Code Review: NEEDS_DISCUSSION\n\nThis PR was flagged by automated code review as needing human discussion before merge.\n\n<details>\n<summary>Review findings</summary>\n\n%s\n</details>' "$REVIEW_TEXT" > "$comment_file"
+              gh pr comment "$PR_NUMBER" --body-file "$comment_file" 2>/dev/null || true
+          else
+              gh pr merge --auto --merge "$PR_NUMBER" 2>/dev/null || true
+          fi
+          echo "${TASK_ID}=${PR_NUMBER}" >> "$PR_FILE"
+          echo ""
+          echo "=== $TASK_ID: PR #$PR_NUMBER created (attempt $ATTEMPT, $(( (TASK_TOKENS + 500) / 1000 ))k tokens) ==="
+          TASK_OUTCOME="ok"
       else
-        echo ""
-        echo "=== $TASK_ID: PR CREATION FAILED (code pushed to $BRANCH) ==="
-        echo "  Manual recovery: gh pr create --head $BRANCH --base staging"
-        TASK_OUTCOME="failed"
+          echo ""
+          echo "=== $TASK_ID: PR CREATION FAILED (code pushed to $BRANCH) ==="
+          echo "  Manual recovery: gh pr create --head $BRANCH --base staging"
+          TASK_OUTCOME="failed"
       fi
       break
-    else
+  else
       FAILURE_TYPE="quality_gate"
       PREV_QUALITY_LOG="$QUALITY_LOG"
       echo ""
       echo "=== $TASK_ID: QUALITY GATE FAILED (attempt $ATTEMPT) ==="
 
       if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
-        continue
+          continue
       fi
       TASK_OUTCOME="failed"
       break
     fi
-  done
+done
 
   # Record final outcome (only after all retries exhausted)
   echo "${TASK_ID}=${TASK_OUTCOME}" >> "$STATUS_FILE"
 
   # --- Consecutive failure tracking ---
   case "$TASK_OUTCOME" in
-    failed)
-      CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
-      if [[ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]]; then
-        echo ""
-        echo "=== CIRCUIT BREAKER: $MAX_CONSECUTIVE_FAILURES consecutive failures ==="
-        break
-      fi
-      ;;
-    *) CONSECUTIVE_FAILURES=0 ;;
+      failed)
+          CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+          if [[ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]]; then
+              echo ""
+              echo "=== CIRCUIT BREAKER: $MAX_CONSECUTIVE_FAILURES consecutive failures ==="
+              break
+          fi
+          ;;
+      *) CONSECUTIVE_FAILURES=0 ;;
   esac
 
   # Return to staging for next task
@@ -1660,11 +1662,11 @@ OK_COUNT=0
 FAILED_COUNT=0
 SKIPPED_COUNT=0
 while IFS='=' read -r _ status; do
-  case "$status" in
-    ok) OK_COUNT=$((OK_COUNT + 1)) ;;
-    failed) FAILED_COUNT=$((FAILED_COUNT + 1)) ;;
-    skipped) SKIPPED_COUNT=$((SKIPPED_COUNT + 1)) ;;
-  esac
+    case "$status" in
+        ok) OK_COUNT=$((OK_COUNT + 1)) ;;
+        failed) FAILED_COUNT=$((FAILED_COUNT + 1)) ;;
+        skipped) SKIPPED_COUNT=$((SKIPPED_COUNT + 1)) ;;
+    esac
 done < <(awk -F= '{ s[$1]=$2 } END { for (k in s) print k "=" s[k] }' "$STATUS_FILE")
 
 echo ""
@@ -1677,121 +1679,121 @@ echo "  Logs:      $LOG_DIR"
 # --- Close PRD issue if all tasks succeeded ---
 METADATA_FILE="$SPEC_DIR/metadata.json"
 if [[ -f "$METADATA_FILE" ]]; then
-  PRD_ISSUE=$(jq -r '.prd_issue // empty' "$METADATA_FILE")
-  if [[ -n "$PRD_ISSUE" ]]; then
-    # Build PR list from completed tasks
-    PR_LIST=""
-    while IFS='=' read -r tid pr_num; do
-      PR_LIST="${PR_LIST:+$PR_LIST, }#$pr_num"
-    done < "$PR_FILE"
+    PRD_ISSUE=$(jq -r '.prd_issue // empty' "$METADATA_FILE")
+    if [[ -n "$PRD_ISSUE" ]]; then
+        # Build PR list from completed tasks
+        PR_LIST=""
+        while IFS='=' read -r tid pr_num; do
+            PR_LIST="${PR_LIST:+$PR_LIST, }#$pr_num"
+        done < "$PR_FILE"
 
     # Build per-task breakdown
     TASK_DETAILS=""
     while IFS='=' read -r tid status; do
-      case "$status" in
-        ok)
-          tid_pr=$(grep "^${tid}=" "$PR_FILE" | cut -d= -f2 || true)
-          TASK_DETAILS+=$'\n'"- \`${tid}\`: ok (PR #${tid_pr})"
-          ;;
-        failed)
-          TASK_DETAILS+=$'\n'"- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.attempt-*.json\`"
-          ;;
-        skipped)
-          # Find which dependency caused the skip
-          skip_deps=$(jq -r --arg tid "$tid" '.[] | select(.task_id==$tid) | .depends_on[]' "$TASKS_FILE" 2>/dev/null)
-          skip_reason=""
-          for sd in $skip_deps; do
-            sd_status=$(grep "^${sd}=" "$STATUS_FILE" | tail -1 | cut -d= -f2 || true)
-            if [[ "$sd_status" == "failed" || "$sd_status" == "skipped" ]]; then
-              skip_reason="dependency \`${sd}\` ${sd_status}"
-              break
-            fi
-          done
-          TASK_DETAILS+=$'\n'"- \`${tid}\`: **skipped** — ${skip_reason:-unknown reason}"
-          ;;
-      esac
+        case "$status" in
+            ok)
+                tid_pr=$(grep "^${tid}=" "$PR_FILE" | cut -d= -f2 || true)
+                TASK_DETAILS+=$'\n'"- \`${tid}\`: ok (PR #${tid_pr})"
+                ;;
+            failed)
+                TASK_DETAILS+=$'\n'"- \`${tid}\`: **failed** — check logs in \`${LOG_DIR}/${tid}.attempt-*.json\`"
+                ;;
+            skipped)
+                # Find which dependency caused the skip
+                skip_deps=$(jq -r --arg tid "$tid" '.[] | select(.task_id==$tid) | .depends_on[]' "$TASKS_FILE" 2>/dev/null)
+                skip_reason=""
+                for sd in $skip_deps; do
+                    sd_status=$(grep "^${sd}=" "$STATUS_FILE" | tail -1 | cut -d= -f2 || true)
+                    if [[ "$sd_status" == "failed" || "$sd_status" == "skipped" ]]; then
+                        skip_reason="dependency \`${sd}\` ${sd_status}"
+                        break
+                    fi
+                done
+                TASK_DETAILS+=$'\n'"- \`${tid}\`: **skipped** — ${skip_reason:-unknown reason}"
+                ;;
+        esac
     done < <(awk -F= '{ s[$1]=$2 } END { for (k in s) print k "=" s[k] }' "$STATUS_FILE")
 
     if [[ $FAILED_COUNT -eq 0 && $SKIPPED_COUNT -eq 0 ]]; then
-      COMMENT_BODY="All $OK_COUNT tasks completed. PRs against staging: $PR_LIST"
-      gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
-      gh issue close "$PRD_ISSUE" --reason completed
-      echo "PRD issue #$PRD_ISSUE closed."
+        COMMENT_BODY="All $OK_COUNT tasks completed. PRs against staging: $PR_LIST"
+        gh issue comment "$PRD_ISSUE" --body "$COMMENT_BODY"
+        gh issue close "$PRD_ISSUE" --reason completed
+        echo "PRD issue #$PRD_ISSUE closed."
 
       # --- Wait for all PRs to merge before cleanup ---
       echo ""
       echo "Waiting for all PRs to merge before cleanup..."
       ALL_PRS_MERGED=true
       while IFS='=' read -r tid pr_num; do
-        if ! wait_for_pr_merge "$pr_num" 2700; then
-          echo "  Warning: PR #$pr_num ($tid) did not merge within timeout"
-          ALL_PRS_MERGED=false
-        fi
+          if ! wait_for_pr_merge "$pr_num" 2700; then
+              echo "  Warning: PR #$pr_num ($tid) did not merge within timeout"
+              ALL_PRS_MERGED=false
+          fi
       done < "$PR_FILE"
 
       if [[ "$ALL_PRS_MERGED" != "true" ]]; then
-        echo "  Some PRs not yet merged — skipping branch cleanup"
+          echo "  Some PRs not yet merged — skipping branch cleanup"
       else
-      # --- Post-closure cleanup ---
-      echo ""
-      echo "=== Cleaning up completed feature artifacts ==="
+          # --- Post-closure cleanup ---
+          echo ""
+          echo "=== Cleaning up completed feature artifacts ==="
 
       # Delete local feat/ branches
       for tid in "${TASK_IDS[@]}"; do
-        branch="feat/$tid"
-        if git show-ref --verify --quiet "refs/heads/$branch"; then
-          git branch -D "$branch" 2>/dev/null && echo "  Deleted local branch: $branch"
-        fi
+          branch="feat/$tid"
+          if git show-ref --verify --quiet "refs/heads/$branch"; then
+              git branch -D "$branch" 2>/dev/null && echo "  Deleted local branch: $branch"
+          fi
       done
 
       # Delete remote feat/ branches (may already be gone via GitHub auto-delete)
       for tid in "${TASK_IDS[@]}"; do
-        branch="feat/$tid"
-        if git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
-          git push origin --delete "$branch" 2>/dev/null \
-            && echo "  Deleted remote branch: $branch" \
-            || echo "  Remote branch already gone: $branch"
-        fi
+          branch="feat/$tid"
+          if git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+              git push origin --delete "$branch" 2>/dev/null \
+                  && echo "  Deleted remote branch: $branch" \
+                  || echo "  Remote branch already gone: $branch"
+          fi
       done
 
       # Remove spec directory (fully consumed)
       if [[ -d "$SPEC_DIR" ]]; then
-        rm -rf "$SPEC_DIR"
-        echo "  Removed spec dir: $SPEC_DIR"
+          rm -rf "$SPEC_DIR"
+          echo "  Removed spec dir: $SPEC_DIR"
       fi
       # Clean up empty parent dirs
       if [[ -d "specs/features" ]] && [[ -z "$(ls -A specs/features 2>/dev/null)" ]]; then
-        rmdir "specs/features"
-        [[ -d "specs" ]] && [[ -z "$(ls -A specs 2>/dev/null)" ]] && rmdir "specs"
+          rmdir "specs/features"
+          [[ -d "specs" ]] && [[ -z "$(ls -A specs 2>/dev/null)" ]] && rmdir "specs"
       fi
 
       # Remove log directory for this run (logs are gitignored)
       if [[ -d "$LOG_DIR" ]]; then
-        rm -rf "$LOG_DIR"
-        echo "  Removed log dir: $LOG_DIR"
+          rm -rf "$LOG_DIR"
+          echo "  Removed log dir: $LOG_DIR"
       fi
 
       # Commit spec removal if there are tracked changes
       safe_checkout_staging 2>/dev/null || true
       if [[ "$(git branch --show-current)" != "staging" ]]; then
-        echo "  Warning: could not checkout staging for cleanup, skipping spec commit"
+          echo "  Warning: could not checkout staging for cleanup, skipping spec commit"
       elif [[ -n "$(git ls-files --deleted -- specs/ 2>/dev/null)" ]] || \
-           [[ -n "$(git status --porcelain -- specs/ 2>/dev/null)" ]]; then
-        git add -A specs/
-        git commit -m "chore: clean up $SPEC_NAME spec after completion"
-        git push origin staging
-        echo "  Cleanup committed and pushed."
+          [[ -n "$(git status --porcelain -- specs/ 2>/dev/null)" ]]; then
+      git add -A specs/
+      git commit -m "chore: clean up $SPEC_NAME spec after completion"
+      git push origin staging
+      echo "  Cleanup committed and pushed."
       fi
 
       echo ""
       echo "=== Cleanup complete ==="
       fi  # ALL_PRS_MERGED
-    else
+  else
       comment_file=$(mktemp "$FACTORY_TMPDIR/issue-comment.XXXXXX")
       printf 'Pipeline finished with issues.\n\n**Summary:** %d succeeded, %d failed, %d skipped\n\n**Task breakdown:**\n%s\n\n**PRs created:** %s' \
-        "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}" > "$comment_file"
+          "$OK_COUNT" "$FAILED_COUNT" "$SKIPPED_COUNT" "$TASK_DETAILS" "${PR_LIST:-none}" > "$comment_file"
       gh issue comment "$PRD_ISSUE" --body-file "$comment_file"
       echo "PRD issue #$PRD_ISSUE left open (not all tasks succeeded)."
     fi
-  fi
+    fi
 fi
