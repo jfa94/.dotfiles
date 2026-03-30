@@ -55,7 +55,7 @@ Environment variables:
   MAX_TASKS                Max tasks before circuit breaker (default: 20)
   MAX_MINUTES              Max pipeline runtime in minutes (default: 360)
   MAX_CONSECUTIVE_FAILURES Max consecutive failures before stop (default: 3)
-  MAX_RETRIES              Max retries per failed task (default: 2, 0 = no retry)
+  MAX_RETRIES              Max retries per failed task (default: 4, 0 = no retry)
   MUTATION_FEEDBACK        Enable mutation testing feedback loop (default: false)
   ENABLE_CODE_REVIEW       Enable AI code review before PR merge (default: true)
   REVIEW_TURNS             Max turns for code review session (default: 40)
@@ -463,7 +463,7 @@ parallel_worktree_execution() {
       git branch staging HEAD
     fi
   fi
-  git checkout staging
+  safe_checkout_staging
   if git show-ref --verify --quiet refs/heads/develop; then
     reconcile_staging_with_develop
   fi
@@ -641,7 +641,7 @@ TASKS_FILE="$SPEC_DIR/tasks.json"
 MAX_TASKS=${MAX_TASKS:-20}
 MAX_MINUTES=${MAX_MINUTES:-360}
 MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
-MAX_RETRIES=${MAX_RETRIES:-2}
+MAX_RETRIES=${MAX_RETRIES:-4}
 USAGE_PAUSE_THRESHOLD=${USAGE_PAUSE_THRESHOLD:-90}
 ENABLE_CODE_REVIEW=${ENABLE_CODE_REVIEW:-true}
 REVIEW_TURNS=${REVIEW_TURNS:-40}
@@ -748,6 +748,12 @@ reconcile_staging_with_develop() {
   fi
 }
 
+safe_checkout_staging() {
+  git checkout -- . 2>/dev/null || true
+  git clean -fd -e .claude/ -e specs/ 2>/dev/null || true
+  git checkout staging
+}
+
 setup_staging() {
   local has_local=false
   local has_remote=false
@@ -765,12 +771,12 @@ setup_staging() {
     reconcile_staging_with_develop
   elif [[ "$has_local" == "true" && "$has_remote" == "false" ]]; then
     echo "Staging local only, checking out and pushing..."
-    git checkout staging
+    safe_checkout_staging
     git push -u origin staging
     reconcile_staging_with_develop
   else
     echo "Staging exists, checking out and pulling..."
-    git checkout staging
+    safe_checkout_staging
     git pull --ff-only origin staging || {
       echo "Error: staging diverged from origin. Resolve manually."
       exit 1
@@ -1084,7 +1090,7 @@ for TASK_ID in "${TASK_IDS[@]}"; do
 
   # Pull latest staging (picks up merged dependency PRs)
   echo "  Pulling latest staging..."
-  git checkout staging
+  safe_checkout_staging
   git pull --ff-only origin staging || {
     echo "Error: staging diverged from origin during task loop. Resolve manually."
     exit 1
@@ -1557,7 +1563,7 @@ __REVIEW_PROMPT_CRITICAL__
   esac
 
   # Return to staging for next task
-  git checkout staging
+  safe_checkout_staging
 done
 
 # --- Summary ---
@@ -1677,7 +1683,7 @@ if [[ -f "$METADATA_FILE" ]]; then
       fi
 
       # Commit spec removal if there are tracked changes
-      git checkout staging 2>/dev/null || true
+      safe_checkout_staging 2>/dev/null || true
       if [[ "$(git branch --show-current)" != "staging" ]]; then
         echo "  Warning: could not checkout staging for cleanup, skipping spec commit"
       elif [[ -n "$(git ls-files --deleted -- specs/ 2>/dev/null)" ]] || \
