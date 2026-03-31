@@ -11,8 +11,6 @@ DOTFILES=(
   .zprofile
   .gitconfig
   .gitignore
-  .prettierignore
-  .prettierrc.json
   .vimrc
   .ideavimrc
   .tmux.conf

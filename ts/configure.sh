@@ -3,30 +3,38 @@ set -euo pipefail
 
 # --- Resolve paths ---
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd -P)"
-DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 
-# --- Helper: list tracked .claude/ files eligible for distribution ---
-list_distributable_files() {
-  git -C "$DOTFILES_DIR" ls-files -z -- ".claude/" | while IFS= read -r -d '' gitfile; do
-    base="${gitfile#.claude/}"
-    [[ "$base" == "configure.sh" || "$base" == "quality-gate.yml" || "$base" == "settings.autonomous.json" || "$base" == "run-factory.sh" ]] && continue
-    printf '%s\0' "$SCRIPT_DIR/$base"
-  done
-}
+# --- Config file list ---
+CONFIG_FILES=(
+  .prettierrc.json
+  .prettierignore
+  .stryker.config.json
+  .dependency-cruiser.cjs
+  eslint.config.mjs
+  tsconfig.json
+  vitest.config.ts
+)
 
 # --- Help ---
 show_help() {
   cat <<'HELP'
 Usage: ./configure.sh <target-project-directory>
 
-Bootstraps a project with Claude Code configuration from the dotfiles repo.
+Bootstraps a JS/TS project with linting, formatting, and quality tooling
+from the dotfiles repo.
 
 Arguments:
-  <target-project-directory>   Path to the project to configure
+  <target-project-directory>   Path to the project to configure (must contain package.json)
 
 What gets copied:
-  .claude/*                    Claude Code settings, CLAUDE.md
-  .gitignore                   Git ignore rules
+  .prettierrc.json             Prettier config
+  .prettierignore              Prettier ignore rules
+  .stryker.config.json         Stryker mutation testing config
+  .dependency-cruiser.cjs      Dependency-cruiser rules
+  eslint.config.mjs            ESLint flat config
+  tsconfig.json                TypeScript config
+  vitest.config.ts             Vitest config
+  + Merges scripts and devDependencies from package.scaffold.json into package.json
 
 Conflict handling:
   If files already exist in the target, you'll be prompted to choose:
@@ -34,7 +42,8 @@ Conflict handling:
     2) Skip — add new files only, leave existing files untouched
     3) Prompt — decide file-by-file
 
-For JS/TS tooling config, use ts/configure.sh instead.
+Prerequisites:
+  node      Required for package.json scripts merge
 HELP
 }
 
@@ -57,33 +66,29 @@ if [[ ! -d "$TARGET" ]]; then
   exit 1
 fi
 
-# Resolve to absolute path
 TARGET="$(cd "$TARGET" && pwd)"
+
+if [[ ! -f "$TARGET/package.json" ]]; then
+  echo "Error: No package.json found in $TARGET"
+  exit 1
+fi
 
 # --- Detect conflicts ---
 conflicts=()
 
-# Check .claude/ files
-while IFS= read -r -d '' file; do
-  rel="${file#"$SCRIPT_DIR"/}"
-  dest="$TARGET/.claude/$rel"
-  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$file" "$dest" &>/dev/null; then
+for file in "${CONFIG_FILES[@]}"; do
+  src="$SCRIPT_DIR/$file"
+  dest="$TARGET/$file"
+  if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
-    conflicts+=(".claude/$rel")
+    conflicts+=("$file")
   fi
-done < <(list_distributable_files)
-
-# Check .gitignore
-if [[ -e "$TARGET/.gitignore" || -L "$TARGET/.gitignore" ]]; then
-  if ! { [[ -e "$TARGET/.gitignore" && ! -L "$TARGET/.gitignore" ]] && diff -q "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" &>/dev/null; }; then
-    conflicts+=(".gitignore")
-  fi
-fi
+done
 
 # --- Prompt (only if conflicts detected) ---
-MODE="replace"  # default: no conflicts, copy everything
+MODE="replace"
 
 if [[ ${#conflicts[@]} -gt 0 ]]; then
   echo "The following files already exist in the target:"
@@ -148,15 +153,28 @@ copy_file() {
   cp "$src" "$dest"
 }
 
-# --- Copy .claude/ directory ---
-while IFS= read -r -d '' file; do
-  rel="${file#"$SCRIPT_DIR"/}"
-  copy_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
-done < <(list_distributable_files)
+# --- Copy config files ---
+for file in "${CONFIG_FILES[@]}"; do
+  if [[ -e "$SCRIPT_DIR/$file" ]]; then
+    copy_file "$SCRIPT_DIR/$file" "$TARGET/$file" "$file"
+  else
+    echo "Warning: Source config file not found: $file"
+  fi
+done
 
-# --- Copy .gitignore ---
-if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
-  copy_file "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" ".gitignore"
+# --- Merge package.scaffold.json ---
+if [[ -f "$SCRIPT_DIR/package.scaffold.json" ]]; then
+  TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SCRIPT_DIR" node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync(process.env.TARGET_PATH + '/package.json', 'utf8'));
+    const scaffold = JSON.parse(fs.readFileSync(process.env.SCAFFOLD_PATH + '/package.scaffold.json', 'utf8'));
+    pkg.scripts = Object.assign({}, pkg.scripts || {}, scaffold.scripts);
+    pkg.devDependencies = Object.assign({}, pkg.devDependencies || {}, scaffold.devDependencies);
+    fs.writeFileSync(process.env.TARGET_PATH + '/package.json', JSON.stringify(pkg, null, 2) + '\n');
+  "
+  echo "Merged scripts and devDependencies into package.json"
+else
+  echo "Warning: package.scaffold.json not found, skipping scripts merge"
 fi
 
 # --- Summary ---
