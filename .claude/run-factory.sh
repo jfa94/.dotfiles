@@ -1031,6 +1031,13 @@ if [[ -n "$INVALID_DEPS" ]]; then
     exit 1
 fi
 
+# Commit spec to staging so tasks.json survives feature-branch switches
+if [[ -n "$(git status --porcelain -- "$SPEC_DIR" 2>/dev/null)" ]] || \
+   [[ -n "$(git ls-files --others -- "$SPEC_DIR" 2>/dev/null)" ]]; then
+    git add "$SPEC_DIR"
+    git commit -m "chore: add $SPEC_NAME spec for factory run"
+fi
+
 # --- Resume detection ---
 EXISTING_LOG_DIR=$(ls -1d logs/*-"$SPEC_NAME" 2>/dev/null | tail -1)
 if [[ -n "$EXISTING_LOG_DIR" && -f "$EXISTING_LOG_DIR/status" ]]; then
