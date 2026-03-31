@@ -8,7 +8,7 @@ import noRelativeImportPaths from 'eslint-plugin-no-relative-import-paths'
 import globals from 'globals'
 
 export default defineConfig(
-    globalIgnores(['node_modules/', '.next/', 'out/', 'dist/', 'coverage/', '**/*.d.ts', '.dependency-cruiser.*']),
+    globalIgnores(['node_modules/', '.next/', 'out/', 'dist/', 'coverage/', '**/*.d.ts', '.dependency-cruiser.*', '.claude/']),
 
     eslint.configs.recommended,
     prettierRecommended,
@@ -126,19 +126,19 @@ export default defineConfig(
                     default: 'disallow',
                     rules: [
                         // App layer can import everything except domain internals
-                        {from: 'app', allow: ['components', 'lib', 'services', 'domain', 'types', 'utils', 'config']},
+                        {from: {type: 'app'}, allow: [{to: {type: ['components', 'lib', 'services', 'domain', 'types', 'utils', 'config']}}]},
                         // Components: NO services (use hooks or server actions instead)
-                        {from: 'components', allow: ['components', 'lib', 'domain', 'types', 'utils']},
+                        {from: {type: 'components'}, allow: [{to: {type: ['components', 'lib', 'domain', 'types', 'utils']}}]},
                         // Services: orchestration layer
-                        {from: 'services', allow: ['domain', 'lib', 'types', 'utils', 'config']},
+                        {from: {type: 'services'}, allow: [{to: {type: ['domain', 'lib', 'types', 'utils', 'config']}}]},
                         // Domain: pure business logic, minimal deps
-                        {from: 'domain', allow: ['types', 'utils']},
+                        {from: {type: 'domain'}, allow: [{to: {type: ['types', 'utils']}}]},
                         // Infrastructure
-                        {from: 'lib', allow: ['types', 'utils', 'config']},
+                        {from: {type: 'lib'}, allow: [{to: {type: ['types', 'utils', 'config']}}]},
                         // Leaf nodes
-                        {from: 'types', allow: []},
-                        {from: 'utils', allow: ['types']},
-                        {from: 'config', allow: ['types']},
+                        {from: {type: 'types'}, allow: []},
+                        {from: {type: 'utils'}, allow: [{to: {type: ['types']}}]},
+                        {from: {type: 'config'}, allow: [{to: {type: ['types']}}]},
                     ],
                 },
             ],

@@ -17,6 +17,7 @@ list_distributable_files() {
 # --- Config file list ---
 JSTS_CONFIG_FILES=(
   .prettierrc.json
+  .prettierignore
   .stryker.config.json
   .dependency-cruiser.cjs
   eslint.config.mjs

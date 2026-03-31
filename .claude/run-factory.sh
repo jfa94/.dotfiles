@@ -239,6 +239,9 @@ generate_and_review_spec() {
         return 0
     fi
 
+    # Guard against near-exhausted API capacity before heavy spec generation
+    check_usage_and_wait
+
     echo ""
     echo "=== Generating spec from issue #$issue_number: $issue_title ==="
     echo "  Spec name: $SPEC_NAME"
@@ -580,77 +583,6 @@ case "$mode" in
 esac
 }
 
-# --- Resolve spec name based on mode ---
-case "$MODE" in
-    discover)
-        discover_and_process_prds
-        # If we get here, discover found exactly 1 issue and set MODE=issue
-        generate_and_review_spec "$ISSUE_NUMBER" || {
-            echo "Spec generation failed. Exiting."
-                    exit 1
-        }
-    ;;
-issue)
-    generate_and_review_spec "$ISSUE_NUMBER" || {
-        echo "Spec generation failed. Exiting."
-            exit 1
-    }
-;;
-interactive)
-    AVAILABLE_SPECS=()
-    for tasks_file in specs/features/*/tasks.json; do
-        [[ -f "$tasks_file" ]] || continue
-        AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
-    done
-
-    if [[ ${#AVAILABLE_SPECS[@]} -eq 0 ]]; then
-        echo "No feature specs found in specs/features/."
-        echo "Create a spec first (try the prd-to-spec skill or --issue flag)."
-        exit 1
-    fi
-
-    if [[ ${#AVAILABLE_SPECS[@]} -eq 1 ]]; then
-        SPEC_NAME="${AVAILABLE_SPECS[0]}"
-        read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
-        if [[ "$confirm" =~ ^[Nn] ]]; then
-            echo "Aborted."
-            exit 0
-        fi
-    else
-        echo "Available feature specs:"
-        for i in "${!AVAILABLE_SPECS[@]}"; do
-            task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
-            echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
-        done
-        echo ""
-        read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
-            if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
-                echo "Invalid selection."
-                exit 1
-            fi
-            SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
-    fi
-    ;;
-named)
-    # SPEC_NAME already set from argument
-    ;;
-esac
-
-SPEC_DIR="specs/features/$SPEC_NAME"
-TASKS_FILE="$SPEC_DIR/tasks.json"
-
-# --- Circuit breaker defaults (override via env vars) ---
-MAX_TASKS=${MAX_TASKS:-20}
-MAX_MINUTES=${MAX_MINUTES:-360}
-MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
-MAX_RETRIES=${MAX_RETRIES:-4}
-USAGE_PAUSE_THRESHOLD=${USAGE_PAUSE_THRESHOLD:-90}
-ENABLE_CODE_REVIEW=${ENABLE_CODE_REVIEW:-true}
-REVIEW_TURNS=${REVIEW_TURNS:-40}
-PIPELINE_START=$(date +%s)
-TASKS_RUN=0
-CONSECUTIVE_FAILURES=0
-
 # --- Usage guard ---
 check_usage_and_wait() {
     local threshold=${USAGE_PAUSE_THRESHOLD:-90}
@@ -781,6 +713,77 @@ check_usage_and_wait() {
             echo "=== USAGE PAUSE (HOURLY): resumed — now in window hour ${next_hour} ==="
         fi
 }
+
+# --- Resolve spec name based on mode ---
+case "$MODE" in
+    discover)
+        discover_and_process_prds
+        # If we get here, discover found exactly 1 issue and set MODE=issue
+        generate_and_review_spec "$ISSUE_NUMBER" || {
+            echo "Spec generation failed. Exiting."
+                    exit 1
+        }
+    ;;
+issue)
+    generate_and_review_spec "$ISSUE_NUMBER" || {
+        echo "Spec generation failed. Exiting."
+            exit 1
+    }
+;;
+interactive)
+    AVAILABLE_SPECS=()
+    for tasks_file in specs/features/*/tasks.json; do
+        [[ -f "$tasks_file" ]] || continue
+        AVAILABLE_SPECS+=("$(basename "$(dirname "$tasks_file")")")
+    done
+
+    if [[ ${#AVAILABLE_SPECS[@]} -eq 0 ]]; then
+        echo "No feature specs found in specs/features/."
+        echo "Create a spec first (try the prd-to-spec skill or --issue flag)."
+        exit 1
+    fi
+
+    if [[ ${#AVAILABLE_SPECS[@]} -eq 1 ]]; then
+        SPEC_NAME="${AVAILABLE_SPECS[0]}"
+        read -rp "Found one spec: $SPEC_NAME. Run it? [Y/n]: " confirm < /dev/tty
+        if [[ "$confirm" =~ ^[Nn] ]]; then
+            echo "Aborted."
+            exit 0
+        fi
+    else
+        echo "Available feature specs:"
+        for i in "${!AVAILABLE_SPECS[@]}"; do
+            task_count=$(jq 'length' "specs/features/${AVAILABLE_SPECS[$i]}/tasks.json" 2>/dev/null || echo "?")
+            echo "  $((i + 1))) ${AVAILABLE_SPECS[$i]} ($task_count tasks)"
+        done
+        echo ""
+        read -rp "Select spec [1-${#AVAILABLE_SPECS[@]}]: " choice < /dev/tty
+            if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt ${#AVAILABLE_SPECS[@]} ]]; then
+                echo "Invalid selection."
+                exit 1
+            fi
+            SPEC_NAME="${AVAILABLE_SPECS[$((choice - 1))]}"
+    fi
+    ;;
+named)
+    # SPEC_NAME already set from argument
+    ;;
+esac
+
+SPEC_DIR="specs/features/$SPEC_NAME"
+TASKS_FILE="$SPEC_DIR/tasks.json"
+
+# --- Circuit breaker defaults (override via env vars) ---
+MAX_TASKS=${MAX_TASKS:-20}
+MAX_MINUTES=${MAX_MINUTES:-360}
+MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
+MAX_RETRIES=${MAX_RETRIES:-4}
+USAGE_PAUSE_THRESHOLD=${USAGE_PAUSE_THRESHOLD:-90}
+ENABLE_CODE_REVIEW=${ENABLE_CODE_REVIEW:-true}
+REVIEW_TURNS=${REVIEW_TURNS:-40}
+PIPELINE_START=$(date +%s)
+TASKS_RUN=0
+CONSECUTIVE_FAILURES=0
 
 # --- Smart staging functions ---
 reconcile_staging_with_develop() {
