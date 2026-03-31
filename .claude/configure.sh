@@ -9,7 +9,7 @@ DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 list_distributable_files() {
   git -C "$DOTFILES_DIR" ls-files -z -- ".claude/" | while IFS= read -r -d '' gitfile; do
     base="${gitfile#.claude/}"
-    [[ "$base" == "configure.sh" || "$base" == "quality-gate.yml" ]] && continue
+    [[ "$base" == "configure.sh" || "$base" == "quality-gate.yml" || "$base" == "settings.autonomous.json" || "$base" == "run-factory.sh" ]] && continue
     printf '%s\0' "$SCRIPT_DIR/$base"
   done
 }
@@ -18,8 +18,6 @@ list_distributable_files() {
 JSTS_CONFIG_FILES=(
   .prettierrc.json
   .prettierignore
-  .stryker.config.json
-  .dependency-cruiser.cjs
   eslint.config.mjs
   tsconfig.json
   vitest.config.ts
@@ -33,25 +31,21 @@ Usage: ./configure.sh <target-project-directory>
 Bootstraps a project with Claude Code configuration, linting, and
 quality tooling from the dotfiles repo.
 
+Pipeline configs (stryker, dep-cruiser, quality-gate) are managed by dark-factory.
+
 Arguments:
   <target-project-directory>   Path to the project to configure
 
 What gets copied:
-  .claude/*                    Claude Code settings, CLAUDE.md, run-factory.sh
-  .github/workflows/quality-gate.yml  Quality gate CI workflow
+  .claude/*                    Claude Code settings, CLAUDE.md
   .gitignore                   Git ignore rules
 
   JS/TS only (requires package.json in target):
   .prettierrc.json             Prettier config
-  .stryker.config.json         Stryker mutation testing config
-  .dependency-cruiser.cjs      Dependency-cruiser rules
   eslint.config.mjs            ESLint flat config
   tsconfig.json                TypeScript config
   vitest.config.ts             Vitest config
   + Merges scripts and devDependencies from package.scaffold.json into package.json
-
-Additionally:
-  - Makes run-factory.sh executable in the target
 
 Conflict handling:
   If files already exist in the target, you'll be prompted to choose:
@@ -120,15 +114,6 @@ for file in "${JSTS_CONFIG_FILES[@]}"; do
     conflicts+=("$file")
   fi
 done
-fi
-
-# Check workflow file
-WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
-WORKFLOW_DEST="$TARGET/.github/workflows/quality-gate.yml"
-if [[ -e "$WORKFLOW_DEST" && ! -L "$WORKFLOW_DEST" ]] && diff -q "$WORKFLOW_SRC" "$WORKFLOW_DEST" &>/dev/null; then
-  : # already up to date
-elif [[ -e "$WORKFLOW_DEST" || -L "$WORKFLOW_DEST" ]]; then
-  conflicts+=(".github/workflows/quality-gate.yml")
 fi
 
 # --- Prompt (only if conflicts detected) ---
@@ -202,17 +187,6 @@ while IFS= read -r -d '' file; do
   rel="${file#"$SCRIPT_DIR"/}"
   copy_file "$file" "$TARGET/.claude/$rel" ".claude/$rel"
 done < <(list_distributable_files)
-
-# --- Make run-factory.sh executable ---
-if [[ -f "$TARGET/.claude/run-factory.sh" ]]; then
-  chmod +x "$TARGET/.claude/run-factory.sh"
-fi
-
-# --- Copy workflow file to .github/workflows/ ---
-WORKFLOW_SRC="$SCRIPT_DIR/quality-gate.yml"
-if [[ -f "$WORKFLOW_SRC" ]]; then
-  copy_file "$WORKFLOW_SRC" "$TARGET/.github/workflows/quality-gate.yml" ".github/workflows/quality-gate.yml"
-fi
 
 # --- Copy .gitignore ---
 if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then

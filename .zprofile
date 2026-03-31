@@ -12,3 +12,6 @@ fi
 if [[ -d "$HOME/.local/bin" ]]; then
   export PATH="$PATH:$HOME/.local/bin"
 fi
+
+# dark-factory pipeline
+export PATH="$HOME/Projects/dark-factory:$PATH"
