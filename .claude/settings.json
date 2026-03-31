@@ -333,6 +333,5 @@
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true
   },
-  "effortLevel": "medium",
-  "model": "sonnet"
+  "effortLevel": "medium"
 }
