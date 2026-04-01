@@ -5,7 +5,7 @@
     },
 
     "model": "opusplan",
-    "effortLevel": "high",
+    "effortLevel": "medium",
 
     "statusLine": {
         "type": "command",

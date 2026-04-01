@@ -100,16 +100,15 @@ for file in "${DOTFILES[@]}"; do
 done
 
 while IFS= read -r -d '' file; do
-  src="$DOTFILES_DIR/$file"
-  rel="${file#.claude/}"
+  rel="${file#"$DOTFILES_DIR"/.claude/}"
   dest="$HOME/.claude/$rel"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
     continue
   fi
   if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=("~/.claude/$rel")
   fi
-done < <(git -C "$DOTFILES_DIR" ls-files -z .claude/)
+done < <(find "$DOTFILES_DIR/.claude" -type f -print0)
 
 MODE="replace"
 if [[ ${#conflicts[@]} -gt 0 ]]; then
@@ -154,11 +153,11 @@ info "Creating Claude Code symlinks..."
 mkdir -p ~/.claude
 
 while IFS= read -r -d '' file; do
-  rel="${file#.claude/}"
+  rel="${file#"$DOTFILES_DIR"/.claude/}"
   dest="$HOME/.claude/$rel"
   mkdir -p "$(dirname "$dest")"
-  link_file "$DOTFILES_DIR/$file" "$dest" "~/.claude/$rel"
-done < <(git -C "$DOTFILES_DIR" ls-files -z .claude/)
+  link_file "$file" "$dest" "~/.claude/$rel"
+done < <(find "$DOTFILES_DIR/.claude" -type f -print0)
 
 # =============================================================================
 # Section 5: Create Required Directories
