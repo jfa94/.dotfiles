@@ -9,6 +9,18 @@
 - **Payments:** Stripe
 - **Icons:** Lucide
 
+## Commands
+
+- Quality gate (all checks): `pnpm quality`
+- Build: `pnpm build`
+- Test: `pnpm test`
+- Test with coverage: `pnpm test:coverage`
+- Type-check: `pnpm typecheck`
+- Lint: `pnpm lint`
+- Format: `pnpm format`
+- Dependency validation: `pnpm deps:validate`
+- Mutation testing: `pnpm test:mutation`
+
 ## Architecture
 
 - Store reusable components that are shared between pages in a `src/components/` folder and page-specific components in a directory next to the `page.tsx` file (e.g., `src/app/dashboard/components/`)
