@@ -5,11 +5,16 @@
 - In all interactions and commit messages, be concise and sacrifice grammar for the sake of concision
 - Push back on flawed logic or problematic approaches
 
+## Tools
+
+- Always prefer Claude native tools (e.g., Read, Grep, Glob) over bash equivalents (e.g., cat, grep, find, ls). Only use Bash for operations with no dedicated tool equivalent (e.g., `--help`)
+
 ## When Working
 
 - Before doing any exploration or research, read through a project's documentation in the `/docs` directory
-- If you make any fundamental changes (e.g., architecture, functionality), update a project's documentation
-- Use subagents for any exploration or research that needs more than 3 files, and return summarised insights. Default to Haiku unless the research is complex (e.g., software architecture)
+- Use subagents (`scout` if available) for any exploration or research that needs 3 or more files or pages. This
+  includes software architecture, debugging, tool usage, best practices, etc.
+- If you make any fundamental changes (e.g., architecture, functionality, usage), update a project's documentation in `/docs`
 - Present multiple options with trade-offs when they exist, without defaulting to agreement
 - Ask clarifying questions rather than making assumptions
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise
