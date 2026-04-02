@@ -22,7 +22,7 @@
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "test:mutation": "stryker run",
-        "test:mutation:incremental": "stryker run --incremental",
+        "test:mutation:full": "stryker run --force",
 
         "deps:validate": "depcruise src --output-type err",
         "deps:graph": "depcruise src --include-only '^src' --output-type dot | dot -T svg > docs/dependency-graph.svg",
