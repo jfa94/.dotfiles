@@ -1,17 +1,23 @@
 {
     "devDependencies": {
-        "vitest": "^4.1.2",
-        "@vitest/coverage-v8": "^4.1.2",
+        "@eslint/js": "9",
         "@stryker-mutator/core": "^9.0.0",
-        "@stryker-mutator/vitest-runner": "^9.0.0",
         "@stryker-mutator/typescript-checker": "^9.0.0",
-        "dependency-cruiser": "^17.0.0"
+        "@stryker-mutator/vitest-runner": "^9.0.0",
+        "@vitest/coverage-v8": "^4.1.2",
+        "dependency-cruiser": "^17.0.0",
+        "eslint": "^9.39.1",
+        "eslint-plugin-boundaries": "^6.0.2",
+        "eslint-plugin-no-relative-import-paths": "^1.6.1",
+        "eslint-plugin-prettier": "^5.5.4",
+        "eslint-plugin-security": "^4.0.0",
+        "globals": "^17.4.0",
+        "prettier": "3.7.4",
+        "typescript": "^5",
+        "typescript-eslint": "^8.49.0",
+        "vitest": "^4.1.2"
     },
     "scripts": {
-        "dev": "next dev",
-        "build": "next build",
-        "start": "next start",
-
         "typecheck": "tsc --noEmit",
         "lint": "eslint . --max-warnings 0",
         "lint:fix": "eslint . --fix",

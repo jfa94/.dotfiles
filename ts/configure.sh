@@ -3,6 +3,7 @@ set -euo pipefail
 
 # --- Resolve paths ---
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd -P)"
+DOTFILES_DIR="$(dirname "$SCRIPT_DIR")"
 
 # --- Config file list ---
 CONFIG_FILES=(
@@ -34,6 +35,7 @@ What gets copied:
   eslint.config.mjs            ESLint flat config
   tsconfig.json                TypeScript config
   vitest.config.ts             Vitest config
+  .gitignore                   Git ignore rules
   + Merges scripts and devDependencies from package.scaffold.json into package.json
 
 Conflict handling:
@@ -86,6 +88,15 @@ for file in "${CONFIG_FILES[@]}"; do
     conflicts+=("$file")
   fi
 done
+
+# Check .gitignore (sourced from dotfiles root)
+if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
+  if ! { [[ -e "$TARGET/.gitignore" && ! -L "$TARGET/.gitignore" ]] && diff -q "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" &>/dev/null; }; then
+    if [[ -e "$TARGET/.gitignore" || -L "$TARGET/.gitignore" ]]; then
+      conflicts+=(".gitignore")
+    fi
+  fi
+fi
 
 # --- Prompt (only if conflicts detected) ---
 MODE="replace"
@@ -161,6 +172,11 @@ for file in "${CONFIG_FILES[@]}"; do
     echo "Warning: Source config file not found: $file"
   fi
 done
+
+# --- Copy .gitignore ---
+if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
+  copy_file "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" ".gitignore"
+fi
 
 # --- Merge package.scaffold.json ---
 if [[ -f "$SCRIPT_DIR/package.scaffold.json" ]]; then
