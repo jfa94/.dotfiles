@@ -5,18 +5,17 @@
 - In all interactions and commit messages, be concise and sacrifice grammar for the sake of concision
 - Push back on flawed logic or problematic approaches
 
-## When Planning
+## When Working
 
+- Before doing any exploration or research, read through a project's documentation in the `/docs` directory
+- If you make any fundamental changes (e.g., architecture, functionality), update a project's documentation
+- Use subagents for any exploration or research that needs more than 3 files, and return summarised insights. Default to Haiku unless the research is complex (e.g., software architecture)
 - Present multiple options with trade-offs when they exist, without defaulting to agreement
-- Call out edge cases and how we should handle them
 - Ask clarifying questions rather than making assumptions
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise
-
-## When Implementing (after alignment)
-
-- If you discover an unforeseen issue, stop and discuss
-- Never drop a database table
-- Run `pnpm quality` before declaring any task complete
+- Be extremely cautious of functionality regression. DO NOT degrade functionality to appease a test; fix structurally
+- DO NOT disable quality checks, such as linting, to silence errors or warnings; address the underlying issue
+- NEVER drop a database table
 
 ## Testing Requirements
 
