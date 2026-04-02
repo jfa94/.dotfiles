@@ -108,7 +108,7 @@ while IFS= read -r -d '' file; do
   if [[ -e "$dest" || -L "$dest" ]]; then
     conflicts+=("~/.claude/$rel")
   fi
-done < <(find "$DOTFILES_DIR/.claude" -type f -print0)
+done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 
 MODE="replace"
 if [[ ${#conflicts[@]} -gt 0 ]]; then
@@ -157,7 +157,7 @@ while IFS= read -r -d '' file; do
   dest="$HOME/.claude/$rel"
   mkdir -p "$(dirname "$dest")"
   link_file "$file" "$dest" "~/.claude/$rel"
-done < <(find "$DOTFILES_DIR/.claude" -type f -print0)
+done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 
 # =============================================================================
 # Section 5: Create Required Directories
@@ -197,8 +197,13 @@ vim +PlugInstall +qall
 ycm_status="installed"
 ycm_dir="$HOME/.vim/plugged/YouCompleteMe"
 if [[ -d "$ycm_dir" ]]; then
-  info "Compiling YouCompleteMe..."
-  python3 "$ycm_dir/install.py" --ts-completer
+  if [[ -f "$ycm_dir/third_party/ycmd/ycmd" ]]; then
+    ycm_status="already compiled"
+    success "YouCompleteMe already compiled, skipping"
+  else
+    info "Compiling YouCompleteMe..."
+    python3 "$ycm_dir/install.py" --ts-completer
+  fi
 else
   warn "YouCompleteMe directory not found, skipping compilation"
   ycm_status="skipped (not found)"
