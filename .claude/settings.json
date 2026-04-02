@@ -252,7 +252,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); FP=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.pattern // \"\"'); if echo \"$FP\" | grep -qE '(^|/)\\.claude(/|$)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Accessing .claude/ — confirm this is intentional.\"}}'; fi",
+            "command": "INPUT=$(cat); FP=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.pattern // \"\"'); if echo \"$FP\" | grep -qE '(^|/)\\.claude(/|$)' && ! echo \"$FP\" | grep -qE '(^|/)\\.claude/worktrees/'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Accessing .claude/ — confirm this is intentional.\"}}'; fi",
             "statusMessage": "Checking .claude/ directory access"
           }
         ]
