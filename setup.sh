@@ -191,13 +191,20 @@ brew bundle --file="$DOTFILES_DIR/Brewfile"
 # Section 7: Install Vim Plugins
 # =============================================================================
 
-info "Installing vim plugins..."
-vim +PlugInstall +qall
+plugged_dir="$HOME/.vim/plugged"
+vim_plugins_status="installed"
+if [[ -d "$plugged_dir" && -n "$(ls -A "$plugged_dir" 2>/dev/null)" ]]; then
+  vim_plugins_status="already installed"
+  success "Vim plugins already installed, skipping"
+else
+  info "Installing vim plugins..."
+  vim +PlugInstall +qall
+fi
 
 ycm_status="installed"
 ycm_dir="$HOME/.vim/plugged/YouCompleteMe"
 if [[ -d "$ycm_dir" ]]; then
-  if [[ -f "$ycm_dir/third_party/ycmd/ycmd" ]]; then
+  if compgen -G "$ycm_dir/third_party/ycmd/ycm_core.*.so" > /dev/null 2>&1; then
     ycm_status="already compiled"
     success "YouCompleteMe already compiled, skipping"
   else
@@ -232,7 +239,7 @@ if [[ ${#skipped[@]} -gt 0 ]]; then
 fi
 
 echo "Homebrew: $brew_status"
-echo "Vim plugins: installed"
+echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
 echo ""
 echo "Done."
