@@ -309,6 +309,17 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git ((-C [^ ]+ )?push)'; then [ -f \"${CLAUDE_PROJECT_DIR:-.}/package.json\" ] || exit 0; cd \"${CLAUDE_PROJECT_DIR:-.}\"; if grep -q '\"quality\"' package.json; then pnpm quality 2>&1 | tail -30; QUAL=$?; else pnpm typecheck 2>&1 | tail -10; TC=$?; pnpm lint 2>&1 | tail -10; LN=$?; pnpm audit --audit-level high 2>&1 | tail -10; AU=$?; pnpm test 2>&1 | tail -20; TS=$?; QUAL=$((TC + LN + AU + TS)); fi; if [ $QUAL -ne 0 ]; then jq -n --arg r \"Pre-push quality gate failed. Fix issues before pushing.\" '{\"decision\":\"block\",\"reason\":$r}'; exit 0; fi; fi",
+            "timeout": 900,
+            "statusMessage": "Running quality checks before push"
+          }
+        ]
+      },
+      {
         "matcher": "Read",
         "hooks": [
           {
