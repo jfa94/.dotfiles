@@ -107,7 +107,9 @@
       "Bash(git -C * config --get *)",
       "Bash(git config --list *)",
       "Bash(git -C * config --list *)",
+      "Bash(git ls-files)",
       "Bash(git ls-files *)",
+      "Bash(git -C * ls-files)",
       "Bash(git -C * ls-files *)",
       "Bash(git ls-remote *)",
       "Bash(git -C * ls-remote *)",
@@ -251,11 +253,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Glob|Grep|Read|Edit|Write",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); FP=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.pattern // \"\"'); if echo \"$FP\" | grep -qE '(^|/)\\.claude(/|$)' && ! echo \"$FP\" | grep -qE '(^|/)\\.claude/worktrees/'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Accessing .claude/ — confirm this is intentional.\"}}'; fi",
+            "command": "~/.claude/hooks/claude-dir-check.sh",
             "statusMessage": "Checking .claude/ directory access"
           }
         ]
@@ -265,7 +267,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FP=$(cat | jq -r '.tool_input.file_path // \"\"'); if echo \"$FP\" | grep -qE '(\\.env[^/]*$|/secrets/)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":\"Protected file: requires human review.\"}}'; exit 0; fi; if echo \"$FP\" | grep -qE '/migrations/'; then ROOT=$(cd \"${CLAUDE_PROJECT_DIR:-.}\" && git rev-parse --show-toplevel 2>/dev/null); if [ -n \"$ROOT\" ]; then REL=\"${FP#$ROOT/}\"; if git -C \"$ROOT\" cat-file -e \"main:$REL\" 2>/dev/null; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Applied migration (exists on main): confirm edit.\"}}'; fi; fi; fi",
+            "command": "~/.claude/hooks/protected-files-check.sh",
             "statusMessage": "Checking protected files & migrations"
           }
         ]
@@ -275,7 +277,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SQL=$(cat | jq -r '.tool_input.sql // .tool_input.query // \"\"' | tr '[:lower:]' '[:upper:]'); for KW in INSERT UPDATE DELETE DROP ALTER TRUNCATE CREATE GRANT REVOKE COMMENT; do if echo \"$SQL\" | grep -qw \"$KW\"; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":\"Write SQL blocked. execute_sql is restricted to read-only (SELECT/SHOW/EXPLAIN/DESCRIBE).\"}}'; exit 0; fi; done",
+            "command": "~/.claude/hooks/sql-readonly-check.sh",
             "statusMessage": "Checking SQL is read-only"
           }
         ]
@@ -285,7 +287,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '&&|;\\s*[a-zA-Z]'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":\"Compound command detected. Run each command as a separate Bash call so individual permission rules can apply.\"}}'; fi",
+            "command": "~/.claude/hooks/compound-check.sh",
             "statusMessage": "Checking for compound commands"
           }
         ]
@@ -295,7 +297,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); for PAT in 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\\|.*sh' 'wget.*\\|.*sh'; do if echo \"$CMD\" | grep -qiE \"$PAT\"; then jq -n --arg p \"$PAT\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":(\"Blocked dangerous command pattern: \"+$p)}}'; exit 0; fi; done; if echo \"$CMD\" | grep -qiE 'rm -rf'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"rm -rf detected — confirm before running\"}}'; exit 0; fi",
+            "command": "~/.claude/hooks/dangerous-patterns-check.sh",
             "statusMessage": "Checking for dangerous patterns"
           }
         ]
@@ -305,7 +307,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git commit'; then [ -f \"${CLAUDE_PROJECT_DIR:-.}/package.json\" ] || exit 0; cd \"${CLAUDE_PROJECT_DIR:-.}\"; SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\\s*[:=]\\s*\\S+|secret_?key\\s*[:=]\\s*\\S+|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' || true); if [ -n \"$SECRETS\" ]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":\"Potential secrets detected in staged changes.\"}}'; exit 0; fi; npx tsc --noEmit 2>&1 | tail -10; TSC=$?; npx eslint . --max-warnings 0 2>&1 | tail -10; LINT=$?; if [ $TSC -ne 0 ] || [ $LINT -ne 0 ]; then jq -n --arg r \"Pre-commit gate failed: tsc($TSC) lint($LINT). Fix before committing.\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":$r}}'; exit 0; fi; fi",
+            "command": "~/.claude/hooks/pre-commit-check.sh",
             "timeout": 60,
             "statusMessage": "Running pre-commit checks"
           }
@@ -316,7 +318,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=$(cat | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE '^git ((-C [^ ]+ )?push)'; then [ -f \"${CLAUDE_PROJECT_DIR:-.}/package.json\" ] || exit 0; cd \"${CLAUDE_PROJECT_DIR:-.}\"; if grep -q '\"quality\"' package.json; then pnpm quality 2>&1 | tail -30; QUAL=$?; else pnpm typecheck 2>&1 | tail -10; TC=$?; pnpm lint 2>&1 | tail -10; LN=$?; pnpm audit --audit-level high 2>&1 | tail -10; AU=$?; pnpm test 2>&1 | tail -20; TS=$?; QUAL=$((TC + LN + AU + TS)); fi; if [ $QUAL -ne 0 ]; then jq -n --arg r \"Pre-push quality gate failed. Fix issues before pushing.\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"block\",\"permissionDecisionReason\":$r}}'; exit 0; fi; fi",
+            "command": "~/.claude/hooks/pre-push-check.sh",
             "timeout": 900,
             "statusMessage": "Running quality checks before push"
           }

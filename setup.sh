@@ -159,6 +159,9 @@ while IFS= read -r -d '' file; do
   link_file "$file" "$dest" "~/.claude/$rel"
 done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 
+# Ensure hook scripts are executable (git may not preserve +x on all systems)
+find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+
 # =============================================================================
 # Section 5: Create Required Directories
 # =============================================================================
