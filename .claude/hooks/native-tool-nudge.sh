@@ -1,7 +1,7 @@
 #!/bin/bash
 set -uo pipefail
 
-CMD=$(cat | jq -r '.tool_input.command // empty')
+CMD=$(cat | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$CMD" ] && exit 0
 
 get_native() {
