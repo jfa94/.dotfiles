@@ -307,6 +307,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "~/.claude/hooks/native-tool-nudge.sh",
+            "statusMessage": "Checking for native tool alternatives"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "~/.claude/hooks/pre-commit-check.sh",
             "timeout": 60,
             "statusMessage": "Running pre-commit checks"
