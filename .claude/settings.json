@@ -249,7 +249,6 @@
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
     ]
   },
-  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -392,9 +391,9 @@
     "supabase@claude-plugins-official": true,
     "figma@claude-plugins-official": true,
     "posthog@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true
   },
+  "model": "opusplan",
   "effortLevel": "medium"
 }
