@@ -10,7 +10,7 @@ SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null \
   || true)
 if [ -n "$SECRETS" ]; then
   jq -cn --arg r 'Potential secrets detected in staged changes.' \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"block","permissionDecisionReason":$r}}'
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi
 
@@ -19,5 +19,5 @@ LINT=0; { npx eslint . --max-warnings 0 2>&1; } | tail -10 || LINT=1
 
 if [ "$TSC" -ne 0 ] || [ "$LINT" -ne 0 ]; then
   jq -cn --arg r "Pre-commit gate failed: tsc($TSC) lint($LINT). Fix before committing." \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"block","permissionDecisionReason":$r}}'
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
 fi

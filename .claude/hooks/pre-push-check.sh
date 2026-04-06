@@ -18,5 +18,5 @@ fi
 
 if [ "$QUAL" -ne 0 ]; then
   jq -cn --arg r 'Pre-push quality gate failed. Fix issues before pushing.' \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"block","permissionDecisionReason":$r}}'
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
 fi

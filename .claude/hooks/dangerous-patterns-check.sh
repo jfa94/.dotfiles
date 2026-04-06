@@ -6,7 +6,7 @@ CMD=$(cat | jq -r '.tool_input.command // empty')
 for PAT in 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\|.*sh' 'wget.*\|.*sh'; do
   if printf '%s' "$CMD" | grep -qiE "$PAT"; then
     jq -cn --arg r "Blocked dangerous command pattern: $PAT" \
-      '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"block","permissionDecisionReason":$r}}'
+      '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
     exit 0
   fi
 done

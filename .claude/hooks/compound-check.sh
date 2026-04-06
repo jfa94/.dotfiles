@@ -3,4 +3,4 @@ set -euo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
 printf '%s' "$CMD" | grep -qE '&&|;\s*[a-zA-Z]' || exit 0
 jq -cn --arg r 'Compound command detected. Run each as a separate Bash call so permission rules apply.' \
-  '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"block","permissionDecisionReason":$r}}'
+  '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'

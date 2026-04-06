@@ -6,7 +6,7 @@ FP=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')
 
 if printf '%s' "$FP" | grep -qE '(\.env[^/]*$|/secrets/)'; then
   jq -cn --arg r 'Protected file: requires human review.' \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"block","permissionDecisionReason":$r}}'
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi
 
