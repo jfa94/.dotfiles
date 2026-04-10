@@ -167,6 +167,7 @@ find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 # =============================================================================
 
 mkdir -p ~/.vim/undodir
+mkdir -p ~/.vim/plugged
 
 # =============================================================================
 # Section 6: Install Homebrew + Brewfile
@@ -194,9 +195,9 @@ brew bundle --file="$DOTFILES_DIR/Brewfile"
 # Section 7: Install Vim Plugins
 # =============================================================================
 
-plugged_dir="$HOME/.vim/plugged"
+ycm_dir="$HOME/.vim/plugged/YouCompleteMe"
 vim_plugins_status="installed"
-if [[ -d "$plugged_dir" && -n "$(ls -A "$plugged_dir" 2>/dev/null)" ]]; then
+if [[ -f "$ycm_dir/install.py" ]]; then
   vim_plugins_status="already installed"
   success "Vim plugins already installed, skipping"
 else
@@ -205,18 +206,15 @@ else
 fi
 
 ycm_status="installed"
-ycm_dir="$HOME/.vim/plugged/YouCompleteMe"
-if [[ -d "$ycm_dir" ]]; then
-  if compgen -G "$ycm_dir/third_party/ycmd/ycm_core.*.so" > /dev/null 2>&1; then
-    ycm_status="already compiled"
-    success "YouCompleteMe already compiled, skipping"
-  else
-    info "Compiling YouCompleteMe..."
-    python3 "$ycm_dir/install.py" --ts-completer
-  fi
-else
-  warn "YouCompleteMe directory not found, skipping compilation"
+if [[ ! -f "$ycm_dir/install.py" ]]; then
+  warn "YouCompleteMe install.py not found, skipping compilation"
   ycm_status="skipped (not found)"
+elif compgen -G "$ycm_dir/third_party/ycmd/ycm_core.*.so" > /dev/null 2>&1; then
+  ycm_status="already compiled"
+  success "YouCompleteMe already compiled, skipping"
+else
+  info "Compiling YouCompleteMe..."
+  python3 "$ycm_dir/install.py" --ts-completer
 fi
 
 # =============================================================================
