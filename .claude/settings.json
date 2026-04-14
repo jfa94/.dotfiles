@@ -394,5 +394,6 @@
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true
   },
+  "model": "opusplan",
   "effortLevel": "high"
 }
