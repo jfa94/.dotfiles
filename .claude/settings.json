@@ -1,399 +1,400 @@
 {
-    "$schema": "https://json.schemastore.org/claude-code-settings.json",
-    "env": {
-        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60",
-        "ANTHROPIC_MODEL": "opusplan",
-        "CLAUDE_CODE_EFFORT_LEVEL": "medium"
-    },
-    "permissions": {
-        "allow": [
-            "Read",
-            "Edit",
-            "Write",
-            "Glob",
-            "Grep",
-            "WebSearch",
-            "Skill(commit-commands:commit)",
-            "Skill(commit-commands:commit-push-pr)",
-            "Skill(commit-commands:clean_gone)",
-            "Bash(* --help)",
-            "Bash(* --version)",
-            "Bash(cat *)",
-            "Bash(echo *)",
-            "Bash(head *)",
-            "Bash(ls)",
-            "Bash(ls *)",
-            "Bash(tail *)",
-            "Bash(wc *)",
-            "Bash(which *)",
-            "Bash(pwd)",
-            "Bash(find *)",
-            "Bash(sort *)",
-            "Bash(uniq *)",
-            "Bash(diff *)",
-            "Bash(file *)",
-            "Bash(basename *)",
-            "Bash(dirname *)",
-            "Bash(realpath *)",
-            "Bash(whoami)",
-            "Bash(uname *)",
-            "Bash(env)",
-            "Bash(printenv *)",
-            "Bash(tree *)",
-            "Bash(touch *)",
-            "Bash(tr *)",
-            "Bash(cut *)",
-            "Bash(xargs *)",
-            "Bash(tee *)",
-            "Bash(sed *)",
-            "Bash(jq *)",
-            "Bash(grep *)",
-            "Bash(mkdir *)",
-            "Bash(pnpm install)",
-            "Bash(pnpm run *)",
-            "Bash(pnpm test *)",
-            "Bash(pnpm build *)",
-            "Bash(pnpm list *)",
-            "Bash(pnpm ls *)",
-            "Bash(pnpm why *)",
-            "Bash(pnpm outdated *)",
-            "Bash(pnpm audit *)",
-            "Bash(pnpm exec *)",
-            "Bash(pnpm dlx *)",
-            "Bash(pnpm *)",
-            "Bash(npx tsc *)",
-            "Bash(npx vitest *)",
-            "Bash(npx eslint *)",
-            "Bash(npx prettier *)",
-            "Bash(npx depcruise *)",
-            "Bash(npx stryker *)",
-            "Bash(npx tsc-alias *)",
-            "Bash(npx madge *)",
-            "Bash(tsc *)",
-            "Bash(next *)",
-            "Bash(git add *)",
-            "Bash(git -C * add *)",
-            "Bash(git mv *)",
-            "Bash(git -C * mv *)",
-            "Bash(git commit *)",
-            "Bash(git -C * commit *)",
-            "Bash(git checkout *)",
-            "Bash(git -C * checkout *)",
-            "Bash(git branch *)",
-            "Bash(git -C * branch *)",
-            "Bash(git stash *)",
-            "Bash(git -C * stash *)",
-            "Bash(git push *)",
-            "Bash(git -C * push *)",
-            "Bash(git diff *)",
-            "Bash(git -C * diff *)",
-            "Bash(git log *)",
-            "Bash(git -C * log *)",
-            "Bash(git show *)",
-            "Bash(git -C * show *)",
-            "Bash(git blame *)",
-            "Bash(git -C * blame *)",
-            "Bash(git fetch *)",
-            "Bash(git -C * fetch *)",
-            "Bash(git rev-parse *)",
-            "Bash(git -C * rev-parse *)",
-            "Bash(git shortlog *)",
-            "Bash(git -C * shortlog *)",
-            "Bash(git reflog *)",
-            "Bash(git -C * reflog *)",
-            "Bash(git describe *)",
-            "Bash(git -C * describe *)",
-            "Bash(git remote -v *)",
-            "Bash(git -C * remote -v *)",
-            "Bash(git config --get *)",
-            "Bash(git -C * config --get *)",
-            "Bash(git config --list *)",
-            "Bash(git -C * config --list *)",
-            "Bash(git ls-files)",
-            "Bash(git ls-files *)",
-            "Bash(git -C * ls-files)",
-            "Bash(git -C * ls-files *)",
-            "Bash(git ls-remote *)",
-            "Bash(git -C * ls-remote *)",
-            "Bash(git ls-tree *)",
-            "Bash(git -C * ls-tree *)",
-            "Bash(git cherry -v *)",
-            "Bash(git -C * cherry -v *)",
-            "Bash(git merge-base *)",
-            "Bash(git -C * merge-base *)",
-            "Bash(git tag -l *)",
-            "Bash(git -C * tag -l *)",
-            "Bash(git rebase *)",
-            "Bash(git -C * rebase *)",
-            "Bash(git worktree *)",
-            "Bash(git -C * worktree *)",
-            "Bash(git status)",
-            "Bash(git -C * status)",
-            "Bash(git status *)",
-            "Bash(git -C * status *)",
-            "Bash(gh pr create *)",
-            "Bash(gh pr merge *)",
-            "Bash(gh pr list *)",
-            "Bash(gh pr view *)",
-            "Bash(gh pr diff *)",
-            "Bash(gh pr status *)",
-            "Bash(gh pr checks *)",
-            "Bash(gh issue list *)",
-            "Bash(gh issue view *)",
-            "Bash(gh issue status *)",
-            "Bash(gh issue create *)",
-            "Bash(gh repo view *)",
-            "Bash(gh run list *)",
-            "Bash(gh run view *)",
-            "Bash(gh release list *)",
-            "Bash(gh release view *)",
-            "Bash(gh api *)",
-            "Bash(aws help *)",
-            "Bash(aws logs describe-* *)",
-            "Bash(aws logs filter-log-events *)",
-            "Bash(aws logs get-log-events *)",
-            "Bash(aws logs get-query-results *)",
-            "Bash(aws logs start-query *)",
-            "Bash(aws logs list-* *)",
-            "Bash(aws s3 ls *)",
-            "Bash(aws s3 cp s3://* -)",
-            "Bash(aws cloudformation describe-* *)",
-            "Bash(aws cloudformation list-* *)",
-            "Bash(aws lambda list-* *)",
-            "Bash(aws lambda get-* *)",
-            "Bash(aws sts get-caller-identity *)",
-            "Bash(aws ec2 describe-* *)",
-            "Bash(aws dynamodb describe-* *)",
-            "Bash(aws dynamodb list-* *)",
-            "Bash(aws dynamodb scan *)",
-            "Bash(aws dynamodb query *)",
-            "Bash(aws dynamodb get-item *)",
-            "Bash(aws rds describe-* *)",
-            "Bash(aws rds list-* *)",
-            "Bash(aws ecs describe-* *)",
-            "Bash(aws ecs list-* *)",
-            "Bash(aws sns list-* *)",
-            "Bash(aws sns get-* *)",
-            "Bash(aws sqs list-* *)",
-            "Bash(aws sqs get-* *)",
-            "Bash(aws iam list-* *)",
-            "Bash(aws iam get-* *)",
-            "Bash(aws apigateway get-* *)",
-            "Bash(aws apigatewayv2 get-* *)",
-            "Bash(aws stepfunctions describe-* *)",
-            "Bash(aws stepfunctions list-* *)",
-            "Bash(aws events describe-* *)",
-            "Bash(aws events list-* *)",
-            "Bash(aws cognito-idp describe-* *)",
-            "Bash(aws cognito-idp list-* *)",
-            "Bash(aws ssm get-parameter* *)",
-            "Bash(aws ssm describe-* *)",
-            "Bash(aws secretsmanager list-* *)",
-            "Bash(aws secretsmanager describe-* *)",
-            "Bash(aws route53 list-* *)",
-            "Bash(aws cloudwatch describe-* *)",
-            "Bash(aws cloudwatch list-* *)",
-            "Bash(aws cloudwatch get-* *)",
-            "Bash(aws cloudfront list-* *)",
-            "Bash(aws cloudfront get-* *)",
-            "Bash(aws acm list-* *)",
-            "Bash(aws acm describe-* *)",
-            "Bash(aws kms list-* *)",
-            "Bash(aws kms describe-* *)",
-            "Bash(aws s3api list-* *)",
-            "Bash(aws s3api get-* *)",
-            "Bash(aws s3api head-* *)",
-            "Bash(aws elasticache describe-* *)",
-            "Bash(aws elasticache list-* *)",
-            "Bash(aws s3 ls)",
-            "mcp__plugin_supabase_supabase__get_logs",
-            "mcp__plugin_supabase_supabase__list_projects",
-            "mcp__plugin_supabase_supabase__get_project",
-            "mcp__plugin_supabase_supabase__list_tables",
-            "mcp__plugin_supabase_supabase__list_extensions",
-            "mcp__plugin_supabase_supabase__list_organizations",
-            "mcp__plugin_supabase_supabase__get_cost",
-            "mcp__plugin_supabase_supabase__execute_sql",
-            "mcp__plugin_supabase_supabase__search_docs",
-            "mcp__plugin_supabase_supabase__get_advisors",
-            "mcp__plugin_supabase_supabase__get_project_url",
-            "mcp__plugin_supabase_supabase__get_publishable_keys",
-            "mcp__plugin_supabase_supabase__generate_typescript_types",
-            "mcp__plugin_supabase_supabase__list_migrations",
-            "mcp__plugin_supabase_supabase__list_edge_functions",
-            "mcp__plugin_supabase_supabase__get_edge_function",
-            "mcp__plugin_supabase_supabase__list_storage_buckets",
-            "mcp__plugin_supabase_supabase__get_storage_config",
-            "mcp__plugin_posthog_posthog__logs-query",
-            "mcp__plugin_posthog_posthog__logs-list-attributes",
-            "mcp__plugin_posthog_posthog__logs-list-attribute-values",
-            "mcp__plugin_posthog_posthog__insights-get-all",
-            "mcp__plugin_posthog_posthog__insight-get",
-            "mcp__plugin_posthog_posthog__query-run",
-            "mcp__plugin_posthog_posthog__dashboards-get-all",
-            "mcp__plugin_posthog_posthog__dashboard-get",
-            "mcp__plugin_posthog_posthog__feature-flag-get-all",
-            "mcp__plugin_posthog_posthog__feature-flag-get-definition",
-            "mcp__plugin_posthog_posthog__list-errors",
-            "mcp__plugin_posthog_posthog__error-details",
-            "mcp__plugin_posthog_posthog__experiment-get-all",
-            "mcp__plugin_posthog_posthog__experiment-get",
-            "mcp__plugin_posthog_posthog__experiment-results-get",
-            "mcp__plugin_posthog_posthog__surveys-get-all",
-            "mcp__plugin_posthog_posthog__survey-get",
-            "mcp__plugin_posthog_posthog__survey-stats",
-            "mcp__plugin_posthog_posthog__posthog_organizations_get",
-            "mcp__plugin_posthog_posthog__posthog_projects_get",
-            "mcp__plugin_posthog_posthog__posthog_event_definitions_list",
-            "mcp__plugin_posthog_posthog__posthog_properties_list",
-            "mcp__plugin_posthog_posthog__posthog_entity_search",
-            "mcp__plugin_posthog_posthog__docs-search",
-            "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60"
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "Skill(commit-commands:commit)",
+      "Skill(commit-commands:commit-push-pr)",
+      "Skill(commit-commands:clean_gone)",
+      "Bash(* --help)",
+      "Bash(* --version)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(head *)",
+      "Bash(ls)",
+      "Bash(ls *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(which *)",
+      "Bash(pwd)",
+      "Bash(find *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(diff *)",
+      "Bash(file *)",
+      "Bash(basename *)",
+      "Bash(dirname *)",
+      "Bash(realpath *)",
+      "Bash(whoami)",
+      "Bash(uname *)",
+      "Bash(env)",
+      "Bash(printenv *)",
+      "Bash(tree *)",
+      "Bash(touch *)",
+      "Bash(tr *)",
+      "Bash(cut *)",
+      "Bash(xargs *)",
+      "Bash(tee *)",
+      "Bash(sed *)",
+      "Bash(jq *)",
+      "Bash(grep *)",
+      "Bash(mkdir *)",
+      "Bash(pnpm install)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm list *)",
+      "Bash(pnpm ls *)",
+      "Bash(pnpm why *)",
+      "Bash(pnpm outdated *)",
+      "Bash(pnpm audit *)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm dlx *)",
+      "Bash(pnpm *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)",
+      "Bash(npx eslint *)",
+      "Bash(npx prettier *)",
+      "Bash(npx depcruise *)",
+      "Bash(npx stryker *)",
+      "Bash(npx tsc-alias *)",
+      "Bash(npx madge *)",
+      "Bash(tsc *)",
+      "Bash(next *)",
+      "Bash(git add *)",
+      "Bash(git -C * add *)",
+      "Bash(git mv *)",
+      "Bash(git -C * mv *)",
+      "Bash(git commit *)",
+      "Bash(git -C * commit *)",
+      "Bash(git checkout *)",
+      "Bash(git -C * checkout *)",
+      "Bash(git branch *)",
+      "Bash(git -C * branch *)",
+      "Bash(git stash *)",
+      "Bash(git -C * stash *)",
+      "Bash(git push *)",
+      "Bash(git -C * push *)",
+      "Bash(git diff *)",
+      "Bash(git -C * diff *)",
+      "Bash(git log *)",
+      "Bash(git -C * log *)",
+      "Bash(git show *)",
+      "Bash(git -C * show *)",
+      "Bash(git blame *)",
+      "Bash(git -C * blame *)",
+      "Bash(git fetch *)",
+      "Bash(git -C * fetch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git -C * rev-parse *)",
+      "Bash(git shortlog *)",
+      "Bash(git -C * shortlog *)",
+      "Bash(git reflog *)",
+      "Bash(git -C * reflog *)",
+      "Bash(git describe *)",
+      "Bash(git -C * describe *)",
+      "Bash(git remote -v *)",
+      "Bash(git -C * remote -v *)",
+      "Bash(git config --get *)",
+      "Bash(git -C * config --get *)",
+      "Bash(git config --list *)",
+      "Bash(git -C * config --list *)",
+      "Bash(git ls-files)",
+      "Bash(git ls-files *)",
+      "Bash(git -C * ls-files)",
+      "Bash(git -C * ls-files *)",
+      "Bash(git ls-remote *)",
+      "Bash(git -C * ls-remote *)",
+      "Bash(git ls-tree *)",
+      "Bash(git -C * ls-tree *)",
+      "Bash(git cherry -v *)",
+      "Bash(git -C * cherry -v *)",
+      "Bash(git merge-base *)",
+      "Bash(git -C * merge-base *)",
+      "Bash(git tag -l *)",
+      "Bash(git -C * tag -l *)",
+      "Bash(git rebase *)",
+      "Bash(git -C * rebase *)",
+      "Bash(git worktree *)",
+      "Bash(git -C * worktree *)",
+      "Bash(git status)",
+      "Bash(git -C * status)",
+      "Bash(git status *)",
+      "Bash(git -C * status *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr status *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh issue list *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue status *)",
+      "Bash(gh issue create *)",
+      "Bash(gh repo view *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+      "Bash(gh release list *)",
+      "Bash(gh release view *)",
+      "Bash(gh api *)",
+      "Bash(aws help *)",
+      "Bash(aws logs describe-* *)",
+      "Bash(aws logs filter-log-events *)",
+      "Bash(aws logs get-log-events *)",
+      "Bash(aws logs get-query-results *)",
+      "Bash(aws logs start-query *)",
+      "Bash(aws logs list-* *)",
+      "Bash(aws s3 ls *)",
+      "Bash(aws s3 cp s3://* -)",
+      "Bash(aws cloudformation describe-* *)",
+      "Bash(aws cloudformation list-* *)",
+      "Bash(aws lambda list-* *)",
+      "Bash(aws lambda get-* *)",
+      "Bash(aws sts get-caller-identity *)",
+      "Bash(aws ec2 describe-* *)",
+      "Bash(aws dynamodb describe-* *)",
+      "Bash(aws dynamodb list-* *)",
+      "Bash(aws dynamodb scan *)",
+      "Bash(aws dynamodb query *)",
+      "Bash(aws dynamodb get-item *)",
+      "Bash(aws rds describe-* *)",
+      "Bash(aws rds list-* *)",
+      "Bash(aws ecs describe-* *)",
+      "Bash(aws ecs list-* *)",
+      "Bash(aws sns list-* *)",
+      "Bash(aws sns get-* *)",
+      "Bash(aws sqs list-* *)",
+      "Bash(aws sqs get-* *)",
+      "Bash(aws iam list-* *)",
+      "Bash(aws iam get-* *)",
+      "Bash(aws apigateway get-* *)",
+      "Bash(aws apigatewayv2 get-* *)",
+      "Bash(aws stepfunctions describe-* *)",
+      "Bash(aws stepfunctions list-* *)",
+      "Bash(aws events describe-* *)",
+      "Bash(aws events list-* *)",
+      "Bash(aws cognito-idp describe-* *)",
+      "Bash(aws cognito-idp list-* *)",
+      "Bash(aws ssm get-parameter* *)",
+      "Bash(aws ssm describe-* *)",
+      "Bash(aws secretsmanager list-* *)",
+      "Bash(aws secretsmanager describe-* *)",
+      "Bash(aws route53 list-* *)",
+      "Bash(aws cloudwatch describe-* *)",
+      "Bash(aws cloudwatch list-* *)",
+      "Bash(aws cloudwatch get-* *)",
+      "Bash(aws cloudfront list-* *)",
+      "Bash(aws cloudfront get-* *)",
+      "Bash(aws acm list-* *)",
+      "Bash(aws acm describe-* *)",
+      "Bash(aws kms list-* *)",
+      "Bash(aws kms describe-* *)",
+      "Bash(aws s3api list-* *)",
+      "Bash(aws s3api get-* *)",
+      "Bash(aws s3api head-* *)",
+      "Bash(aws elasticache describe-* *)",
+      "Bash(aws elasticache list-* *)",
+      "Bash(aws s3 ls)",
+      "mcp__plugin_supabase_supabase__get_logs",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__get_project",
+      "mcp__plugin_supabase_supabase__list_tables",
+      "mcp__plugin_supabase_supabase__list_extensions",
+      "mcp__plugin_supabase_supabase__list_organizations",
+      "mcp__plugin_supabase_supabase__get_cost",
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "mcp__plugin_supabase_supabase__search_docs",
+      "mcp__plugin_supabase_supabase__get_advisors",
+      "mcp__plugin_supabase_supabase__get_project_url",
+      "mcp__plugin_supabase_supabase__get_publishable_keys",
+      "mcp__plugin_supabase_supabase__generate_typescript_types",
+      "mcp__plugin_supabase_supabase__list_migrations",
+      "mcp__plugin_supabase_supabase__list_edge_functions",
+      "mcp__plugin_supabase_supabase__get_edge_function",
+      "mcp__plugin_supabase_supabase__list_storage_buckets",
+      "mcp__plugin_supabase_supabase__get_storage_config",
+      "mcp__plugin_posthog_posthog__logs-query",
+      "mcp__plugin_posthog_posthog__logs-list-attributes",
+      "mcp__plugin_posthog_posthog__logs-list-attribute-values",
+      "mcp__plugin_posthog_posthog__insights-get-all",
+      "mcp__plugin_posthog_posthog__insight-get",
+      "mcp__plugin_posthog_posthog__query-run",
+      "mcp__plugin_posthog_posthog__dashboards-get-all",
+      "mcp__plugin_posthog_posthog__dashboard-get",
+      "mcp__plugin_posthog_posthog__feature-flag-get-all",
+      "mcp__plugin_posthog_posthog__feature-flag-get-definition",
+      "mcp__plugin_posthog_posthog__list-errors",
+      "mcp__plugin_posthog_posthog__error-details",
+      "mcp__plugin_posthog_posthog__experiment-get-all",
+      "mcp__plugin_posthog_posthog__experiment-get",
+      "mcp__plugin_posthog_posthog__experiment-results-get",
+      "mcp__plugin_posthog_posthog__surveys-get-all",
+      "mcp__plugin_posthog_posthog__survey-get",
+      "mcp__plugin_posthog_posthog__survey-stats",
+      "mcp__plugin_posthog_posthog__posthog_organizations_get",
+      "mcp__plugin_posthog_posthog__posthog_projects_get",
+      "mcp__plugin_posthog_posthog__posthog_event_definitions_list",
+      "mcp__plugin_posthog_posthog__posthog_properties_list",
+      "mcp__plugin_posthog_posthog__posthog_entity_search",
+      "mcp__plugin_posthog_posthog__docs-search",
+      "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
+    ]
+  },
+  "model": "opusplan",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/claude-dir-check.sh",
+            "statusMessage": "Checking .claude/ directory access"
+          }
         ]
-    },
-    "hooks": {
-        "PreToolUse": [
-            {
-                "matcher": "Edit|Write",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/claude-dir-check.sh",
-                        "statusMessage": "Checking .claude/ directory access"
-                    }
-                ]
-            },
-            {
-                "matcher": "Edit|Write",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/protected-files-check.sh",
-                        "statusMessage": "Checking protected files & migrations"
-                    }
-                ]
-            },
-            {
-                "matcher": "mcp__plugin_supabase_supabase__execute_sql",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/sql-readonly-check.sh",
-                        "statusMessage": "Checking SQL is read-only"
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/compound-check.sh",
-                        "statusMessage": "Checking for compound commands"
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/dangerous-patterns-check.sh",
-                        "statusMessage": "Checking for dangerous patterns"
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/native-tool-nudge.sh",
-                        "statusMessage": "Checking for native tool alternatives"
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/pre-commit-check.sh",
-                        "timeout": 60,
-                        "statusMessage": "Running pre-commit checks"
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/hooks/pre-push-check.sh",
-                        "timeout": 900,
-                        "statusMessage": "Running quality checks before push"
-                    }
-                ]
-            },
-            {
-                "matcher": "Read",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/read-once/hook.sh",
-                        "statusMessage": "Tracking read-once files"
-                    }
-                ]
-            }
-        ],
-        "PostToolUse": [
-            {
-                "matcher": "Edit|Write",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "FILE=$(cat | jq -r '.tool_input.file_path'); npx prettier --write \"$FILE\" 2>/dev/null; echo '{\"suppressOutput\": true}'",
-                        "timeout": 15,
-                        "statusMessage": "Auto-formatting with prettier"
-                    }
-                ]
-            }
-        ],
-        "Stop": [
-            {
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "[ -f \"${CLAUDE_PROJECT_DIR:-.}/package.json\" ] || exit 0; grep -q vitest \"${CLAUDE_PROJECT_DIR:-.}/package.json\" || exit 0; cd \"${CLAUDE_PROJECT_DIR:-.}\" && npx vitest run --reporter=verbose 2>&1 | tail -40; TEST=$?; if [ $TEST -ne 0 ]; then echo 'Stop gate: test suite failing. Fix all issues before completing.'; exit 1; fi",
-                        "timeout": 120,
-                        "statusMessage": "Running test suite"
-                    }
-                ]
-            }
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/protected-files-check.sh",
+            "statusMessage": "Checking protected files & migrations"
+          }
         ]
-    },
-    "statusLine": {
-        "type": "command",
-        "command": "~/.claude/statusline.sh"
-    },
-    "enabledPlugins": {
-        "typescript-lsp@claude-plugins-official": true,
-        "commit-commands@claude-plugins-official": true,
-        "security-guidance@claude-plugins-official": true,
-        "pr-review-toolkit@claude-plugins-official": true,
-        "agent-sdk-dev@claude-plugins-official": true,
-        "feature-dev@claude-plugins-official": true,
-        "code-review@claude-plugins-official": true,
-        "code-simplifier@claude-plugins-official": true,
-        "frontend-design@claude-plugins-official": true,
-        "playground@claude-plugins-official": true,
-        "claude-md-management@claude-plugins-official": true,
-        "plugin-dev@claude-plugins-official": true,
-        "playwright@claude-plugins-official": true,
-        "supabase@claude-plugins-official": true,
-        "figma@claude-plugins-official": true,
-        "posthog@claude-plugins-official": true,
-        "superpowers@claude-plugins-official": true,
-        "stripe@claude-plugins-official": true
-    }
+      },
+      {
+        "matcher": "mcp__plugin_supabase_supabase__execute_sql",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sql-readonly-check.sh",
+            "statusMessage": "Checking SQL is read-only"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/compound-check.sh",
+            "statusMessage": "Checking for compound commands"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/dangerous-patterns-check.sh",
+            "statusMessage": "Checking for dangerous patterns"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/native-tool-nudge.sh",
+            "statusMessage": "Checking for native tool alternatives"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre-commit-check.sh",
+            "timeout": 60,
+            "statusMessage": "Running pre-commit checks"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre-push-check.sh",
+            "timeout": 900,
+            "statusMessage": "Running quality checks before push"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/read-once/hook.sh",
+            "statusMessage": "Tracking read-once files"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path'); npx prettier --write \"$FILE\" 2>/dev/null; echo '{\"suppressOutput\": true}'",
+            "timeout": 15,
+            "statusMessage": "Auto-formatting with prettier"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"${CLAUDE_PROJECT_DIR:-.}/package.json\" ] || exit 0; grep -q vitest \"${CLAUDE_PROJECT_DIR:-.}/package.json\" || exit 0; cd \"${CLAUDE_PROJECT_DIR:-.}\" && npx vitest run --reporter=verbose 2>&1 | tail -40; TEST=$?; if [ $TEST -ne 0 ]; then echo 'Stop gate: test suite failing. Fix all issues before completing.'; exit 1; fi",
+            "timeout": 120,
+            "statusMessage": "Running test suite"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh"
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "agent-sdk-dev@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "playground@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "supabase@claude-plugins-official": true,
+    "figma@claude-plugins-official": true,
+    "posthog@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "stripe@claude-plugins-official": true
+  },
+  "effortLevel": "medium",
+  "awaySummaryEnabled": false
 }
