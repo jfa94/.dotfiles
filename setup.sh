@@ -218,7 +218,30 @@ else
 fi
 
 # =============================================================================
-# Section 8: Summary
+# Section 8: Install Claude Code Plugins
+# =============================================================================
+
+plugins_status="skipped (claude CLI not found)"
+
+if command -v claude &>/dev/null; then
+  info "Registering third-party marketplaces..."
+  claude plugin marketplace add github:JuliusBrussee/caveman 2>/dev/null || true
+  claude plugin marketplace add github:openai/codex-plugin-cc 2>/dev/null || true
+
+  info "Installing Claude Code plugins..."
+  plugins_status="installed"
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if claude plugin install "$line" --scope user 2>/dev/null; then
+      success "Plugin: $line"
+    else
+      warn "Plugin already installed or failed: $line"
+    fi
+  done < "$DOTFILES_DIR/.claude/plugins.txt"
+fi
+
+# =============================================================================
+# Section 9: Summary
 # =============================================================================
 
 echo ""
@@ -242,5 +265,6 @@ fi
 echo "Homebrew: $brew_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
+echo "Claude plugins: $plugins_status"
 echo ""
 echo "Done."
