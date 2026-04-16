@@ -26,7 +26,7 @@ fi
 
 # --- 3. Regex sweep (catches unverified/offline secrets trufflehog skips) ---
 SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null \
-  | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\s*[:=]\s*\S+|secret_?key\s*[:=]\s*\S+|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' \
+  | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|secret_?key\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' \
   || true)
 if [ -n "$SECRETS" ]; then
   jq -cn --arg r 'Potential secrets detected in staged changes.' \
