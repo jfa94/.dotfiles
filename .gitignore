@@ -301,7 +301,7 @@ jspm_packages/
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
-# TypeScript cache
+# TypeScript
 *.tsbuildinfo
 
 # Optional npm cache directory
@@ -331,7 +331,8 @@ web_modules/
 # parcel-bundler cache (https://parceljs.org/)
 .parcel-cache
 
-# Next.js build output
+# Next.js
+next-env.d.ts
 .next
 out
 .vercel
