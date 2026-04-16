@@ -15,7 +15,6 @@ playwright@claude-plugins-official
 supabase@claude-plugins-official
 figma@claude-plugins-official
 posthog@claude-plugins-official
-ralph-loop@claude-plugins-official
 superpowers@claude-plugins-official
 stripe@claude-plugins-official
 
