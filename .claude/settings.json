@@ -204,6 +204,8 @@
       "Bash(aws elasticache describe-* *)",
       "Bash(aws elasticache list-* *)",
       "Bash(aws s3 ls)",
+      "Bash(aws amplify list-* *)",
+      "Bash(aws amplify get-* *)",
       "mcp__plugin_supabase_supabase__get_logs",
       "mcp__plugin_supabase_supabase__list_projects",
       "mcp__plugin_supabase_supabase__get_project",
