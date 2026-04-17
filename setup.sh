@@ -192,7 +192,19 @@ info "Running brew bundle..."
 brew bundle --file="$DOTFILES_DIR/Brewfile"
 
 # =============================================================================
-# Section 7: Install Vim Plugins
+# Section 7: Install Claude Code
+# =============================================================================
+
+claude_status="already installed"
+
+if ! command -v claude &>/dev/null; then
+  info "Installing Claude Code..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  claude_status="freshly installed"
+fi
+
+# =============================================================================
+# Section 8: Install Vim Plugins
 # =============================================================================
 
 ycm_dir="$HOME/.vim/plugged/YouCompleteMe"
@@ -218,7 +230,7 @@ else
 fi
 
 # =============================================================================
-# Section 8: Install Claude Code Plugins
+# Section 9: Install Claude Code Plugins
 # =============================================================================
 
 plugins_status="skipped (claude CLI not found)"
@@ -241,7 +253,7 @@ if command -v claude &>/dev/null; then
 fi
 
 # =============================================================================
-# Section 9: Summary
+# Section 10: Summary
 # =============================================================================
 
 echo ""
@@ -263,6 +275,7 @@ if [[ ${#skipped[@]} -gt 0 ]]; then
 fi
 
 echo "Homebrew: $brew_status"
+echo "Claude Code: $claude_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
 echo "Claude plugins: $plugins_status"
