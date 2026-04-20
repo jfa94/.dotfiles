@@ -67,6 +67,7 @@
       "Bash(npx stryker *)",
       "Bash(npx tsc-alias *)",
       "Bash(npx madge *)",
+      "Bash(node --check *)",
       "Bash(tsc *)",
       "Bash(next *)",
       "Bash(git add *)",
