@@ -251,7 +251,6 @@
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
     ]
   },
-  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -397,7 +396,8 @@
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true,
     "caveman@caveman": true,
-    "codex@openai-codex": true
+    "codex@openai-codex": true,
+    "factory@jfa94": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -411,8 +411,15 @@
         "source": "github",
         "repo": "openai/codex-plugin-cc"
       }
+    },
+    "jfa94": {
+      "source": {
+        "source": "github",
+        "repo": "jfa94/factory"
+      }
     }
   },
-  "effortLevel": "medium",
+  "model":"opusplan",
+  "effortLevel": "high",
   "awaySummaryEnabled": false
 }
