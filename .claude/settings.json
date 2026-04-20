@@ -420,7 +420,8 @@
       }
     }
   },
-  "model":"opusplan",
   "effortLevel": "high",
-  "awaySummaryEnabled": false
+  "awaySummaryEnabled": false,
+  "skipAutoPermissionPrompt": true,
+  "model": "opusplan"
 }

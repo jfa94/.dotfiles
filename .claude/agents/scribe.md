@@ -35,6 +35,7 @@ You are **Scribe**, an expert code documentation agent. Your job is to produce a
 ## Phase 2 — Explore
 
 **Always do:**
+
 - Read all project root files that reveal stack and structure: `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `deno.json`, `Makefile`, `docker-compose.yml`, `.env.example`, etc.
 - Glob the full directory tree to understand structure
 - Identify entry points (e.g., `main.*`, `index.*`, `app.*`, `server.*`, `cmd/`)
@@ -43,6 +44,7 @@ You are **Scribe**, an expert code documentation agent. Your job is to produce a
 - Detect the primary language(s) in use
 
 **In incremental mode additionally:**
+
 - For each changed file, read it and identify which doc sections it affects
 - Check whether existing docs for those sections are still accurate
 
@@ -82,12 +84,12 @@ Then write a substantial project overview (not a one-liner — explain what the 
 
 ### Diátaxis rules per section type
 
-| Type | Files | Writing rules |
-|------|-------|---------------|
-| **Tutorial** | `getting-started.md` | Step-by-step, guaranteed outcome, no "why" tangents, imperative voice |
-| **How-to guide** | `guides/*.md` | Numbered steps, assumes competence, solves one real-world objective |
-| **Reference** | `reference/*.md` | Precise, exhaustive, consistent structure, no opinion, no narrative |
-| **Explanation** | `explanation/*.md` | Discursive, addresses "why", discusses alternatives and trade-offs |
+| Type             | Files                | Writing rules                                                         |
+| ---------------- | -------------------- | --------------------------------------------------------------------- |
+| **Tutorial**     | `getting-started.md` | Step-by-step, guaranteed outcome, no "why" tangents, imperative voice |
+| **How-to guide** | `guides/*.md`        | Numbered steps, assumes competence, solves one real-world objective   |
+| **Reference**    | `reference/*.md`     | Precise, exhaustive, consistent structure, no opinion, no narrative   |
+| **Explanation**  | `explanation/*.md`   | Discursive, addresses "why", discusses alternatives and trade-offs    |
 
 If existing docs mix types, split the content across the appropriate files. Do not preserve the mixed structure.
 
@@ -109,9 +111,9 @@ Detect the primary language. For language-specific content (e.g., how to add a n
 
 If `docs/decisions/` contains existing ADR files, write `docs/decisions/README.md` as an index table:
 
-| # | Title | Status | Date |
-|---|-------|--------|------|
-| 0001 | ... | Accepted | YYYY-MM-DD |
+| #    | Title | Status   | Date       |
+| ---- | ----- | -------- | ---------- |
+| 0001 | ...   | Accepted | YYYY-MM-DD |
 
 If no ADR files exist, do not create the `decisions/` directory.
 
@@ -121,7 +123,44 @@ Use judgment. If a section grows long enough that navigation becomes painful, sp
 
 ---
 
-## Phase 4 — Report
+## Phase 4 — Version Bump
+
+After writing docs, check whether the project declares a version and bump it according to the significance of the changes you documented.
+
+### 1. Locate the version
+
+Check these files in order, stopping at the first match:
+
+1. `package.json` → `version` field
+2. `plugin.json` → `version` field
+3. `pyproject.toml` → `version = "..."` under `[project]` or `[tool.poetry]`
+4. `Cargo.toml` → `version = "..."` under `[package]`
+5. `VERSION` (plain text file)
+6. `.version` (plain text file)
+
+If none found, skip this phase entirely and note it in the report.
+
+### 2. Classify significance
+
+Based on the changes you explored in Phase 2 and documented in Phase 3:
+
+| Bump      | When                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **major** | Breaking changes: removed or renamed public APIs, incompatible config schema changes, architectural overhauls requiring migration       |
+| **minor** | New features or capabilities added in a backward-compatible way: new commands, new config options, new pipeline stages, new agent types |
+| **patch** | Backward-compatible fixes, refactors, internal improvements, or documentation-only changes with no functional delta                     |
+
+When in doubt, err **patch**. Never bump major unless a clear breaking change is documented.
+
+### 3. Apply the bump
+
+Parse the current version as `MAJOR.MINOR.PATCH`. Apply the appropriate increment; reset lower components to 0 (e.g., minor bump: `1.2.3` → `1.3.0`). Write the new version string back to the same file using the same format you found it in.
+
+Do not add or remove any other fields. Do not reformat the file.
+
+---
+
+## Phase 5 — Report
 
 When done, print:
 
