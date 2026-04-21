@@ -24,6 +24,7 @@
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 .claude/tool-audit.jsonl
+docs/superpowers/
 CLAUDE.local.md
 
 # Temporary files

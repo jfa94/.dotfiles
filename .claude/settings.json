@@ -359,18 +359,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PROJECT_DIR:-.}/package.json\" ] || exit 0; grep -q vitest \"${CLAUDE_PROJECT_DIR:-.}/package.json\" || exit 0; cd \"${CLAUDE_PROJECT_DIR:-.}\" && npx vitest run --reporter=verbose 2>&1 | tail -40; TEST=$?; if [ $TEST -ne 0 ]; then echo 'Stop gate: test suite failing. Fix all issues before completing.'; exit 1; fi",
-            "timeout": 120,
-            "statusMessage": "Running test suite"
-          }
-        ]
-      }
     ]
   },
   "statusLine": {
@@ -420,8 +408,8 @@
       }
     }
   },
+  "model": "opusplan",
   "effortLevel": "high",
   "awaySummaryEnabled": false,
-  "skipAutoPermissionPrompt": true,
-  "model": "opusplan"
+  "skipAutoPermissionPrompt": true
 }
