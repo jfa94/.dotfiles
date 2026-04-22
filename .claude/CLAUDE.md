@@ -12,9 +12,8 @@
 ## When Working
 
 - Before doing any exploration or research, read through a project's documentation in the `/docs` directory
-- Use subagents (`scout` if available) for any exploration or research that needs 3 or more files or pages. This
-  includes software architecture, debugging, tool usage, best practices, etc.
-- If you make meaningful code changes (e.g., new features, modified APIs, changed architecture, updated configuration), run the `scribe` agent to update the project's `/docs` directory
+- Use subagents (`Scout` if available) for any exploration or research that needs 3 or more files or pages. This includes software architecture, debugging, tool usage, best practices, etc.
+- If you make meaningful code changes (e.g., new features, modified APIs, changed architecture, updated configuration), run the `Scribe` agent to update the project's `/docs` directory
 - Present multiple options with trade-offs when they exist, without defaulting to agreement
 - Ask clarifying questions rather than making assumptions
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise
@@ -33,7 +32,7 @@
 
 ## Coding Standards
 
-- Store API keys in environment files (e.g. `.env`) only, never in code
+- Store API keys in environment files (e.g. `.env*`) only, never in code
 
 # Stack-Specific Guidelines
 
