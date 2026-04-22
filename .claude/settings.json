@@ -59,6 +59,8 @@
       "Bash(pnpm exec *)",
       "Bash(pnpm tsc *)",
       "Bash(pnpm vitest *)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm lint *)",
       "Bash(pnpm eslint *)",
       "Bash(pnpm prettier *)",
       "Bash(pnpm depcruise *)",
@@ -67,6 +69,8 @@
       "Bash(pnpm madge *)",
       "Bash(pnpm dlx tsc *)",
       "Bash(pnpm dlx vitest *)",
+      "Bash(pnpm dlx typecheck *)",
+      "Bash(pnpm dlx lint *)",
       "Bash(pnpm dlx eslint *)",
       "Bash(pnpm dlx prettier *)",
       "Bash(pnpm dlx depcruise *)",
@@ -427,7 +431,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "skipAutoPermissionPrompt": true
 }
