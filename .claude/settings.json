@@ -57,6 +57,14 @@
       "Bash(pnpm outdated *)",
       "Bash(pnpm audit *)",
       "Bash(pnpm exec *)",
+      "Bash(pnpm tsc *)",
+      "Bash(pnpm vitest *)",
+      "Bash(pnpm eslint *)",
+      "Bash(pnpm prettier *)",
+      "Bash(pnpm depcruise *)",
+      "Bash(pnpm stryker *)",
+      "Bash(pnpm tsc-alias *)",
+      "Bash(pnpm madge *)",
       "Bash(pnpm dlx tsc *)",
       "Bash(pnpm dlx vitest *)",
       "Bash(pnpm dlx eslint *)",
@@ -252,6 +260,7 @@
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
     ]
   },
+  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -418,8 +427,7 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "awaySummaryEnabled": false,
-  "skipAutoPermissionPrompt": true,
-  "model": "opusplan"
+  "skipAutoPermissionPrompt": true
 }
