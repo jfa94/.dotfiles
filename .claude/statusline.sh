@@ -14,8 +14,12 @@ if BRANCH=$(git -C "$DIR_PATH" branch --show-current 2>/dev/null) && [ -n "$BRAN
     GIT=" (${BRANCH}${INDICATORS})"
 fi
 
-CTX=$(echo "$input" | jq -r '[(.context_window.context_window_size * .context_window.used_percentage / 100 | round), .context_window.context_window_size, .context_window.used_percentage] | @tsv' | awk -F'\t' '{
+CTX=$(echo "$input" | jq -r '
+  if (.context_window.used_percentage == null) then "0\t0\tnull"
+  else [(.context_window.context_window_size * .context_window.used_percentage / 100 | round), .context_window.context_window_size, .context_window.used_percentage] | @tsv
+  end' | awk -F'\t' '{
   used=$1; max=$2; pct=$3;
+  if (pct == "null") { printf "0.0k tokens (100%%)"; next }
   if (max >= 1000000) { max_str = sprintf("%.1fM", max/1000000) }
   else { max_str = sprintf("%dk", max/1000) }
   printf "%.1fk/%s tokens (%d%%)", used/1000, max_str, pct

@@ -23,11 +23,3 @@ chmod +x ~/.dotfiles/setup.sh && ~/.dotfiles/setup.sh
 ```
 
 The script is idempotent — re-running it skips anything already set up. If conflicts are detected, you’ll be prompted to replace, skip, or decide file-by-file.
-
-# Claude files
-
-1. Link project config by running the ‘.claude/configure.sh’ script
-
-```zsh
-chmod +x ./.claude/configure.sh && ./.claude/configure.sh ~/Projects/<Project Name>
-```
