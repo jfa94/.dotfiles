@@ -47,6 +47,7 @@
       "Bash(jq *)",
       "Bash(grep *)",
       "Bash(mkdir *)",
+      "Bash(shellcheck *)",
       "Bash(pnpm install *)",
       "Bash(pnpm run *)",
       "Bash(pnpm test *)",
