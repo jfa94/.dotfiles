@@ -433,5 +433,7 @@
   },
   "effortLevel": "medium",
   "awaySummaryEnabled": false,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true
 }

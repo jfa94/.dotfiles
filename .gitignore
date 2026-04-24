@@ -3,6 +3,7 @@
 
 # Git worktrees
 .worktrees/
+*.worktrees
 
 # Claude Code
 .claude/worktrees/
@@ -24,6 +25,7 @@
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 .claude/tool-audit.jsonl
+.claude-plugin-data/
 docs/superpowers/
 CLAUDE.local.md
 
@@ -278,6 +280,7 @@ coverage
 build/Release
 
 # Logs
+logs/
 logs
 *.log
 npm-debug.log*
@@ -372,3 +375,14 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Supabase
+supabase/.temp/
+
+# Mutation testing
+.stryker-tmp/
+
+# Factory Plugin
+.claude-progress.json
+.feature-status.json
+.state/run-*
