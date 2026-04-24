@@ -110,6 +110,17 @@ while IFS= read -r -d '' file; do
   fi
 done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 
+while IFS= read -r -d '' file; do
+  rel="${file#"$DOTFILES_DIR"/.config/}"
+  dest="$HOME/.config/$rel"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
+    continue
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    conflicts+=("~/.config/$rel")
+  fi
+done < <(find "$DOTFILES_DIR/.config" -type f -print0)
+
 MODE="replace"
 if [[ ${#conflicts[@]} -gt 0 ]]; then
   echo "The following files already exist and will need replacement:"
@@ -161,6 +172,19 @@ done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 
 # Ensure hook scripts are executable (git may not preserve +x on all systems)
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+
+# =============================================================================
+# Section 4b: XDG Config Symlinks
+# =============================================================================
+
+info "Creating ~/.config symlinks..."
+
+while IFS= read -r -d '' file; do
+  rel="${file#"$DOTFILES_DIR"/.config/}"
+  dest="$HOME/.config/$rel"
+  mkdir -p "$(dirname "$dest")"
+  link_file "$file" "$dest" "~/.config/$rel"
+done < <(find "$DOTFILES_DIR/.config" -type f -print0)
 
 # =============================================================================
 # Section 5: Create Required Directories
