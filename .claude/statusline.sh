@@ -14,6 +14,13 @@ if BRANCH=$(git -C "$DIR_PATH" branch --show-current 2>/dev/null) && [ -n "$BRAN
     GIT=" (${BRANCH}${INDICATORS})"
 fi
 
+CTX=$(echo "$input" | jq -r '[(.context_window.context_window_size * .context_window.used_percentage / 100 | round), .context_window.context_window_size, .context_window.used_percentage] | @tsv' | awk -F'\t' '{
+  used=$1; max=$2; pct=$3;
+  if (max >= 1000000) { max_str = sprintf("%.1fM", max/1000000) }
+  else { max_str = sprintf("%dk", max/1000) }
+  printf "%.1fk/%s tokens (%d%%)", used/1000, max_str, pct
+}')
+
 if [ -n "$RESETS" ]; then
     NOW=$(date +%s)
     REMAINING=$((RESETS - NOW))
@@ -21,7 +28,7 @@ if [ -n "$RESETS" ]; then
     MINS=$(((REMAINING % 3600) / 60))
     USAGE=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0' | cut -d. -f1)
     REMAINING_PCT=$((100 - USAGE))
-    echo "$MODEL in $DIR$GIT | ${REMAINING_PCT}% left for ${HOURS}h ${MINS}m"
+    echo "$MODEL in $DIR$GIT | $CTX | ${REMAINING_PCT}% left for ${HOURS}h ${MINS}m"
 else
-    echo "$MODEL in $DIR$GIT"
+    echo "$MODEL in $DIR$GIT | $CTX"
 fi
