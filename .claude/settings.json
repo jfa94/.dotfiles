@@ -95,6 +95,8 @@
       "Bash(git -C * stash *)",
       "Bash(git push *)",
       "Bash(git -C * push *)",
+      "Bash(git diff)",
+      "Bash(git -C * diff)",
       "Bash(git diff *)",
       "Bash(git -C * diff *)",
       "Bash(git log *)",
