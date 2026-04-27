@@ -113,6 +113,8 @@
       "Bash(git -C * reflog *)",
       "Bash(git describe *)",
       "Bash(git -C * describe *)",
+      "Bash(git remote -v)",
+      "Bash(git -C * remote -v)",
       "Bash(git remote -v *)",
       "Bash(git -C * remote -v *)",
       "Bash(git config --get *)",
