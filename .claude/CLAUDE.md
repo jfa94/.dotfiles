@@ -30,6 +30,14 @@
 - Tests must be independent — no shared mutable state
 - For functions with broad input domains, use property-based testing (fast-check) to catch edge cases that example-based tests miss
 
+## Git & Deploys
+
+- Never force-push in any form (`--force`, `-f`, `--force-with-lease`, `--force-if-includes`)
+- Never use `--no-verify`, `--no-gpg-sign`, or `-n` flags on any git command
+- Never publish packages (`pnpm/npm/yarn publish`)
+- Never run `apply_migration` or schema-changing SQL without explicit confirmation in the current turn
+- Auto mode: all `autoMode.soft_deny` rules in `settings.json` apply. If any would block the action, stop and ask
+
 ## Coding Standards
 
 - Store API keys in environment files (e.g. `.env*`) only, never in code

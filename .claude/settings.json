@@ -95,8 +95,6 @@
       "Bash(git -C * stash *)",
       "Bash(git push *)",
       "Bash(git -C * push *)",
-      "Bash(git diff)",
-      "Bash(git -C * diff)",
       "Bash(git diff *)",
       "Bash(git -C * diff *)",
       "Bash(git log *)",
@@ -267,9 +265,34 @@
       "mcp__plugin_posthog_posthog__posthog_entity_search",
       "mcp__plugin_posthog_posthog__docs-search",
       "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push --force-with-lease*)",
+      "Bash(git push --force-if-includes*)",
+      "Bash(git -C * push --force*)",
+      "Bash(git -C * push -f *)",
+      "Bash(git -C * push --force-with-lease*)",
+      "Bash(git -C * push --force-if-includes*)",
+      "Bash(git commit --no-verify*)",
+      "Bash(git commit -n *)",
+      "Bash(git commit --no-gpg-sign*)",
+      "Bash(git -C * commit --no-verify*)",
+      "Bash(git -C * commit -n *)",
+      "Bash(git -C * commit --no-gpg-sign*)",
+      "Bash(git rebase --no-verify*)",
+      "Bash(git -C * rebase --no-verify*)",
+      "Bash(git push --no-verify*)",
+      "Bash(git -C * push --no-verify*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf $HOME*)",
+      "Bash(pnpm publish*)",
+      "Bash(npm publish*)",
+      "Bash(yarn publish*)"
     ]
   },
-  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -338,7 +361,7 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/npm-to-pnpm.sh",
-            "statusMessage": "Rewriting npm → pnpm"
+            "statusMessage": "Rewriting npm \u2192 pnpm"
           }
         ]
       },
@@ -436,9 +459,36 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "autoMode": {
+    "allow": [
+      "$defaults"
+    ],
+    "environment": [
+      "Trusted local repos: anything under /Users/Javier/.dotfiles and /Users/Javier/Projects/*.",
+      "Trusted package registries: npm, pnpm, GitHub.",
+      "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
+      "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
+    ],
+    "soft_deny": [
+      "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
+      "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
+      "Never write fallback code that silently degrades functionality; surface the error.",
+      "Never hardcode return values to satisfy specific test inputs.",
+      "Never DROP, TRUNCATE, or run unbounded DELETE/UPDATE on any database; never drop a database table.",
+      "Never run apply_migration or schema-changing SQL against a Supabase project without explicit user confirmation in this turn.",
+      "Never write secrets, API keys, or tokens into source files. Use .env* files only.",
+      "Never modify .env, .env.*, or credential files without explicit confirmation.",
+      "Never use --no-verify, --no-gpg-sign, -n, or any flag that bypasses git hooks or signing.",
+      "Never force-push in any form (--force, -f, --force-with-lease, --force-if-includes); these are hard-denied at the permissions layer.",
+      "Never push, merge, or close PRs on repos other than dotfiles without explicit confirmation. (Dotfiles repo: direct commits to main are pre-approved.)",
+      "Never run destructive AWS mutations (delete-*, terminate-*, or put-* on production resources) without confirmation.",
+      "Never publish packages (pnpm/npm/yarn publish) under any circumstance.",
+      "Never disable or rewrite the protected-files, dangerous-patterns, sql-readonly, or pre-commit/pre-push hooks."
+    ]
+  }
 }
