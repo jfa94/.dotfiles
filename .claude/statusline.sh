@@ -28,11 +28,15 @@ CTX=$(echo "$input" | jq -r '
 if [ -n "$RESETS" ]; then
     NOW=$(date +%s)
     REMAINING=$((RESETS - NOW))
-    HOURS=$((REMAINING / 3600))
-    MINS=$(((REMAINING % 3600) / 60))
-    USAGE=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0' | cut -d. -f1)
-    REMAINING_PCT=$((100 - USAGE))
-    echo "$MODEL in $DIR$GIT | $CTX | ${REMAINING_PCT}% left for ${HOURS}h ${MINS}m"
+    if (( REMAINING <= 0 )); then
+        echo "$MODEL in $DIR$GIT | $CTX | window reset pending"
+    else
+        HOURS=$((REMAINING / 3600))
+        MINS=$(((REMAINING % 3600) / 60))
+        USAGE=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0' | cut -d. -f1)
+        REMAINING_PCT=$((100 - USAGE))
+        echo "$MODEL in $DIR$GIT | $CTX | ${REMAINING_PCT}% left for ${HOURS}h ${MINS}m"
+    fi
 else
     echo "$MODEL in $DIR$GIT | $CTX"
 fi
