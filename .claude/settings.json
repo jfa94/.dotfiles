@@ -361,7 +361,7 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/npm-to-pnpm.sh",
-            "statusMessage": "Rewriting npm \u2192 pnpm"
+            "statusMessage": "Rewriting npm → pnpm"
           }
         ]
       },
