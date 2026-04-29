@@ -293,6 +293,7 @@
       "Bash(yarn publish*)"
     ]
   },
+  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -459,7 +460,7 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "awaySummaryEnabled": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
@@ -467,12 +468,6 @@
   "autoMode": {
     "allow": [
       "$defaults"
-    ],
-    "environment": [
-      "Trusted local repos: anything under /Users/Javier/.dotfiles and /Users/Javier/Projects/*.",
-      "Trusted package registries: npm, pnpm, GitHub.",
-      "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
-      "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
     ],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
@@ -489,6 +484,12 @@
       "Never run destructive AWS mutations (delete-*, terminate-*, or put-* on production resources) without confirmation.",
       "Never publish packages (pnpm/npm/yarn publish) under any circumstance.",
       "Never disable or rewrite the protected-files, dangerous-patterns, sql-readonly, or pre-commit/pre-push hooks."
+    ],
+    "environment": [
+      "Trusted local repos: anything under /Users/Javier/.dotfiles and /Users/Javier/Projects/*.",
+      "Trusted package registries: npm, pnpm, GitHub.",
+      "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
+      "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
     ]
   }
 }
