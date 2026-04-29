@@ -50,6 +50,8 @@
       "Bash(shellcheck *)",
       "Bash(pnpm install *)",
       "Bash(pnpm run *)",
+      "Bash(pnpm dev)",
+      "Bash(pnpm dev *)",
       "Bash(pnpm test *)",
       "Bash(pnpm build *)",
       "Bash(pnpm list *)",
