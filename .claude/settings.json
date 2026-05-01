@@ -295,7 +295,6 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -462,7 +461,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
@@ -493,5 +492,6 @@
       "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
       "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
     ]
-  }
+  },
+  "model": "opusplan"
 }
