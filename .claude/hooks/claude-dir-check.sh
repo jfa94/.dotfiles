@@ -8,6 +8,7 @@ printf '%s' "$FP" | grep -qE '(^|/)\.claude(/|$)' || exit 0
 printf '%s' "$FP" | grep -qE '(^|/)\.claude/worktrees/' && exit 0
 printf '%s' "$FP" | grep -qE '(^|/)\.claude/plans/' && exit 0
 printf '%s' "$FP" | grep -qE '(^|/)\.claude/projects/' && exit 0
+printf '%s' "$FP" | grep -qE '(^|/)\.claude/plugins/data/' && exit 0
 
 jq -cn --arg r 'Accessing .claude/ — confirm this is intentional.' \
   '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":$r}}'

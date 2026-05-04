@@ -103,6 +103,8 @@
       "Bash(git -C * log *)",
       "Bash(git show *)",
       "Bash(git -C * show *)",
+      "Bash(git check-ignore *)",
+      "Bash(git -C * check-ignore *)",
       "Bash(git blame *)",
       "Bash(git -C * blame *)",
       "Bash(git fetch *)",
