@@ -385,4 +385,5 @@ supabase/.temp/
 # Factory Plugin
 .claude-progress.json
 .feature-status.json
-.state/run-*
+.state/
+.playwright-mcp/
