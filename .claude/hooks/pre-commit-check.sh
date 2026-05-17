@@ -33,13 +33,3 @@ if [ -n "$SECRETS" ]; then
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi
-
-# --- 4. TypeScript + lint gates (JS projects only) ---
-[ -f "${CLAUDE_PROJECT_DIR:-.}/package.json" ] || exit 0
-TSC=0; { npx tsc --noEmit 2>&1; } | tail -10 || TSC=1
-LINT=0; { npx eslint . --max-warnings 0 2>&1; } | tail -10 || LINT=1
-
-if [ "$TSC" -ne 0 ] || [ "$LINT" -ne 0 ]; then
-  jq -cn --arg r "Pre-commit gate failed: tsc($TSC) lint($LINT). Fix before committing." \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
-fi

@@ -297,6 +297,7 @@
       "Bash(yarn publish*)"
     ]
   },
+  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -388,6 +389,17 @@
             "command": "~/.claude/hooks/pre-push-check.sh",
             "timeout": 900,
             "statusMessage": "Running quality checks before push"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre-pr-check.sh",
+            "timeout": 1800,
+            "statusMessage": "Running mutation gate before PR"
           }
         ]
       },
@@ -486,7 +498,8 @@
       "Never push, merge, or close PRs on repos other than dotfiles without explicit confirmation. (Dotfiles repo: direct commits to main are pre-approved.)",
       "Never run destructive AWS mutations (delete-*, terminate-*, or put-* on production resources) without confirmation.",
       "Never publish packages (pnpm/npm/yarn publish) under any circumstance.",
-      "Never disable or rewrite the protected-files, dangerous-patterns, sql-readonly, or pre-commit/pre-push hooks."
+      "Never disable or rewrite the protected-files, dangerous-patterns, sql-readonly, or pre-commit/pre-push/pre-pr hooks.",
+      "Never open a non-draft PR (gh pr create without --draft, or gh pr ready) without the mutation gate passing; the pre-pr-check hook enforces this."
     ],
     "environment": [
       "Trusted local repos: anything under /Users/Javier/.dotfiles and /Users/Javier/Projects/*.",
@@ -494,6 +507,5 @@
       "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
       "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
     ]
-  },
-  "model": "opusplan"
+  }
 }

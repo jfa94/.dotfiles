@@ -11,9 +11,12 @@ if grep -q '"quality"' package.json; then
 else
   TC=0; { pnpm typecheck 2>&1; } | tail -10 || TC=1
   LN=0; { pnpm lint 2>&1; } | tail -10 || LN=1
-  AU=0; { pnpm audit --audit-level high 2>&1; } | tail -10 || AU=1
   TS=0; { pnpm test 2>&1; } | tail -20 || TS=1
-  QUAL=$((TC + LN + AU + TS))
+  DV=0
+  if grep -q '"deps:validate"' package.json; then
+    { pnpm deps:validate 2>&1; } | tail -10 || DV=1
+  fi
+  QUAL=$((TC + LN + TS + DV))
 fi
 
 if [ "$QUAL" -ne 0 ]; then
