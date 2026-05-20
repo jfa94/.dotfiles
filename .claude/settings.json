@@ -397,6 +397,17 @@
         "hooks": [
           {
             "type": "command",
+            "command": "~/.claude/hooks/semgrep-check.sh",
+            "timeout": 120,
+            "statusMessage": "Running semgrep SAST scan before push"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "~/.claude/hooks/pre-pr-check.sh",
             "timeout": 1800,
             "statusMessage": "Running mutation gate before PR"
@@ -475,15 +486,13 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "awaySummaryEnabled": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
-    "allow": [
-      "$defaults"
-    ],
+    "allow": ["$defaults"],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
       "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
