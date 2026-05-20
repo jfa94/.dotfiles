@@ -38,7 +38,7 @@ if [[ -n "$CACHE_FILE" ]] && [ -f "$CACHE_FILE" ]; then
 else
   # Run semgrep on changed files only; use array to handle paths with spaces
   args=()
-  while IFS= read -r f; do args+=("$f"); done <<< "$CHANGED"
+  while IFS= read -r f; do [[ -n "$f" ]] && args+=("$f"); done <<< "$CHANGED"
   SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null || true)
   # Only cache if output is valid JSON with a .results key
   if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
