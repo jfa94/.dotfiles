@@ -1,0 +1,47 @@
+# Inherit gitignore patterns (covers node_modules/, dist/, .next/, venv/, etc.)
+:include .gitignore
+
+# --- Generated / vendored code (false-positive heavy) ---
+vendor/
+third_party/
+**/generated/
+**/*.generated.*
+**/*.min.js
+**/*.min.css
+
+# --- Lockfiles (not code) ---
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Pipfile.lock
+poetry.lock
+Cargo.lock
+
+# --- Templates (placeholders, not real code) ---
+**/templates/
+supabase/templates/
+
+# --- Fixtures / snapshots / mocks ---
+**/fixtures/
+**/__fixtures__/
+**/__snapshots__/
+**/*.fixture.*
+**/*.snap
+
+# --- Supabase generated artifacts ---
+supabase/.temp/
+**/types/database.ts
+**/types/supabase.ts
+
+# --- Docs ---
+docs/
+*.md
+
+# --- IDE / tooling ---
+.idea/
+.vscode/
+
+# --- Test/coverage output ---
+coverage/
+reports/
+.stryker-tmp/
