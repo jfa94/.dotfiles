@@ -8,6 +8,18 @@
       "Read",
       "Edit",
       "Write",
+      "Write(/tmp/**)",
+      "Edit(/tmp/**)",
+      "Write(/private/tmp/**)",
+      "Edit(/private/tmp/**)",
+      "Write(/var/tmp/**)",
+      "Edit(/var/tmp/**)",
+      "Write(/private/var/tmp/**)",
+      "Edit(/private/var/tmp/**)",
+      "Write(/var/folders/**)",
+      "Edit(/var/folders/**)",
+      "Write(/private/var/folders/**)",
+      "Edit(/private/var/folders/**)",
       "Glob",
       "Grep",
       "WebSearch",
@@ -494,15 +506,13 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
-    "allow": [
-      "$defaults"
-    ],
+    "allow": ["$defaults"],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
       "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
