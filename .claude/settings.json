@@ -512,7 +512,9 @@
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
-    "allow": ["$defaults"],
+    "allow": [
+      "$defaults"
+    ],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
       "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
