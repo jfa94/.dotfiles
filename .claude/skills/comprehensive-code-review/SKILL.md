@@ -5,7 +5,8 @@ description: >
   review. Covers architecture, security, quality, tests, types, comments, simplification,
   silent failures, documentation, and optionally implementation-vs-spec. Consolidates all
   findings into a single standardized report with verified file:line citations.
-  Usage: /comprehensive-code-review [--base <ref>] [--all] [--spec <path>]
+  Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>]
+argument-hint: "[--base <ref>] [--full] [--spec <path>]"
 ---
 
 # Comprehensive Code Review
@@ -72,7 +73,7 @@ Parse the skill arguments (from `$ARGUMENTS`):
 
 ```
 --base <ref>   → diff range: git diff <ref>...HEAD
---all          → diff range: git diff $(git rev-list --max-parents=0 HEAD | tail -1)...HEAD
+--full         → diff range: git diff $(git rev-list --max-parents=0 HEAD | tail -1)...HEAD
 (no args)      → diff range: git diff (working tree vs HEAD)
 --spec <path>  → path to spec file for implementation-reviewer
 ```
@@ -81,7 +82,7 @@ Run:
 
 ```bash
 # Resolve diff
-if --all:    git diff $(git rev-list --max-parents=0 HEAD | tail -1)
+if --full:   git diff $(git rev-list --max-parents=0 HEAD | tail -1)
 elif --base: git diff <ref>...HEAD
 else:        git diff
 
