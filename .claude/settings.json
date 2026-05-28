@@ -484,7 +484,8 @@
     "stripe@claude-plugins-official": true,
     "caveman@caveman": true,
     "codex@openai-codex": true,
-    "factory@jfa94": true
+    "factory@jfa94": true,
+    "resend@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
