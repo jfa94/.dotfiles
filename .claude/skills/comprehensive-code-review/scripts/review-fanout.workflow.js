@@ -81,7 +81,11 @@ function buildPrompt(reviewer, ctx) {
   ].join("\n");
 }
 
-const reviewers = Array.isArray(args && args.reviewers) ? args.reviewers : [];
+// The Workflow runtime may hand `args` to the script as a JSON string rather
+// than a parsed object; normalize so the caller can pass args either way.
+const input = typeof args === "string" ? JSON.parse(args) : args || {};
+
+const reviewers = Array.isArray(input.reviewers) ? input.reviewers : [];
 if (reviewers.length === 0) {
   log("No reviewers supplied in args.reviewers — nothing to dispatch.");
   return { reviewers: [] };
@@ -91,7 +95,7 @@ phase("Review");
 const results = await parallel(
   reviewers.map(
     (r) => () =>
-      agent(buildPrompt(r, args), {
+      agent(buildPrompt(r, input), {
         label: "review:" + r.name,
         phase: "Review",
         schema: FINDINGS_SCHEMA,
@@ -115,7 +119,13 @@ const results = await parallel(
   ),
 );
 
-const consolidated = { reviewers: results.filter(Boolean) };
+// Stamp the run's scope into the result so the skill can detect a stale file
+// (a prior run's leftover) rather than silently accepting it as the current run.
+const consolidated = {
+  scopeLabel: input.scopeLabel || null,
+  mode: input.mode || null,
+  reviewers: results.filter(Boolean),
+};
 
 // A workflow's JS `return` value is NOT retrievable by the calling skill
 // (TaskOutput is deprecated; the task-notification carries only prose). The
@@ -124,7 +134,7 @@ const consolidated = { reviewers: results.filter(Boolean) };
 // Findings caps keep this payload small, so verbatim transcription is reliable;
 // the agent reads the file back to confirm it parses before returning.
 phase("Persist");
-const repoRoot = (args && args.repoRoot) || ".";
+const repoRoot = input.repoRoot || ".";
 const outPath =
   repoRoot + "/.comprehensive-code-review/raw/workflow-result.json";
 const payload = JSON.stringify(consolidated, null, 2);
