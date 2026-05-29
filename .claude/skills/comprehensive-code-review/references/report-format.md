@@ -28,9 +28,11 @@
 
 ## Scope
 
-- Diff range: <e.g., "working tree vs HEAD" or "abc123...HEAD">
-- Files changed: <N>
-- Lines changed: +<M> -<K>
+- Mode: <full | base | working-tree>
+- Agent scope: <e.g., "ENTIRE CODEBASE (current state)" | "abc123...HEAD" | "working tree vs HEAD">
+- Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~10...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
+- Files reviewed: <N>
+- Lines changed: +<M> -<K> (omit for --full)
 
 ## Reviewers
 
