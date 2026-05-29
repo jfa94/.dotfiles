@@ -35,8 +35,8 @@ const FINDINGS_SCHEMA = {
         required: ["severity", "file", "line", "verbatim", "title", "why"],
         properties: {
           severity: { enum: ["critical", "important", "minor"] },
-          file: { type: "string" },
-          line: { type: "integer" },
+          file: { type: "string", minLength: 1 },
+          line: { type: "integer", minimum: 1 },
           verbatim: { type: "string", minLength: 5 },
           title: { type: "string" },
           why: { type: "string" },
