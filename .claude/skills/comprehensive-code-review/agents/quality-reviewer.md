@@ -38,7 +38,7 @@ Violating the letter of these rules violates the spirit. No exceptions.
 | Thought                                            | Reality                                                                               |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | "Code looks fine, I'll APPROVE"                    | Cite the file:line you traced. No verification trace = no APPROVE.                    |
-| "I'll summarise the issue instead of quoting"      | Parser rejects evidence-less findings. Quote 5+ chars verbatim or drop.               |
+| "I'll summarise the issue instead of quoting"      | Quote-less findings are dropped before emission. Quote 5+ chars verbatim or drop.     |
 | "I see auth code, must be safe"                    | Trace the check site to the access site. Surface keyword spotting is not a review.    |
 | "Common OWASP issue, I'll flag it"                 | Only flag if you traced it in this code. General knowledge ≠ finding.                 |
 | "Tests exist, so coverage is fine"                 | Tests run code; behavior coverage is different. Mutation-test the assertion mentally. |
