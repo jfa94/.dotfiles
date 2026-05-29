@@ -1,4 +1,5 @@
 #!/bin/bash
+set -uo pipefail
 input=$(cat)
 
 MODEL=$(echo "$input" | jq -r '.model.display_name' | sed 's/ [0-9][0-9.]*$//')

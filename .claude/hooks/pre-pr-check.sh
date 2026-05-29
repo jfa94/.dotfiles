@@ -26,7 +26,8 @@ if [ -z "$BASE_REF" ]; then
 fi
 BASE_REF="${BASE_REF:-main}"
 
-git fetch origin "$BASE_REF" --depth=50 2>/dev/null || exit 0
+git fetch origin "$BASE_REF" --depth=50 2>/dev/null \
+  || { echo "pre-pr: failed to fetch origin/$BASE_REF; skipping mutation gate" >&2; exit 0; }
 
 # Incremental scope (mirrors factory CI quality-gate.yml)
 SCOPE=$(git diff --name-only --diff-filter=AM "origin/${BASE_REF}...HEAD" -- ':(glob)src/**/*.ts' \
