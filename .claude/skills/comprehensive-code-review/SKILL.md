@@ -146,10 +146,13 @@ Otherwise → include `{ name: "implementation-reviewer", role: <file body> }` i
 
 ## Phase 5 — Launch Both Tracks (single message)
 
-First ensure the output dir exists (both the workflow's persist agent and Codex's raw output land here):
+First ensure the output dir exists (both the workflow's persist agent and Codex's raw output land here),
+and delete any prior `workflow-result.json` so a stale file from an earlier run can never be mistaken
+for this run's output (the dir is gitignored, so stale state persists locally between runs):
 
 ```bash
 mkdir -p .comprehensive-code-review/raw
+rm -f .comprehensive-code-review/raw/workflow-result.json
 ```
 
 <EXTREMELY-IMPORTANT>
@@ -182,10 +185,13 @@ Both return immediately and run in the background. Do not hand-dispatch reviewer
 ## Phase 6 — Harvest
 
 When the Workflow completion notification arrives, **Read the file the workflow wrote** —
-`.comprehensive-code-review/raw/workflow-result.json` — and parse `{ reviewers: [...] }`. Do NOT rely
-on the Workflow's JS return value or `TaskOutput`; neither surfaces the structured object to you. Each
-reviewer entry has `status`, optional `verdict`, and `findings[]`. If the file is missing or unparseable,
-mark every dispatched reviewer BLOCKED("workflow-result.json missing/unparseable") and continue.
+`.comprehensive-code-review/raw/workflow-result.json` — and parse `{ scopeLabel, mode, reviewers: [...] }`.
+Do NOT rely on the Workflow's JS return value or `TaskOutput`; neither surfaces the structured object to
+you. Each reviewer entry has `status`, optional `verdict`, and `findings[]`. **Staleness guard:** verify
+the file's `scopeLabel`/`mode` match the run you just launched — if they are absent or differ, the file is
+a stale leftover (the current run's persist failed), so do NOT trust it; mark every dispatched reviewer
+BLOCKED("workflow-result.json stale/foreign — persist failed"). Likewise, if the file is missing or
+unparseable, mark every dispatched reviewer BLOCKED("workflow-result.json missing/unparseable") and continue.
 
 Then harvest Codex if `CODEX_AVAILABLE=true`: the Codex review ran as a backgrounded **Bash** task.
 When that Bash task terminates, read its captured stdout (the review markdown) directly — there is no
