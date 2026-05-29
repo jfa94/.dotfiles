@@ -317,7 +317,6 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -509,6 +508,7 @@
   },
   "effortLevel": "high",
   "awaySummaryEnabled": false,
+  "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
