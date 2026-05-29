@@ -128,6 +128,13 @@ const repoRoot = (args && args.repoRoot) || ".";
 const outPath =
   repoRoot + "/.comprehensive-code-review/raw/workflow-result.json";
 const payload = JSON.stringify(consolidated, null, 2);
+// Collision-proof delimiter: extend the marker until it cannot occur inside the
+// payload, so a verbatim finding quote that happens to contain the literal marker
+// (e.g. when this skill reviews its own source) can't truncate the extracted text.
+let marker = "WORKFLOW_RESULT_PAYLOAD";
+while (payload.includes(marker)) marker += "_X";
+const openTag = "<" + marker + ">";
+const closeTag = "</" + marker + ">";
 await agent(
   [
     "You persist a code-review result to disk. Do NOT modify, summarize, reformat, or add commentary to the content.",
@@ -137,14 +144,18 @@ await agent(
       repoRoot +
       "/.comprehensive-code-review/raw/ if missing).",
     "2. Write the file at this absolute path: " + outPath,
-    "   Its ENTIRE contents must be EXACTLY the text between the <CONTENT> and </CONTENT> markers below (exclude the markers themselves).",
+    "   Its ENTIRE contents must be EXACTLY the text between the " +
+      openTag +
+      " and " +
+      closeTag +
+      " markers below (exclude the markers themselves).",
     "3. Read the file back; confirm it parses as JSON and the top-level object has a `reviewers` array.",
     "",
     "Return written=true only if the read-back parsed successfully; set reviewer_count to the length of the reviewers array.",
     "",
-    "<CONTENT>",
+    openTag,
     payload,
-    "</CONTENT>",
+    closeTag,
   ].join("\n"),
   {
     label: "persist:workflow-result",
