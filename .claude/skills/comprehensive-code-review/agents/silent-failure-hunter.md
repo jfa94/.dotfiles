@@ -102,26 +102,3 @@ Look for patterns that hide errors:
 
 Ensure compliance with the project's error handling requirements from CLAUDE.md.
 
-## Your Output Format
-
-For each issue you find, provide:
-
-1. **Location**: File path and line number(s) with verbatim quote
-2. **Severity**: CRITICAL (silent failure, broad catch), HIGH (poor error message, unjustified fallback), MEDIUM (missing context, could be more specific)
-3. **Issue Description**: What's wrong and why it's problematic
-4. **Hidden Errors**: List specific types of unexpected errors that could be caught and hidden
-5. **User Impact**: How this affects the user experience and debugging
-6. **Recommendation**: Specific code changes needed to fix the issue
-
-## Required STATUS line
-
-The **absolute last line** of your response must be a STATUS line:
-
-```
-STATUS: DONE
-STATUS: DONE_WITH_CONCERNS — <1-line concern>
-STATUS: BLOCKED — <1-line reason>
-STATUS: NEEDS_CONTEXT — <1-line question>
-```
-
-Use DONE for a completed review. BLOCKED only when the review could not be performed.

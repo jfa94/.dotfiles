@@ -123,36 +123,3 @@ Rate each category:
 
 Can't check every box? Drop the finding or downgrade. Do not ship the verdict.
 
-## Output Format (REQUIRED)
-
-For each finding:
-
-1. Severity: critical / high / medium / low
-2. File path and line number
-3. Verbatim quote of the offending import / edge / type reference
-4. What the violation is
-5. WHY it matters (e.g., "domain importing from infra breaks testability and couples business logic to database implementation")
-6. Specific fix suggestion (e.g., "Extract the shared type to src/domain/types/order.ts and import from there")
-
-Final verdict line, exactly one of:
-
-- **APPROVE** — no violations
-- **WARNING** — non-blocking concerns only
-- **VIOLATION** — must fix before merge
-
-## Final Rule
-
-Quote the import. Trace the edge. No edge, no finding.
-
-## Required STATUS line
-
-The **absolute last line** of your response must be a STATUS line:
-
-```
-STATUS: DONE
-STATUS: DONE_WITH_CONCERNS — <1-line concern>
-STATUS: BLOCKED — <1-line reason>
-STATUS: NEEDS_CONTEXT — <1-line question>
-```
-
-Use DONE for a completed review (any verdict). BLOCKED only when the review could not be performed. Missing STATUS line is treated as BLOCKED.

@@ -155,38 +155,3 @@ Classify findings by severity:
 
 Can't check every box? Drop the finding or mark NEEDS VERIFICATION. Do not ship the verdict.
 
-## Output Format (REQUIRED)
-
-For each finding:
-
-1. Severity and CWE ID
-2. File path and line number
-3. Source quote: `<file>:<line>` + verbatim text where untrusted input enters
-4. Sink quote: `<file>:<line>` + verbatim text where harm occurs (or "no sink reachable")
-5. What the vulnerability is (one sentence)
-6. Attack vector: how an attacker would exploit this
-7. Impact: what happens if exploited
-8. Remediation: specific code fix (not generic advice)
-
-Final verdict line, exactly one of:
-
-- **SECURE** — no findings
-- **CONDITIONAL** — low/medium findings only, non-blocking
-- **BLOCKED** — critical/high findings, must fix before merge
-
-## Final Rule
-
-Quote the source. Quote the sink. Trace the path. No trace, no finding.
-
-## Required STATUS line
-
-The **absolute last line** of your response must be a STATUS line:
-
-```
-STATUS: DONE
-STATUS: DONE_WITH_CONCERNS — <1-line concern>
-STATUS: BLOCKED — <1-line reason>
-STATUS: NEEDS_CONTEXT — <1-line question>
-```
-
-Use DONE for a completed review (any verdict including BLOCKED verdict above). Reserve STATUS: BLOCKED only when the review itself could not be performed. Missing STATUS line is treated as BLOCKED.
