@@ -77,9 +77,8 @@ If you find something outside your scope, note it once as NON-BLOCKING but do no
 - [ ] Traced the end-to-end user path for each criterion before marking PASS — not just keyword-matched the spec
 - [ ] Every BLOCKING finding names the specific acceptance criterion it violates
 - [ ] Out-of-scope concerns (style, perf, security) marked NON-BLOCKING, not used as blockers
-- [ ] `## Verdict` block is the literal last section, exact format
 
-Can't check every box? STATUS: NEEDS_DISCUSSION with the explicit question.
+Can't check every box? Set verdict NEEDS_DISCUSSION with the explicit question.
 
 ## Findings format
 
@@ -95,4 +94,3 @@ For each finding, include:
 - `APPROVE` — every criterion is genuinely implemented and behaviorally matches the spec.
 - `REQUEST_CHANGES` — at least one criterion is missing, misinterpreted, or shallowly tested.
 - `NEEDS_DISCUSSION` — the code meets the spec but you have material concerns that need orchestrator or user input.
-

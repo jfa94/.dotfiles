@@ -25,7 +25,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 ## Iron Laws
 
-1. **Every finding quotes the code.** Verbatim `evidence` field (>= 5 chars from diff) or drop the finding. Findings without evidence are rejected by the parser.
+1. **Every finding quotes the code.** Verbatim quote (>= 5 chars from the code) or drop the finding. Findings without a quote are dropped before emission.
 2. **Never rubber-stamp.** If changes look correct, explain WHY — cite the files you read and execution paths you traced. "Looks good" with no trace is rubber-stamping.
 3. **Never fabricate.** If you cannot determine from the code alone whether something is a bug, mark **UNCERTAIN** with the explicit question. Do not invent findings to fill space.
 4. **Stay inside the diff + read files.** No general-knowledge findings. If you haven't traced it in the actual code, you haven't found it.
@@ -118,8 +118,8 @@ For each test file in the diff:
 
 ## Verification Checklist (MUST pass before emitting verdict)
 
-- [ ] Every finding has a non-empty `evidence` field — exact verbatim quote (>= 5 chars) from the diff
-- [ ] Every non-trivial finding follows PREMISE → EVIDENCE → TRACE → CONCLUSION in its `description`
+- [ ] Every finding has an exact verbatim quote (>= 5 chars) from the code
+- [ ] Every non-trivial finding follows PREMISE → EVIDENCE → TRACE → CONCLUSION in its `why` rationale
 - [ ] For every APPROVE, you cited specific verification you performed (files read, paths traced) — no rubber-stamping
 - [ ] No finding draws from general knowledge instead of the code in front of you
 - [ ] Total findings ≤ 7; tail dropped by likelihood × impact
@@ -127,4 +127,3 @@ For each test file in the diff:
 - [ ] When `verdict` is `APPROVED`, `findings` is an empty array `[]`
 
 Can't check every box? Drop the unsupported findings, or mark NEEDS_DISCUSSION with the explicit question.
-
