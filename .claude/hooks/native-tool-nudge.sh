@@ -4,6 +4,11 @@ set -uo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$CMD" ] && exit 0
 
+# Only nudge standalone commands. A real pipeline/compound (|, ;, &, &&) genuinely
+# needs the shell, so suppress there — the nudge previously fired inside pipelines,
+# contradicting its own "when no pipeline is needed" message.
+printf '%s' "$CMD" | grep -qE '[|;&]' && exit 0
+
 get_native() {
   case "$1" in
     cat|head|tail) printf 'Read' ;;
@@ -15,6 +20,7 @@ get_native() {
 }
 
 FOUND=""
+add_entry() { [ -z "$FOUND" ] && FOUND="$1" || FOUND="$FOUND, $1"; }
 
 while IFS= read -r segment; do
   first=$(printf '%s' "$segment" | sed 's/^[[:space:]]*//' | cut -d' ' -f1)
@@ -23,12 +29,10 @@ while IFS= read -r segment; do
   printf '%s' "$FOUND" | grep -qF "\`$first\`" && continue
   native=$(get_native "$first")
   if [ -n "$native" ]; then
-    entry="\`$first\` → $native"
-    [ -z "$FOUND" ] && FOUND="$entry" || FOUND="$FOUND, $entry"
+    add_entry "\`$first\` → $native"
   elif [ "$first" = "echo" ] || [ "$first" = "printf" ]; then
     if printf '%s' "$segment" | grep -q '>'; then
-      entry="\`$first\` → Write"
-      [ -z "$FOUND" ] && FOUND="$entry" || FOUND="$FOUND, $entry"
+      add_entry "\`$first\` → Write"
     fi
   fi
 done < <(printf '%s\n' "$CMD" | tr '|;&' '\n')

@@ -46,6 +46,12 @@ else
   fi
 fi
 
+# --- Detect scan failure (don't let an errored scan look like a clean one) ---
+if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
+  echo "semgrep returned no valid results — scan error or no network for --config auto; SAST scan incomplete, not blocking" >&2
+  exit 0
+fi
+
 # --- Parse findings ---
 FINDING_COUNT=$(printf '%s' "$SEMGREP_OUT" | jq '.results | length' 2>/dev/null || echo 0)
 if [ -z "$FINDING_COUNT" ] || [ "$FINDING_COUNT" -eq 0 ]; then

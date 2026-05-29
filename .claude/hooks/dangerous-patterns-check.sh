@@ -3,8 +3,9 @@ set -euo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
 
-# Policy denies (formerly settings.json permissions.deny — moved here because
-# the CLI strips that array on auto-rewrite; see anthropics/claude-code#22659,
+# Policy denies — mirrored from settings.json permissions.deny. They live in BOTH:
+# settings.json is primary, but the CLI can strip that array on auto-rewrite, so
+# these are duplicated here as a backstop (see anthropics/claude-code#22659,
 # #51843, #6699).
 for PAT in \
   'git( -C [^[:space:]]+)? push[[:space:]].*--force' \
@@ -23,7 +24,10 @@ for PAT in \
   fi
 done
 
-for PAT in 'rm -r /' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\|.*sh' 'wget.*\|.*sh'; do
+# First pattern matches any rm with a recursive flag targeting / (rm -rf /, -fr, -Rf,
+# -r), not just the literal "rm -r /" — `rm -rf /` previously fell through to the
+# softer "ask" tier below instead of being denied.
+for PAT in 'rm[[:space:]]+-[a-z]*r[a-z]*[[:space:]]+/([[:space:]]|$|\*)' 'DROP TABLE' 'DROP DATABASE' 'chmod 777' 'curl.*\|.*sh' 'wget.*\|.*sh'; do
   if printf '%s' "$CMD" | grep -qiE "$PAT"; then
     jq -cn --arg r "Blocked dangerous command pattern: $PAT" \
       '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'

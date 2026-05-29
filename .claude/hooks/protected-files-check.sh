@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 INPUT=$(cat)
-FP=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')
+FP=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.notebook_path // empty')
 [ -z "$FP" ] && exit 0
 
 if printf '%s' "$FP" | grep -qE '(\.env[^/]*$|/secrets/)'; then

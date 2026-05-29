@@ -15,8 +15,18 @@ fi
 
 # --- 2. Trufflehog scan (verified secrets only) ---
 if command -v trufflehog >/dev/null 2>&1 && [ -n "$STAGED" ]; then
+  # Dropped --fail so the exit code is not overloaded (it returns non-zero on BOTH
+  # findings and errors); presence of JSON output is the secret signal. Capture
+  # stderr and surface scanner errors instead of swallowing them — a crashed scan
+  # must not look like a clean one (the regex sweep below is still a backstop).
+  TH_ERR=$(mktemp)
   TH_OUT=$(printf '%s\n' "$STAGED" | xargs -I{} trufflehog filesystem "{}" \
-    --only-verified --fail --no-update --json 2>/dev/null || true)
+    --only-verified --no-update --json 2>"$TH_ERR" || true)
+  if [ -s "$TH_ERR" ]; then
+    echo "trufflehog reported errors; secret scan may be incomplete (regex sweep still runs):" >&2
+    tail -3 "$TH_ERR" >&2
+  fi
+  rm -f "$TH_ERR"
   if [ -n "$TH_OUT" ]; then
     jq -cn --arg r "Trufflehog detected verified secrets in staged files: $(printf '%s' "$STAGED" | tr '\n' ' ')" \
       '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
