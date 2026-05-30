@@ -450,7 +450,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path'); npx prettier --write \"$FILE\" 2>/dev/null; echo '{\"suppressOutput\": true}'",
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path'); npx --yes prettier@3 --write \"$FILE\" 2>/dev/null; echo '{\"suppressOutput\": true}'",
             "timeout": 15,
             "statusMessage": "Auto-formatting with prettier"
           }
@@ -506,16 +506,14 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
-    "allow": [
-      "$defaults"
-    ],
+    "allow": ["$defaults"],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
       "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
