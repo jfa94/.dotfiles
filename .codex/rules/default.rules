@@ -1,0 +1,101 @@
+# Hard policy denies.
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Force-push is blocked. Push normally or ask the user for a branch repair plan.",
+    match = ["git push --force"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "-f"],
+    decision = "forbidden",
+    justification = "Force-push is blocked. Push normally or ask the user for a branch repair plan.",
+    match = ["git push -f"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit", "--no-verify"],
+    decision = "forbidden",
+    justification = "Do not bypass git hooks. Fix the underlying check.",
+    match = ["git commit --no-verify"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit", "-n"],
+    decision = "forbidden",
+    justification = "Do not bypass git hooks. Fix the underlying check.",
+    match = ["git commit -n"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit", "--no-gpg-sign"],
+    decision = "forbidden",
+    justification = "Do not bypass commit signing policy.",
+    match = ["git commit --no-gpg-sign"],
+)
+
+prefix_rule(
+    pattern = ["pnpm", "publish"],
+    decision = "forbidden",
+    justification = "Package publishing is blocked.",
+    match = ["pnpm publish"],
+)
+
+prefix_rule(
+    pattern = ["npm", "publish"],
+    decision = "forbidden",
+    justification = "Package publishing is blocked.",
+    match = ["npm publish"],
+)
+
+prefix_rule(
+    pattern = ["yarn", "publish"],
+    decision = "forbidden",
+    justification = "Package publishing is blocked.",
+    match = ["yarn publish"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-rf", "/"],
+    decision = "forbidden",
+    justification = "Destructive root delete is blocked.",
+    match = ["rm -rf /"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-rf"],
+    decision = "prompt",
+    justification = "Recursive forced deletes require explicit review of the target.",
+    match = ["rm -rf build"],
+)
+
+# Common read and quality commands.
+prefix_rule(
+    pattern = ["git", ["status", "diff", "log", "show", "rev-parse", "branch", "remote", "ls-files"]],
+    decision = "allow",
+    justification = "Read-only git inspection is routine.",
+)
+
+prefix_rule(
+    pattern = ["gh", ["pr", "issue", "repo", "run", "release"], ["list", "view", "status", "checks", "diff"]],
+    decision = "allow",
+    justification = "Read-only GitHub CLI inspection is routine.",
+)
+
+prefix_rule(
+    pattern = ["pnpm", ["test", "build", "typecheck", "lint", "quality", "deps:validate"]],
+    decision = "allow",
+    justification = "Project quality gates are safe to run.",
+)
+
+prefix_rule(
+    pattern = ["pnpm", "install"],
+    decision = "prompt",
+    justification = "Dependency installation changes local state and may access the network.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", ["create", "merge", "close", "ready"]],
+    decision = "prompt",
+    justification = "PR mutations require a fresh decision.",
+)

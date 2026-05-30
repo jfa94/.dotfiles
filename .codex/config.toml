@@ -1,0 +1,75 @@
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+default_permissions = "workspace-net"
+
+[features]
+hooks = true
+
+[permissions.workspace-net.filesystem]
+":minimal" = "read"
+
+[permissions.workspace-net.filesystem.":workspace_roots"]
+"." = "write"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+"**/secrets" = "deny"
+"**/secrets/**" = "deny"
+"**/*.pem" = "deny"
+"**/*.key" = "deny"
+"**/*.p12" = "deny"
+"**/*.pfx" = "deny"
+"**/id_rsa" = "deny"
+"**/id_ed25519" = "deny"
+
+[permissions.workspace-net.filesystem.":tmpdir"]
+"." = "write"
+
+[permissions.workspace-net.network]
+enabled = true
+mode = "limited"
+
+[permissions.workspace-net.network.domains]
+"registry.npmjs.org" = "allow"
+"**.npmjs.org" = "allow"
+"**.pnpm.io" = "allow"
+"github.com" = "allow"
+"api.github.com" = "allow"
+"raw.githubusercontent.com" = "allow"
+"objects.githubusercontent.com" = "allow"
+"**.githubusercontent.com" = "allow"
+"**.supabase.com" = "allow"
+"**.posthog.com" = "allow"
+"**.stripe.com" = "allow"
+"**.figma.com" = "allow"
+"developers.openai.com" = "allow"
+"api.openai.com" = "allow"
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[plugins."figma@openai-curated"]
+enabled = true
+
+[plugins."stripe@openai-curated"]
+enabled = true
+
+[plugins."supabase@openai-curated"]
+enabled = true
+
+[plugins."superpowers@openai-curated"]
+enabled = true
+
+[plugins."codex-security@openai-curated"]
+enabled = true
+
+[projects."/Users/Javier/Projects/youtube-subscriptions-cleaner-plugin"]
+trust_level = "trusted"
+
+[projects."/Users/Javier"]
+trust_level = "trusted"
+
+[projects."/Users/Javier/.dotfiles"]
+trust_level = "trusted"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 3

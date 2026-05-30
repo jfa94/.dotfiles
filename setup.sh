@@ -67,6 +67,19 @@ link_file() {
   success "$label linked"
 }
 
+is_codex_runtime_rel() {
+  local rel="$1"
+  case "$rel" in
+    auth.json|history.jsonl|installation_id|models_cache.json|version.json|.personality_migration)
+      return 0
+      ;;
+    cache/*|.tmp/*|tmp/*|log/*|logs_*|state_*|goals_*|memories_*|memories/*|session_index.jsonl|shell_snapshots/*|app-server-control/*|app-server-daemon/*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 # =============================================================================
 # Section 1: Preflight Checks
 # =============================================================================
@@ -109,6 +122,20 @@ while IFS= read -r -d '' file; do
     conflicts+=("~/.claude/$rel")
   fi
 done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
+
+if [[ -d "$DOTFILES_DIR/.codex" ]]; then
+  while IFS= read -r -d '' file; do
+    rel="${file#"$DOTFILES_DIR"/.codex/}"
+    is_codex_runtime_rel "$rel" && continue
+    dest="$HOME/.codex/$rel"
+    if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
+      continue
+    fi
+    if [[ -e "$dest" || -L "$dest" ]]; then
+      conflicts+=("~/.codex/$rel")
+    fi
+  done < <(find "$DOTFILES_DIR/.codex" -type f -not -name "*.local.*" -print0)
+fi
 
 while IFS= read -r -d '' file; do
   rel="${file#"$DOTFILES_DIR"/.config/}"
@@ -172,6 +199,25 @@ done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 
 # Ensure hook scripts are executable (git may not preserve +x on all systems)
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+
+# =============================================================================
+# Section 4a: Codex Symlinks
+# =============================================================================
+
+info "Creating Codex symlinks..."
+mkdir -p "$HOME/.codex"
+
+if [[ -d "$DOTFILES_DIR/.codex" ]]; then
+  while IFS= read -r -d '' file; do
+    rel="${file#"$DOTFILES_DIR"/.codex/}"
+    is_codex_runtime_rel "$rel" && continue
+    dest="$HOME/.codex/$rel"
+    mkdir -p "$(dirname "$dest")"
+    link_file "$file" "$dest" "~/.codex/$rel"
+  done < <(find "$DOTFILES_DIR/.codex" -type f -not -name "*.local.*" -print0)
+fi
+
+find "$HOME/.codex/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # =============================================================================
 # Section 4b: XDG Config Symlinks
@@ -277,6 +323,30 @@ if command -v claude &>/dev/null; then
 fi
 
 # =============================================================================
+# Section 9b: Install Codex Plugins
+# =============================================================================
+
+codex_plugins_status="skipped (codex CLI not found)"
+
+if command -v codex &>/dev/null && [[ -f "$DOTFILES_DIR/.codex/plugins.txt" ]]; then
+  info "Installing Codex plugins..."
+  codex_plugins_status="installed"
+  available_plugins=$(codex plugin list 2>/dev/null | awk 'NF {print $1}' || true)
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if ! printf '%s\n' "$available_plugins" | grep -qx "$line"; then
+      warn "Codex plugin not in marketplace snapshot: $line"
+      continue
+    fi
+    if codex plugin add "$line" 2>/dev/null; then
+      success "Codex plugin: $line"
+    else
+      warn "Codex plugin already installed or failed: $line"
+    fi
+  done < "$DOTFILES_DIR/.codex/plugins.txt"
+fi
+
+# =============================================================================
 # Section 10: Summary
 # =============================================================================
 
@@ -303,5 +373,6 @@ echo "Claude Code: $claude_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
 echo "Claude plugins: $plugins_status"
+echo "Codex plugins: $codex_plugins_status"
 echo ""
 echo "Done."

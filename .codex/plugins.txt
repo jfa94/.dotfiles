@@ -1,0 +1,6 @@
+github@openai-curated
+figma@openai-curated
+stripe@openai-curated
+supabase@openai-curated
+superpowers@openai-curated
+codex-security@openai-curated
