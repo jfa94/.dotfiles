@@ -79,7 +79,7 @@
 
 - This dotfiles repo stores authored Codex config under `.codex/`. Setup symlinks those files into `~/.codex/`.
 - Do not duplicate Claude agents or skills under `.codex/`. The source of truth for Claude-owned agents and skills remains `.claude/`.
-- Codex does not currently have a Claude-style arbitrary shell status line in this setup.
+- Codex uses native `tui.status_line` items in `.codex/config.toml` for its footer; it does not support Claude-style arbitrary stdin-fed shell rendering.
 - Codex hooks cover Bash, `apply_patch`/Edit/Write, MCP tools, and lifecycle events. There is no exact Claude `Read` hook equivalent, so the old read-once behavior is documented but inactive.
 - Codex `PreToolUse` does not support Claude-style `ask`; hooks that used to ask now deny with retry instructions or rely on Codex's normal approval flow.
 - Claude WebFetch domain allowlists are not a direct Codex web-search control. Sandboxed shell networking is governed by the `workspace-net` permission profile.

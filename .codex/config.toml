@@ -52,8 +52,22 @@ trust_level = "trusted"
 [projects."/Users/Javier/.dotfiles"]
 trust_level = "trusted"
 
+[projects."/Users/Javier/Projects/factory-plugin"]
+trust_level = "trusted"
+
+[tui]
+status_line = [
+  "model-with-reasoning",
+  "current-dir",
+  "git-branch",
+  "context-used",
+  "context-window-size",
+  "five-hour-limit",
+]
+status_line_use_colors = true
+
 [tui.model_availability_nux]
-"gpt-5.5" = 3
+"gpt-5.5" = 4
 
 [plugins."github@openai-curated"]
 enabled = true
@@ -72,3 +86,83 @@ enabled = true
 
 [plugins."codex-security@openai-curated"]
 enabled = true
+
+[hooks.state]
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:3ba5864c605e001f3b104797523e737e1009db2e6e4444559b903dfee1627381"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:1:0"]
+trusted_hash = "sha256:f12cd398b76efe0dcfddc3fd94c3af5bcf7d914a6d43994956b44467e1439d60"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:2:0"]
+trusted_hash = "sha256:b69b1c463408307eb10965d02b38cbb4f29d53f0384f0007cb452dd8190a2db1"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:0"]
+trusted_hash = "sha256:d0ccd30b6634aefc44115adcf981114a43516bb43c106568ed56a1e9849b64c7"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:1"]
+trusted_hash = "sha256:5abbb772261c3be987be1e653c26ef3568f44fc1483149a0f5fa1af97f03e0b3"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:2"]
+trusted_hash = "sha256:d2a047d96421e5fb309fb4d0f5a5feb861033ebacd9939b50c7ebc2a4e2bf3c3"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:3"]
+trusted_hash = "sha256:1d13d43140f400bf2895920238c8c713878430fa53e274d25e7cd2aa2d683ee6"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:4"]
+trusted_hash = "sha256:0186513e46d4ff77041fca485acd4933e78bde8be19a2bc46ce1d7f42edd9311"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:5"]
+trusted_hash = "sha256:ffb13648212fdb42a81832e2b757ee47fa1ff88a1ae256fe060373e44172353e"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:6"]
+trusted_hash = "sha256:fc041804357d0e0aaed877eaff2721beb8895d6784df47e39d03f88a96a2f85b"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:7"]
+trusted_hash = "sha256:cd94d7c11c953780db88785cf4f3f36e9468177458d5d01d4a3d882a1418b9b6"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:pre_tool_use:3:8"]
+trusted_hash = "sha256:3a5df3057cd05133a15e44df72870c5d95f4f3871092e2526db78fa3ab7f6957"
+
+[hooks.state."/Users/Javier/.codex/hooks.json:post_tool_use:0:0"]
+trusted_hash = "sha256:dace1b6f3a65c714bc58faebf26355c54e5ef8fc3eb17c79af61efe7c72bcae3"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:3ba5864c605e001f3b104797523e737e1009db2e6e4444559b903dfee1627381"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:1:0"]
+trusted_hash = "sha256:f12cd398b76efe0dcfddc3fd94c3af5bcf7d914a6d43994956b44467e1439d60"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:2:0"]
+trusted_hash = "sha256:b69b1c463408307eb10965d02b38cbb4f29d53f0384f0007cb452dd8190a2db1"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:0"]
+trusted_hash = "sha256:d0ccd30b6634aefc44115adcf981114a43516bb43c106568ed56a1e9849b64c7"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:1"]
+trusted_hash = "sha256:5abbb772261c3be987be1e653c26ef3568f44fc1483149a0f5fa1af97f03e0b3"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:2"]
+trusted_hash = "sha256:d2a047d96421e5fb309fb4d0f5a5feb861033ebacd9939b50c7ebc2a4e2bf3c3"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:3"]
+trusted_hash = "sha256:1d13d43140f400bf2895920238c8c713878430fa53e274d25e7cd2aa2d683ee6"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:4"]
+trusted_hash = "sha256:0186513e46d4ff77041fca485acd4933e78bde8be19a2bc46ce1d7f42edd9311"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:5"]
+trusted_hash = "sha256:ffb13648212fdb42a81832e2b757ee47fa1ff88a1ae256fe060373e44172353e"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:6"]
+trusted_hash = "sha256:fc041804357d0e0aaed877eaff2721beb8895d6784df47e39d03f88a96a2f85b"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:7"]
+trusted_hash = "sha256:cd94d7c11c953780db88785cf4f3f36e9468177458d5d01d4a3d882a1418b9b6"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:pre_tool_use:3:8"]
+trusted_hash = "sha256:3a5df3057cd05133a15e44df72870c5d95f4f3871092e2526db78fa3ab7f6957"
+
+[hooks.state."/Users/Javier/.dotfiles/.codex/hooks.json:post_tool_use:0:0"]
+trusted_hash = "sha256:dace1b6f3a65c714bc58faebf26355c54e5ef8fc3eb17c79af61efe7c72bcae3"
