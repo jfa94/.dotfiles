@@ -83,3 +83,4 @@
 - Codex hooks cover Bash, `apply_patch`/Edit/Write, MCP tools, and lifecycle events. There is no exact Claude `Read` hook equivalent, so the old read-once behavior is documented but inactive.
 - Codex `PreToolUse` does not support Claude-style `ask`; hooks that used to ask now deny with retry instructions or rely on Codex's normal approval flow.
 - Claude WebFetch domain allowlists are not a direct Codex web-search control. Sandboxed shell networking is governed by the `workspace-net` permission profile.
+- Codex appends a machine-specific `[hooks.state]` section (hook `trusted_hash` values) to `config.toml`. A git clean filter (`.codex/strip-hooks-state.sh`, wired via `.gitattributes` + `setup.sh`) strips this trailing section on commit, so the working file keeps it (hooks stay trusted) but git ignores the churn. Assumes `[hooks.state]` stays the last section — if Codex ever writes config after it, the filter would over-strip.

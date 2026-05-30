@@ -219,6 +219,16 @@ fi
 
 find "$HOME/.codex/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
+# Register the git clean filter that strips Codex-managed [hooks.state] from
+# .codex/config.toml on commit. The working file (symlinked into ~/.codex) keeps
+# the section so hook-trust survives; git just never sees the machine-specific
+# churn. Filter definitions live in git config (not .gitattributes) for security.
+if command -v git >/dev/null 2>&1 && [[ -d "$DOTFILES_DIR/.git" ]]; then
+  git -C "$DOTFILES_DIR" config filter.codex-strip-hooks-state.clean ".codex/strip-hooks-state.sh"
+  git -C "$DOTFILES_DIR" config filter.codex-strip-hooks-state.smudge cat
+  git -C "$DOTFILES_DIR" config filter.codex-strip-hooks-state.required false
+fi
+
 # =============================================================================
 # Section 4b: XDG Config Symlinks
 # =============================================================================
