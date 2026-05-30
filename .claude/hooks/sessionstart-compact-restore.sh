@@ -45,7 +45,7 @@ fi
 CTX="<compaction-continuity>
 Context was compacted; the summary above is lossy. The full pre-compaction transcript survives on disk at:
 ${TRANSCRIPT}
-It is JSONL — grep/jq or Read it to recover anything the summary dropped (tool output, edited files, earlier decisions)."
+It is JSONL — grep/jq or Read it if you need to find a bit of missing context (e.g., tool output, edited files, earlier decisions)."
 
 if [ -n "$ORIGINAL" ]; then
   CTX="${CTX}
