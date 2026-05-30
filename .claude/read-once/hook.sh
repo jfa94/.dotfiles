@@ -221,15 +221,17 @@ if [ -n "$CACHED_MTIME" ] && [ "$DIFF_MODE" = "1" ] && [ -f "$SNAP_FILE" ]; then
     echo "{\"ts\":${NOW},\"path\":\"${FILE_PATH}\",\"tokens_saved\":${TOKENS_SAVED},\"session\":\"${SESSION_HASH}\",\"event\":\"diff\"}" >> "$STATS_FILE"
 
     BASENAME=$(basename "$FILE_PATH")
-    # Build JSON with properly escaped diff
-    REASON_PREFIX="read-once: ${BASENAME} changed since last read. You already have the previous version in context. Here are only the changes (saving ~${TOKENS_SAVED} tokens):\\n\\n"
-    REASON_SUFFIX="\\n\\nApply this diff mentally to your cached version of the file."
-    # Use python3 to safely escape the diff for JSON embedding
-    REASON=$(echo "$DIFF_OUTPUT" | python3 -c "
-import sys, json
-diff = sys.stdin.read()
-prefix = '''${REASON_PREFIX}'''
-suffix = '''${REASON_SUFFIX}'''
+    # Build JSON with properly escaped diff. Pass all values to python via the
+    # environment and read them with os.environ — never interpolate BASENAME (or
+    # any value derived from the file path) into the python source, or a crafted
+    # filename could break out of the string literal and execute code.
+    REASON=$(READ_ONCE_BN="$BASENAME" READ_ONCE_TS="$TOKENS_SAVED" READ_ONCE_DIFFOUT="$DIFF_OUTPUT" python3 -c "
+import os, json
+bn = os.environ['READ_ONCE_BN']
+ts = os.environ['READ_ONCE_TS']
+diff = os.environ['READ_ONCE_DIFFOUT']
+prefix = 'read-once: ' + bn + ' changed since last read. You already have the previous version in context. Here are only the changes (saving ~' + ts + ' tokens):\n\n'
+suffix = '\n\nApply this diff mentally to your cached version of the file.'
 # json.dumps gives us a quoted escaped string; strip the quotes
 escaped_diff = json.dumps(diff)[1:-1]
 print(prefix + escaped_diff + suffix)
