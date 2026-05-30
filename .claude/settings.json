@@ -457,6 +457,19 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionstart-compact-restore.sh",
+            "timeout": 15,
+            "statusMessage": "Restoring pre-compaction context"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
