@@ -1,37 +1,218 @@
+# Command autonomy rules mirroring the safe parts of .claude/settings.json.
+#
+# Codex prefix rules match exact argv prefixes. They do not support Claude's
+# Bash(*) wildcards or arbitrary-position flag matching, so hooks remain the
+# backstop for force-push, bypass-flag, rm, package-publish, and SQL patterns.
+
+READ_SHELL_COMMANDS = [
+    "cat",
+    "echo",
+    "head",
+    "ls",
+    "tail",
+    "wc",
+    "which",
+    "pwd",
+    "find",
+    "sort",
+    "uniq",
+    "diff",
+    "file",
+    "basename",
+    "dirname",
+    "realpath",
+    "whoami",
+    "uname",
+    "env",
+    "printenv",
+    "tree",
+    "touch",
+    "tr",
+    "cut",
+    "xargs",
+    "tee",
+    "sed",
+    "jq",
+    "grep",
+    "rg",
+    "mkdir",
+    "shellcheck",
+]
+
+HELPABLE_COMMANDS = READ_SHELL_COMMANDS + [
+    "node",
+    "pnpm",
+    "npm",
+    "yarn",
+    "tsc",
+    "next",
+    "git",
+    "gh",
+    "aws",
+]
+
+GIT_COMMANDS = [
+    "add",
+    "mv",
+    "commit",
+    "checkout",
+    "branch",
+    "stash",
+    "push",
+    "diff",
+    "log",
+    "show",
+    "check-ignore",
+    "blame",
+    "fetch",
+    "rev-parse",
+    "shortlog",
+    "reflog",
+    "describe",
+    "remote",
+    "config",
+    "ls-files",
+    "ls-remote",
+    "ls-tree",
+    "cherry",
+    "merge-base",
+    "tag",
+    "rebase",
+    "worktree",
+    "status",
+]
+
+PNPM_COMMANDS = [
+    "install",
+    "run",
+    "dev",
+    "test",
+    "build",
+    "next",
+    "list",
+    "ls",
+    "why",
+    "outdated",
+    "audit",
+    "exec",
+    "tsc",
+    "vitest",
+    "typecheck",
+    "lint",
+    "eslint",
+    "prettier",
+    "depcruise",
+    "stryker",
+    "tsc-alias",
+    "madge",
+    "dlx",
+    "quality",
+    "deps:validate",
+    "test:coverage",
+    "test:mutation",
+    "format",
+]
+
+AWS_LOGS_READ_OPS = [
+    "describe-log-groups",
+    "describe-log-streams",
+    "filter-log-events",
+    "get-log-events",
+    "get-query-results",
+    "start-query",
+    "list-tags-log-group",
+    "list-tags-for-resource",
+]
+
+AWS_READ_SERVICES = [
+    "cloudformation",
+    "lambda",
+    "ec2",
+    "dynamodb",
+    "rds",
+    "ecs",
+    "sns",
+    "sqs",
+    "iam",
+    "apigateway",
+    "apigatewayv2",
+    "stepfunctions",
+    "events",
+    "cognito-idp",
+    "ssm",
+    "secretsmanager",
+    "route53",
+    "cloudwatch",
+    "cloudfront",
+    "acm",
+    "kms",
+    "s3api",
+    "elasticache",
+    "amplify",
+]
+
 # Hard policy denies.
 prefix_rule(
     pattern = ["git", "push", "--force"],
     decision = "forbidden",
     justification = "Force-push is blocked. Push normally or ask the user for a branch repair plan.",
-    match = ["git push --force"],
+    match = ["git push --force origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "push", "-f"],
     decision = "forbidden",
     justification = "Force-push is blocked. Push normally or ask the user for a branch repair plan.",
-    match = ["git push -f"],
+    match = ["git push -f origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force-with-lease"],
+    decision = "forbidden",
+    justification = "Force-push is blocked, including force-with-lease. Push normally or ask the user for a branch repair plan.",
+    match = ["git push --force-with-lease origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force-if-includes"],
+    decision = "forbidden",
+    justification = "Force-push is blocked, including force-if-includes. Push normally or ask the user for a branch repair plan.",
+    match = ["git push --force-if-includes origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--no-verify"],
+    decision = "forbidden",
+    justification = "Do not bypass git hooks. Fix the underlying check.",
+    match = ["git push --no-verify origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "commit", "--no-verify"],
     decision = "forbidden",
     justification = "Do not bypass git hooks. Fix the underlying check.",
-    match = ["git commit --no-verify"],
+    match = ["git commit --no-verify -m test"],
 )
 
 prefix_rule(
     pattern = ["git", "commit", "-n"],
     decision = "forbidden",
     justification = "Do not bypass git hooks. Fix the underlying check.",
-    match = ["git commit -n"],
+    match = ["git commit -n -m test"],
 )
 
 prefix_rule(
     pattern = ["git", "commit", "--no-gpg-sign"],
     decision = "forbidden",
     justification = "Do not bypass commit signing policy.",
-    match = ["git commit --no-gpg-sign"],
+    match = ["git commit --no-gpg-sign -m test"],
+)
+
+prefix_rule(
+    pattern = ["git", "rebase", "--no-verify"],
+    decision = "forbidden",
+    justification = "Do not bypass git hooks. Fix the underlying check.",
+    match = ["git rebase --no-verify main"],
 )
 
 prefix_rule(
@@ -44,14 +225,14 @@ prefix_rule(
 prefix_rule(
     pattern = ["npm", "publish"],
     decision = "forbidden",
-    justification = "Package publishing is blocked.",
+    justification = "Package publishing is blocked. Use pnpm for local package-manager commands.",
     match = ["npm publish"],
 )
 
 prefix_rule(
     pattern = ["yarn", "publish"],
     decision = "forbidden",
-    justification = "Package publishing is blocked.",
+    justification = "Package publishing is blocked. Use pnpm for local package-manager commands.",
     match = ["yarn publish"],
 )
 
@@ -69,33 +250,174 @@ prefix_rule(
     match = ["rm -rf build"],
 )
 
-# Common read and quality commands.
 prefix_rule(
-    pattern = ["git", ["status", "diff", "log", "show", "rev-parse", "branch", "remote", "ls-files"]],
-    decision = "allow",
-    justification = "Read-only git inspection is routine.",
-)
-
-prefix_rule(
-    pattern = ["gh", ["pr", "issue", "repo", "run", "release"], ["list", "view", "status", "checks", "diff"]],
-    decision = "allow",
-    justification = "Read-only GitHub CLI inspection is routine.",
-)
-
-prefix_rule(
-    pattern = ["pnpm", ["test", "build", "typecheck", "lint", "quality", "deps:validate"]],
-    decision = "allow",
-    justification = "Project quality gates are safe to run.",
-)
-
-prefix_rule(
-    pattern = ["pnpm", "install"],
+    pattern = ["rm", "-fr"],
     decision = "prompt",
-    justification = "Dependency installation changes local state and may access the network.",
+    justification = "Recursive forced deletes require explicit review of the target.",
+    match = ["rm -fr build"],
 )
 
 prefix_rule(
-    pattern = ["gh", "pr", ["create", "merge", "close", "ready"]],
+    pattern = [["dropdb", "mysqladmin"]],
     decision = "prompt",
-    justification = "PR mutations require a fresh decision.",
+    justification = "Database administration commands require explicit review; destructive SQL is blocked by hooks where visible.",
+    match = ["dropdb app_test"],
+)
+
+prefix_rule(
+    pattern = [["psql", "mysql", "sqlite3"]],
+    decision = "prompt",
+    justification = "Interactive database clients require explicit review; destructive SQL is blocked by hooks where visible.",
+    match = ["psql app_test"],
+)
+
+# Basic read/list/text utilities and help/version probes.
+prefix_rule(
+    pattern = [HELPABLE_COMMANDS, ["--help", "--version"]],
+    decision = "allow",
+    justification = "Help and version probes are routine.",
+)
+
+prefix_rule(
+    pattern = [READ_SHELL_COMMANDS],
+    decision = "allow",
+    justification = "Common shell read/list/text utilities are allowed by the Claude config.",
+    match = ["ls", "jq --version", "sed -n 1,10p file.ts"],
+)
+
+# Node, TypeScript, Next.js, and pnpm project commands.
+prefix_rule(
+    pattern = ["node", "--check"],
+    decision = "allow",
+    justification = "Node syntax checks are safe local validation.",
+    match = ["node --check script.js"],
+)
+
+prefix_rule(
+    pattern = [["tsc", "next"]],
+    decision = "allow",
+    justification = "TypeScript and Next.js project commands are allowed by the Claude config.",
+    match = ["tsc --noEmit", "next build"],
+)
+
+prefix_rule(
+    pattern = ["pnpm", PNPM_COMMANDS],
+    decision = "allow",
+    justification = "Project install, dev, build, test, lint, quality, and inspection commands are allowed by the Claude config.",
+    match = [
+        "pnpm test",
+        "pnpm install --frozen-lockfile",
+        "pnpm run build",
+        "pnpm dlx vitest run",
+    ],
+)
+
+# Git commands. Codex cannot express `git -C <any-path> <specific-command>`;
+# allowing the `git -C` prefix is the closest enforceable equivalent. The
+# dangerous-patterns hook still blocks force pushes and bypass flags with -C.
+prefix_rule(
+    pattern = ["git", GIT_COMMANDS],
+    decision = "allow",
+    justification = "Git inspection and routine branch/stage/commit/push commands are allowed by the Claude config; hooks enforce dangerous flag denies.",
+    match = [
+        "git status",
+        "git add file.ts",
+        "git commit -m test",
+        "git push origin main",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "-C"],
+    decision = "allow",
+    justification = "Codex prefix rules cannot wildcard the path after -C; hooks enforce dangerous flag denies for git -C commands.",
+    match = ["git -C /tmp/repo status"],
+)
+
+# GitHub CLI parity with Claude's allowlist. PR mutation safety remains covered
+# by pre-pr hooks and repository instructions.
+prefix_rule(
+    pattern = ["gh", "pr", ["create", "merge", "list", "view", "diff", "status", "checks"]],
+    decision = "allow",
+    justification = "GitHub PR commands mirror Claude's allowlist; non-draft PR creation is gated by hooks.",
+    match = ["gh pr view 1", "gh pr create --draft"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", ["ready", "close"]],
+    decision = "prompt",
+    justification = "PR readiness and close operations require a fresh decision.",
+    match = ["gh pr ready 1", "gh pr close 1"],
+)
+
+prefix_rule(
+    pattern = ["gh", "issue", ["list", "view", "status", "comment", "create", "clone"]],
+    decision = "allow",
+    justification = "GitHub issue commands mirror Claude's allowlist.",
+)
+
+prefix_rule(
+    pattern = ["gh", "repo", "view"],
+    decision = "allow",
+    justification = "Repository inspection is routine.",
+)
+
+prefix_rule(
+    pattern = ["gh", "run", ["list", "view"]],
+    decision = "allow",
+    justification = "GitHub Actions run inspection is routine.",
+)
+
+prefix_rule(
+    pattern = ["gh", "release", ["list", "view"]],
+    decision = "allow",
+    justification = "Release inspection is routine.",
+)
+
+prefix_rule(
+    pattern = ["gh", "api"],
+    decision = "allow",
+    justification = "Claude allowed gh api; use it carefully and prefer read endpoints unless the user asked for a mutation.",
+)
+
+# Read-oriented AWS CLI commands. Codex cannot wildcard describe-*/list-*/get-*,
+# so this enumerates common read verbs and the exact logs operations Claude used.
+prefix_rule(
+    pattern = ["aws", "help"],
+    decision = "allow",
+    justification = "AWS CLI help is safe.",
+)
+
+prefix_rule(
+    pattern = ["aws", "logs", AWS_LOGS_READ_OPS],
+    decision = "allow",
+    justification = "CloudWatch Logs read/query commands mirror Claude's allowlist.",
+    match = ["aws logs describe-log-groups"],
+)
+
+prefix_rule(
+    pattern = ["aws", "s3", "ls"],
+    decision = "allow",
+    justification = "S3 listing is read-only.",
+    match = ["aws s3 ls"],
+)
+
+prefix_rule(
+    pattern = ["aws", "s3", "cp"],
+    decision = "prompt",
+    justification = "S3 copy can write locally or remotely; review direction and target before running.",
+    match = ["aws s3 cp s3://bucket/key -"],
+)
+
+prefix_rule(
+    pattern = ["aws", "sts", "get-caller-identity"],
+    decision = "allow",
+    justification = "Caller identity inspection is read-only.",
+)
+
+prefix_rule(
+    pattern = ["aws", AWS_READ_SERVICES],
+    decision = "allow",
+    justification = "Codex cannot wildcard AWS describe-*/list-*/get-* operations; the AWS read-only hook denies non-read operations and sensitive Secrets Manager retrieval.",
+    match = ["aws ec2 describe-instances"],
 )

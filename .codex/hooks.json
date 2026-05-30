@@ -46,6 +46,11 @@
           },
           {
             "type": "command",
+            "command": "bash $HOME/.codex/hooks/aws-readonly-check.sh",
+            "statusMessage": "Checking AWS command is read-only"
+          },
+          {
+            "type": "command",
             "command": "$HOME/.codex/hooks/native-tool-nudge.sh",
             "statusMessage": "Checking native tool alternatives"
           },

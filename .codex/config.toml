@@ -1,4 +1,3 @@
-model_reasoning_effort = "high"
 approval_policy = "on-request"
 default_permissions = "workspace-net"
 
@@ -43,24 +42,6 @@ mode = "limited"
 "**.figma.com" = "allow"
 "developers.openai.com" = "allow"
 "api.openai.com" = "allow"
-
-[plugins."github@openai-curated"]
-enabled = true
-
-[plugins."figma@openai-curated"]
-enabled = true
-
-[plugins."stripe@openai-curated"]
-enabled = true
-
-[plugins."supabase@openai-curated"]
-enabled = true
-
-[plugins."superpowers@openai-curated"]
-enabled = true
-
-[plugins."codex-security@openai-curated"]
-enabled = true
 
 [projects."/Users/Javier/Projects/youtube-subscriptions-cleaner-plugin"]
 trust_level = "trusted"
