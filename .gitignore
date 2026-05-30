@@ -27,6 +27,10 @@
 .claude/tool-audit.jsonl
 .claude-plugin-data/
 .comprehensive-code-review/
+.claude/read-once/session-*.jsonl
+.claude/read-once/snapshots/
+.claude/read-once/stats.jsonl
+.claude/read-once/.last-cleanup
 docs/superpowers/
 CLAUDE.local.md
 
