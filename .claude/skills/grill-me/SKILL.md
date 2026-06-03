@@ -86,4 +86,15 @@ Only offer to create an ADR when all three are true:
 
 If any of the three is missing, skip the ADR. Use the format in [adr-format.md](./adr-format.md).
 
+## Surviving compaction
+
+A long grilling can trip auto-compaction, which replaces the discussion above with a lossy summary — resolved terms, rejected alternatives, and the rationale behind half-settled decisions get flattened or dropped.
+
+When compaction has happened you'll see a `<compaction-continuity>` block in context carrying the path to the full on-disk JSONL transcript (every turn, verbatim). Re-read that transcript — trusting it over the summary when they disagree — when you are:
+
+- **Wrapping up** — before finalising glossary terms or ADRs, or summarising the shared understanding back to the user, mine the transcript so no resolved decision is lost or misremembered. This is the reliable trigger.
+- **Missing something** — a term you know was discussed, or a decision whose rationale is absent from the summary. Grep/Read the transcript to recover it.
+
+If the block has scrolled out of context, the transcript is the newest `*.jsonl` under `~/.claude/projects/` for this repo.
+
 </supporting-info>
