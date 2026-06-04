@@ -18,10 +18,10 @@ Most schema mistakes are conceptual errors expressed in DDL. Do the first two mo
 - **Attribute** — a property of an entity (email, placed_at). Becomes a column.
 - **Relationship** — an association between entities (Customer _places_ Order).
 - **Cardinality:**
-  - **1:1** — rare; usually a sign the two tables should be one, or it's optional-detail extraction (justify it).
+  - **1:1** — rare; usually a sign the two tables should be one. Legitimate when you deliberately split columns off a wide row: optional/rarely-used detail, hot-vs-cold columns (vertical partitioning — keep the hot row narrow for cache density), or isolating sensitive columns. Justify it.
   - **1:N** — the workhorse; an FK on the N side.
   - **M:N** — never a column; always resolves to a **junction table**.
-- **Optionality** → nullability: a mandatory relationship is a `NOT NULL` FK; an optional one is a nullable FK.
+- **Optionality** → nullability: a mandatory relationship is a `NOT NULL` FK; an optional one is a nullable FK. Get this wrong and the schema either forbids legitimate data (over-strict NOT NULL) or admits orphans (a missing NOT NULL).
 
 ## Nouns → entities heuristic
 
@@ -50,20 +50,20 @@ A **functional dependency** X → Y means X determines Y (given a customer_id, t
 
 Target **3NF / BCNF**. Recognise 4NF/5NF, don't chase them.
 
-| Form     | One-line intuition                                                         |
-| -------- | -------------------------------------------------------------------------- |
-| **1NF**  | Atomic cells; no repeating groups, no lists in a column; a key exists.     |
-| **2NF**  | 1NF + no non-key attribute depends on only part of a composite key.        |
-| **3NF**  | 2NF + no transitive dependencies (non-key → non-key).                      |
-| **BCNF** | Stricter 3NF: every determinant is a candidate key. The practical target.  |
-| **4NF**  | No independent multi-valued facts in one table.                            |
-| **5NF**  | No join dependency that isn't implied by candidate keys. Rarely a concern. |
+| Form     | One-line intuition                                                                                                                        |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **1NF**  | Atomic cells; no repeating groups, no lists in a column; a key exists.                                                                    |
+| **2NF**  | 1NF + no non-key attribute depends on only part of a composite key.                                                                       |
+| **3NF**  | 2NF + no transitive dependencies (non-key → non-key). **The practical target.**                                                           |
+| **BCNF** | Stricter 3NF: every determinant is a candidate key. Most 3NF is already BCNF; they differ only with overlapping composite candidate keys. |
+| **4NF**  | No independent multi-valued facts in one table.                                                                                           |
+| **5NF**  | No join dependency that isn't implied by candidate keys. Rarely a concern.                                                                |
 
 Slogan: _every non-key attribute depends on the key, the whole key, and nothing but the key._
 
 ## Denormalisation ladder (Gate G3)
 
-Normalise first. Denormalise **only** for a measured read bottleneck, and record the decision. Costs: write amplification, drift (the copy diverges from the source), extra storage, more invalidation logic.
+Normalise first. Denormalise **only** for a measured read bottleneck (expensive repeated aggregates/counts, or read-heavy reporting paths), and record the decision. Costs: write amplification, drift (the copy diverges from the source), extra storage, more invalidation logic.
 
 Climb in this order — stop at the first rung that solves it, because each later rung adds more ways to get drift:
 
@@ -71,6 +71,15 @@ Climb in this order — stop at the first rung that solves it, because each late
 2. **Generated/computed column** — `GENERATED ALWAYS AS (...) STORED`; engine keeps it consistent.
 3. **Trigger-maintained column** — you own the logic; correct but easy to get subtly wrong.
 4. **Application-maintained copy** — last resort; every writer must remember to update it.
+
+## OLTP vs analytical (star / snowflake)
+
+Normalisation targets **transactional** workloads — many small reads/writes, integrity first. **Analytical / reporting** workloads (few huge aggregating scans) are modelled the opposite way, **dimensionally**:
+
+- **Star schema** — a central **fact** table at a declared grain (one row = one measured event, e.g. one sale line) holding FKs + numeric measures, surrounded by denormalised **dimension** tables (date, product, customer).
+- **Snowflake schema** — the same, but dimensions are themselves normalised into sub-tables: fewer copies, more joins.
+
+Keep the two models **separate**: don't force a star shape onto a write-heavy transactional backend, and don't run heavy OLAP scans on your normalised OLTP tables. The anti-pattern is one giant denormalised "reporting" table acting as the operational source of truth. Feed an analytical store (materialised views, or a warehouse) from the OLTP system unless the workload is genuinely hybrid and small. Deep query/EXPLAIN tuning of either is out of scope — see `supabase-postgres-best-practices`.
 
 ## Example — splitting mixed grain
 

@@ -17,7 +17,7 @@ CREATE TABLE enrolment (
 ```
 
 - The composite PK enforces "a student enrols in a course at most once" and prevents the **Jaywalking** anti-pattern (comma-separated FK lists).
-- **Relationship attributes** (enrolled_on, grade) belong _on the junction_, not on either entity.
+- **Relationship attributes** (enrolled*on, grade) belong \_on the junction*, not on either entity.
 - Index the second column too if you query both directions (`(course_id, student_id)`), since the PK only covers the leftmost-prefix.
 - Don't add a surrogate `id` (G1 / ID Required) — the composite key is the identity.
 
@@ -37,12 +37,12 @@ This is the **adjacency list** tree model (below).
 
 ## Trees & hierarchies (Gate G5)
 
-| Model                                         | Read subtree                | Insert / move node                        | Notes                                                                     |
-| --------------------------------------------- | --------------------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
-| **Adjacency list** (`parent_id`)              | Recursive CTE               | Trivial (one row)                         | Simplest; default. Reads need `WITH RECURSIVE`.                           |
-| **Materialised path** (`/1/4/9/`)             | Prefix `LIKE` / range       | Cheap insert; move rewrites subtree paths | Great for breadcrumbs; path length limits depth.                          |
-| **Nested sets** (left/right bounds)           | Single range query (fast)   | Expensive — most rows shift on write      | Read-only / rarely-changing trees.                                        |
-| **Closure table** (ancestor, descendant rows) | Simple join, fast both ways | Insert/move touches many closure rows     | Best when you query _and_ mutate in both directions often; costs storage. |
+| Model                                         | Read subtree                | Insert / move node                        | Notes                                                                                                                                      |
+| --------------------------------------------- | --------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Adjacency list** (`parent_id`)              | Recursive CTE               | Trivial (one row)                         | Simplest; default. Reads need `WITH RECURSIVE`.                                                                                            |
+| **Materialised path** (`/1/4/9/`)             | Prefix `LIKE` / range       | Cheap insert; move rewrites subtree paths | Great for breadcrumbs; path length limits depth; the path string has no enforced FK integrity — a stale or mistyped id in it isn't caught. |
+| **Nested sets** (left/right bounds)           | Single range query (fast)   | Expensive — most rows shift on write      | Read-only / rarely-changing trees.                                                                                                         |
+| **Closure table** (ancestor, descendant rows) | Simple join, fast both ways | Insert/move touches many closure rows     | Best when you query _and_ mutate in both directions often; storage grows with depth (a row per ancestor–descendant pair).                  |
 
 **Guidance:** start with an **adjacency list + recursive CTE**. Move to a closure table when both-direction queries and frequent moves make CTEs too slow; nested sets only for stable, read-heavy trees; materialised path when you mainly need ancestor breadcrumbs.
 
@@ -83,10 +83,10 @@ Trade-off: exclusive arcs add a column per new type; per-type junctions add a ta
 
 When entities share a core but have type-specific attributes (Vehicle → Car, Truck):
 
-| Strategy               | Shape                                               | Pros                                          | Cons                                                                                     |
-| ---------------------- | --------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **Single Table (STI)** | One table, all columns, a `type` discriminator      | Simple, no joins, polymorphic queries trivial | Type-specific columns must be nullable; CHECK constraints get complex; wide sparse table |
-| **Class Table (CTI)**  | Supertype table + one table per subtype, shared PK  | Properly typed/NOT NULL per subtype; clean    | Joins to assemble a full object; insert touches 2 tables                                 |
-| **Concrete Table**     | One independent table per subtype, no shared parent | No joins, fully typed                         | No easy "all vehicles" query; duplicated common columns; shared FK target impossible     |
+| Strategy               | Shape                                               | Pros                                          | Cons                                                                                                                          |
+| ---------------------- | --------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Single Table (STI)** | One table, all columns, a `type` discriminator      | Simple, no joins, polymorphic queries trivial | Type-specific columns must be nullable; CHECK constraints get complex; wide sparse table                                      |
+| **Class Table (CTI)**  | Supertype table + one table per subtype, shared PK  | Properly typed/NOT NULL per subtype; clean    | Joins to assemble a full object; insert touches 2 tables; the shared supertype table can become a write/contention bottleneck |
+| **Concrete Table**     | One independent table per subtype, no shared parent | No joins, fully typed                         | No easy "all vehicles" query; duplicated common columns; shared FK target impossible                                          |
 
 **Guidance:** shallow hierarchy with mostly shared attributes → **STI**. Deep hierarchy with substantial type-specific data and a need for NOT NULL guarantees → **CTI**. Subtypes that are barely related and never queried together → **concrete**. You may mix strategies across different hierarchies in the same schema.

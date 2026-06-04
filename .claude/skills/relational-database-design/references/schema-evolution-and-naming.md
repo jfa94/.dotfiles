@@ -19,9 +19,11 @@ Rules:
 
 - **Additive before the code that needs it; destructive only after the old code is gone.**
 - Never a single-step destructive `ALTER` (rename/drop/retype) on a table live code depends on.
-- **Never drop a table without explicit confirmation** in the current turn (reinforces the global safety rule).
+- **Destructive DDL requires explicit confirmation** — dropping a table, or the `DROP`/retype/rename step on a column live code depends on, runs only when the user has explicitly requested it and confirms in the current turn (the global safety rule). It is the contract phase: never a reflex, never collapsed into an earlier step.
 
 ## Safe DDL notes
+
+The online/concurrent techniques below exist to avoid long locks on **large, live** tables. On a small table, or within a planned maintenance window, a plain blocking `ALTER` is fine — match the effort to the table's size and availability requirement.
 
 - **Postgres:**
   - `CREATE INDEX CONCURRENTLY` — build an index without an exclusive lock (can't run in a txn block).
@@ -32,6 +34,7 @@ Rules:
 
 ## Designing for evolvability
 
+- **Model the domain, not today's UI** — a schema that mirrors the current screen layout has to migrate every time the UI shifts; one that captures the underlying entities and rules absorbs UI change without DDL.
 - **Additive over repurposing** — add a new column/table rather than overloading an existing column's meaning.
 - **Enumerations as data** — a lookup table grows with a normal `INSERT`; a native enum needs a migration (31 Flavors).
 - **Avoid premature denormalisation** — every denormalised copy is one more thing a future migration must keep consistent.

@@ -22,6 +22,8 @@ The synthesis — you usually want **both**:
 
 The surrogate gives you a stable, narrow, never-changing join target. The UNIQUE on the natural key preserves the real-world rule the surrogate would otherwise let you violate (two customers with the same email). Dropping the natural UNIQUE "because we have an id" is how duplicates creep in.
 
+**Identity ≠ search key.** The surrogate PK is the join/identity target, not what humans look rows up by — they search by the natural key (email, SKU, order number). Keep that key indexed (its UNIQUE doubles as the search index) even though the surrogate is the PK; conflating "the value I join on" with "the value I search by" is what tempts people to drop the natural key.
+
 **Exception — pure junction/lookup tables:** a join table whose only identity is the pair of FKs should use that **natural composite key** as its PK. Adding a surrogate `id` to it is the **ID Required** anti-pattern — it permits duplicate pairs and buys nothing.
 
 ```sql
@@ -72,6 +74,8 @@ Every FK needs a _deliberate_ `ON DELETE` (and sometimes `ON UPDATE`) action —
 | **SET DEFAULT**          | Rare — child reparents to a default row.                                                                               |
 
 **Contradiction to avoid:** `ON DELETE SET NULL` on a `NOT NULL` FK column is impossible — the engine can't write the NULL it promised. Either make the column nullable or choose a different action.
+
+**FKs cost writes:** each enforced FK makes the engine verify the parent exists on every child insert/update, and check for surviving children on every parent delete/update. That's the price of integrity — pay it by default, and index the FK column (see indexing reference) so the child-side checks don't table-scan. "Drop FKs for write speed" is Keyless Entry (L1); the right lever is indexing the FK, not removing the constraint.
 
 ## Examples
 
