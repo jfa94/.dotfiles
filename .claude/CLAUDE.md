@@ -20,7 +20,7 @@
 - Before marking any task complete, verify the implementation actually works: exercise the changed functionality, confirm every step of the plan was implemented, and check for regressions
 - Be extremely cautious of functionality regression. DO NOT degrade functionality to appease a test; fix structurally
 - DO NOT disable quality checks, such as linting, to silence errors or warnings; address the underlying issue
-- NEVER drop a database table
+- Never drop a database table, unless the user explicitly requests it and subsequently confirms the operation before you execute
 
 ## Testing Requirements
 
