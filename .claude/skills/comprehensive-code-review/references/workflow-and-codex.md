@@ -73,7 +73,13 @@ downstream parser. There is no STATUS line and no prose verdict block any more.
 `adversarial-review` has **no real backgrounding** — its `--background` flag is parsed but ignored
 (`handleReviewCommand` always runs foreground), it prints no `background as <id>` line, and there is
 no companion-level job to poll. So run it **synchronously** and background it with the **Bash tool's
-`run_in_background: true`**; harvest its stdout (the review markdown) when the Bash task completes.
+`run_in_background: true`**.
+
+Pass `--json`: the companion then emits exactly one JSON object on stdout (`outputResult` →
+`console.log(JSON.stringify(payload))`) and routes progress to a job logfile instead of stderr
+(`createTrackedProgress(..., { stderr: false })`), so stdout is clean machine output. Redirect stdout to
+a file and stderr to a separate log so nothing can interleave with the captured JSON. (The non-`--json`
+form emits rendered markdown — used only as the fallback when the JSON is non-conforming; see §6.)
 
 ```bash
 # Resolve companion script (latest installed version)
@@ -81,13 +87,17 @@ CODEX_CMD=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-com
 
 # Launch (in a Bash tool call with run_in_background: true). $CODEX_TARGET is one of:
 #   --base "$CODEX_BASE"   (base / full modes)   |   --scope working-tree   (working-tree mode)
-node "$CODEX_CMD" adversarial-review $CODEX_TARGET 2>&1
+node "$CODEX_CMD" adversarial-review --json $CODEX_TARGET \
+  >.comprehensive-code-review/raw/codex-adversarial.json \
+  2>.comprehensive-code-review/raw/codex-adversarial.stderr.log
 ```
 
-Do NOT pass `--background`, and do NOT call the companion's `status`/`result` subcommands for reviews
-(those exist only for the `task` subcommand). Harvest the review by reading the backgrounded Bash
-task's output once it terminates. If it has not terminated by the time the Workflow finishes, wait for
-it (Iron Law 2); if it never produces output, mark Codex BLOCKED.
+Do NOT pass `--background`; do NOT pass `--model` (let the companion auto-default to the best model);
+and do NOT call the companion's `status`/`result` subcommands for reviews (those exist only for the
+`task` subcommand). Harvest the review by reading `codex-adversarial.json` once the Bash task terminates
+and `JSON.parse`-ing it (payload shape + fallback in §6). If it has not terminated by the time the
+Workflow finishes, wait for it (Iron Law 2); if the file is empty/unparseable and `.stderr.log` shows a
+crash, mark Codex BLOCKED.
 
 `--base <ref>` makes Codex diff `merge-base(HEAD,<ref>)..HEAD`. Above 2 files / 256 KB the companion
 self-collects — it sends only a summary + commit log + file list and tells Codex to inspect the range
@@ -152,7 +162,27 @@ for each finding in workflowResult.reviewers[*].findings:
 
 `collapse_whitespace`: replace runs of whitespace (incl. newlines) with a single space, then trim.
 
-Codex emits its findings as narrative review markdown (the companion has no structured findings
-schema), so there is no verbatim quote to substring-match. For any `file:line` reference Codex cites,
-existence-check only (file exists + line within the file's length); include Codex's findings under
-"Adversarial-Codex" and note they are existence-checked, not quote-verified.
+Codex (`adversarial-review --json`) returns a structured payload, parsed from
+`raw/codex-adversarial.json`:
+
+```
+payload.result   // null on parse failure; else matches review-output.schema.json:
+                 //   { verdict: "approve"|"needs-attention", summary,
+                 //     findings: [ { severity: critical|high|medium|low, title, body,
+                 //                   file, line_start, line_end, confidence: 0-1, recommendation } ],
+                 //     next_steps: [ ... ] }
+payload.rawOutput   // raw model text (used by the fallback path)
+payload.parseError  // set when result is null
+```
+
+The review schema has **no `verbatim` field** (`additionalProperties:false`), so quote-verification is
+impossible by construction — line-range existence-checking is the verification ceiling. For each
+structured finding: confirm `file` exists AND both `line_start` and `line_end` fall within the file's
+length; on failure move it to Dropped Findings (`codex_file_missing` / `codex_line_out_of_range`).
+Include surviving findings under "Adversarial-Codex" and note they are existence-checked, not
+quote-verified.
+
+**Fallback** (`payload.result` is `null`, `payload.parseError` set — Codex returned non-conforming
+output): existence-check any `file:line` references parsed from `payload.rawOutput` (file exists + line
+within length) and mark Codex DONE, noting that structured output was unavailable. Only an
+empty/unparseable file (companion crash — see `codex-adversarial.stderr.log`) is BLOCKED.

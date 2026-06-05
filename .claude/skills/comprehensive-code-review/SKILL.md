@@ -43,17 +43,17 @@ target-resolution table, and the output format.
 
 ## Red Flags — STOP and re-read this prompt
 
-| Thought                                      | Reality                                                                             |
-| -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| "I'll Task each reviewer myself"             | Iron Law 4. Reviewers go through the Workflow, not direct Task calls.               |
-| "The finding looks right, I'll include it"   | Iron Law 1. Verify file:line first. Drop if no match.                               |
-| "Workflow's still running, I'll report now"  | Iron Law 2. workflow-result.json written AND Codex terminated first.                |
-| "I'll create a new category for this"        | Iron Law 3. Use fixed set; map to "Other" if nothing fits.                          |
-| "Codex isn't available, I'll abort"          | Mark Codex SKIPPED. The Workflow still runs.                                        |
-| "I'll poll `status <id>` for Codex"          | No. adversarial-review never backgrounds; read the backgrounded Bash task's stdout. |
-| "I'll harvest the Workflow's return value"   | No. Read .comprehensive-code-review/raw/workflow-result.json instead.               |
-| "--full, so I'll build a root..HEAD diff"    | No. --full sends agents the file inventory; they Read files.                        |
-| "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                      |
+| Thought                                      | Reality                                                                            |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| "I'll Task each reviewer myself"             | Iron Law 4. Reviewers go through the Workflow, not direct Task calls.              |
+| "The finding looks right, I'll include it"   | Iron Law 1. Verify file:line first. Drop if no match.                              |
+| "Workflow's still running, I'll report now"  | Iron Law 2. workflow-result.json written AND Codex terminated first.               |
+| "I'll create a new category for this"        | Iron Law 3. Use fixed set; map to "Other" if nothing fits.                         |
+| "Codex isn't available, I'll abort"          | Mark Codex SKIPPED. The Workflow still runs.                                       |
+| "I'll poll `status <id>` for Codex"          | No. adversarial-review never backgrounds; read the JSON file the Bash task writes. |
+| "I'll harvest the Workflow's return value"   | No. Read .comprehensive-code-review/raw/workflow-result.json instead.              |
+| "--full, so I'll build a root..HEAD diff"    | No. --full sends agents the file inventory; they Read files.                       |
+| "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                     |
 
 ## Additional review dimensions (cross-cutting)
 
@@ -147,12 +147,15 @@ Otherwise → include `{ name: "implementation-reviewer", role: <file body> }` i
 ## Phase 5 — Launch Both Tracks (single message)
 
 First ensure the output dir exists (both the workflow's persist agent and Codex's raw output land here),
-and delete any prior `workflow-result.json` so a stale file from an earlier run can never be mistaken
-for this run's output (the dir is gitignored, so stale state persists locally between runs):
+and delete any prior run's output files (the workflow result and Codex's JSON/stderr) so a stale file
+from an earlier run can never be mistaken for this run's output (the dir is gitignored, so stale state
+persists locally between runs):
 
 ```bash
 mkdir -p .comprehensive-code-review/raw
-rm -f .comprehensive-code-review/raw/workflow-result.json
+rm -f .comprehensive-code-review/raw/workflow-result.json \
+      .comprehensive-code-review/raw/codex-adversarial.json \
+      .comprehensive-code-review/raw/codex-adversarial.stderr.log
 ```
 
 <EXTREMELY-IMPORTANT>
@@ -160,14 +163,20 @@ Your next assistant message MUST launch both background tracks together:
 
 1. **Bash call (`run_in_background: true`)** — Codex adversarial review, ONLY if `CODEX_AVAILABLE=true`.
    `adversarial-review` has NO real backgrounding (`--background` is a no-op for reviews and prints no
-   job id) — run it synchronously and let the Bash tool background it:
+   job id) — run it synchronously and let the Bash tool background it. Pass `--json` so the companion
+   emits one structured JSON object on stdout (`result` = the review: `verdict` + `findings[]`, each
+   carrying `file`/`line_start`/`line_end`/`severity`/`confidence`/`recommendation`); redirect stdout to
+   a file and stderr to a separate log so nothing can interleave with the captured JSON:
 
    ```bash
-   node "$CODEX_CMD" adversarial-review $CODEX_TARGET 2>&1
+   node "$CODEX_CMD" adversarial-review --json $CODEX_TARGET \
+     >.comprehensive-code-review/raw/codex-adversarial.json \
+     2>.comprehensive-code-review/raw/codex-adversarial.stderr.log
    ```
 
-   Do NOT pass `--background`. Do NOT poll the companion's `status`/`result` subcommands. The Bash task
-   keeps running across turns; harvest its output when it terminates (Phase 6).
+   Do NOT pass `--background`. Do NOT pass `--model` (let the companion auto-default to the best model).
+   Do NOT poll the companion's `status`/`result` subcommands. The Bash task keeps running across turns;
+   harvest the JSON file when it terminates (Phase 6).
 
 2. **Workflow call** — the reviewer fan-out:
    ```
@@ -193,11 +202,19 @@ a stale leftover (the current run's persist failed), so do NOT trust it; mark ev
 BLOCKED("workflow-result.json stale/foreign — persist failed"). Likewise, if the file is missing or
 unparseable, mark every dispatched reviewer BLOCKED("workflow-result.json missing/unparseable") and continue.
 
-Then harvest Codex if `CODEX_AVAILABLE=true`: the Codex review ran as a backgrounded **Bash** task.
-When that Bash task terminates, read its captured stdout (the review markdown) directly — there is no
-companion job to poll. Wait for it to finish before emitting the report (Iron Law 2). If it produced
-no usable output, or has not terminated after a reasonable wait, mark Codex BLOCKED("no output / did
-not terminate").
+Then harvest Codex if `CODEX_AVAILABLE=true`: the Codex review ran as a backgrounded **Bash** task that
+wrote its structured JSON to `.comprehensive-code-review/raw/codex-adversarial.json`. When the Bash task
+terminates, **Read that file and `JSON.parse` it** — there is no companion job to poll. Wait for it to
+finish before emitting the report (Iron Law 2). Then branch on the parsed payload:
+
+- `payload.result` is an object → use the structured review: `verdict` (`approve` / `needs-attention`),
+  `summary`, `findings[]`, and `next_steps[]`. Mark Codex DONE.
+- `payload.result` is `null` (`payload.parseError` set — Codex returned non-conforming output) →
+  **fallback**: existence-check any `file:line` references in `payload.rawOutput` (the legacy narrative
+  path) and mark Codex DONE, noting in the report (Reviewers table + Codex section) that structured
+  output was unavailable and findings came from the narrative fallback.
+- File missing/empty or not valid JSON (companion crashed — see `codex-adversarial.stderr.log`), or the
+  task has not terminated after a reasonable wait → mark Codex BLOCKED("no output / did not terminate").
 
 ## Phase 7 — Citation Verification (deterministic)
 
@@ -207,19 +224,27 @@ For every finding from every reviewer (per the pseudocode in `references/workflo
 2. Read the file at `line ±2`, collapse whitespace on both quote and content, and require the quote
    to be a substring — else drop (`dropped_no_match`).
 
-Collect dropped findings into the "Dropped Findings" list. Codex emits narrative markdown (no verbatim
-quotes), so its findings are existence-checked only (any cited file exists + cited line within file
-length), not quote-verified.
+Collect dropped findings into the "Dropped Findings" list. Codex's structured findings carry no
+`verbatim` (the review schema has no quote field), so they are existence-checked, not quote-verified:
+the cited `file` must exist AND `line_start`/`line_end` must fall within the file's length. A finding
+that fails this check moves to Dropped Findings (`codex_file_missing` / `codex_line_out_of_range`) —
+never silently discarded. (On the narrative fallback path, existence-check the `file:line` references
+parsed from `payload.rawOutput` instead.)
 
 ## Phase 8 — Group, Sort, Emit
 
 1. `mkdir -p .comprehensive-code-review/raw` (idempotent — already created in Phase 5).
-2. Write each reviewer's raw findings JSON to `.comprehensive-code-review/raw/<reviewer>-<UTC-iso>.md`
-   (derived from the parsed `workflow-result.json`), and the Codex review markdown to
-   `.comprehensive-code-review/raw/codex-adversarial-<UTC-iso>.md`.
+2. Write each reviewer's raw findings to `.comprehensive-code-review/raw/<reviewer>-<UTC-iso>.md`
+   (derived from the parsed `workflow-result.json`). Codex's machine output already sits at
+   `.comprehensive-code-review/raw/codex-adversarial.json` (written in Phase 5); render a human-readable
+   `.comprehensive-code-review/raw/codex-adversarial-<UTC-iso>.md` from it (verdict, summary, findings,
+   `next_steps`) for parity with the other reviewers' `.md` files.
 3. Categorize each verified finding per `references/report-format.md`.
-4. Map severity per the table in `references/report-format.md`.
-5. Sort within each category by severity DESC, then file ASC.
+4. Map severity per the table in `references/report-format.md` (Codex's `critical|high|medium|low` map
+   to `critical|important|important|minor`; keep the native severity + `confidence` on each rendered
+   Codex finding so the 4→3 collapse loses no signal).
+5. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by
+   severity DESC, then `confidence` DESC, then file ASC (confidence orders, never filters).
 6. Write the consolidated report to `.comprehensive-code-review/report-<UTC-iso>.md` using the
    skeleton in `references/report-format.md`. In the Scope section, note the agent vs. Codex scope
    when mode = full.

@@ -1,10 +1,10 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "skillListingBudgetFraction": 0.02,
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"
   },
-  "skillListingBudgetFraction": 0.02,
   "permissions": {
     "allow": [
       "Read",

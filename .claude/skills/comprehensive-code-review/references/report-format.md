@@ -16,7 +16,8 @@
     ├── comment-accuracy-<ts>.md
     ├── simplification-<ts>.md
     ├── documentation-<ts>.md
-    └── codex-adversarial-<ts>.md
+    ├── codex-adversarial.json       # Codex structured machine output (source of truth)
+    └── codex-adversarial-<ts>.md    # human-readable render of codex-adversarial.json
 ```
 
 ## Report skeleton
@@ -48,7 +49,7 @@
 | comment-accuracy  | DONE                         | —                               | <n>      |
 | simplification    | DONE                         | —                               | <n>      |
 | documentation     | DONE                         | DOCS_OK/DOCS_DRIFT/DOCS_BLOCKED | <n>      |
-| codex-adversarial | DONE/SKIPPED/BLOCKED         | —                               | <n>      |
+| codex-adversarial | DONE/SKIPPED/BLOCKED         | APPROVE/NEEDS-ATTENTION         | <n>      |
 
 ## Summary
 
@@ -135,7 +136,16 @@ _(only present if --spec provided)_
 
 ### Adversarial-Codex
 
-_(only present if Codex ran)_
+_(only present if Codex ran. Codex findings are existence-checked, not quote-verified — the review
+schema has no `verbatim` field — and carry their native severity + confidence.)_
+
+#### [critical|important|minor] `file:line_start[-line_end]` — <one-line title>
+
+- **Reviewer**: codex-adversarial
+- **Codex severity**: <critical|high|medium|low> · **Confidence**: <0–1>
+- **Quote**: _n/a — existence-checked (review schema has no verbatim field)_
+- **Why**: <body>
+- **Fix sketch**: <recommendation>
 
 ### Other
 
@@ -170,6 +180,10 @@ When a reviewer uses its own severity vocabulary, map to the standard set as fol
 | LOW / P3 / minor / low | minor             |
 | WARNING (non-blocking) | minor             |
 
+Codex's `critical|high|medium|low` map by the same rule (`critical→critical`, `high→important`,
+`medium→important`, `low→minor`); keep the native level as **Codex severity** on the rendered finding so
+the 4→3 collapse loses no signal.
+
 ## Finding JSON schema (for machine parsing)
 
 ```json
@@ -179,11 +193,13 @@ When a reviewer uses its own severity vocabulary, map to the standard set as fol
   "reviewer": "<agent name>",
   "file": "path/to/file.ts",
   "line": 42,
-  "verbatim": "<quote ≥5 chars>",
+  "verbatim": "<quote ≥5 chars; omitted for Codex — its review schema has no verbatim field>",
   "title": "<one-line title>",
   "why": "<reasoning>",
   "fix_sketch": "<one sentence>",
-  "verification": "ok|dropped_no_match"
+  "confidence": "<0-1; Codex findings only>",
+  "codex_severity": "<critical|high|medium|low; Codex findings only, native level pre-mapping>",
+  "verification": "ok|dropped_no_match|dropped_no_citation|codex_file_missing|codex_line_out_of_range"
 }
 ```
 
