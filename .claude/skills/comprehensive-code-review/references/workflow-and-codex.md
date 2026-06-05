@@ -78,8 +78,10 @@ no companion-level job to poll. So run it **synchronously** and background it wi
 Pass `--json`: the companion then emits exactly one JSON object on stdout (`outputResult` →
 `console.log(JSON.stringify(payload))`) and routes progress to a job logfile instead of stderr
 (`createTrackedProgress(..., { stderr: false })`), so stdout is clean machine output. Redirect stdout to
-a file and stderr to a separate log so nothing can interleave with the captured JSON. (The non-`--json`
-form emits rendered markdown — used only as the fallback when the JSON is non-conforming; see §6.)
+a file and stderr to a separate log so nothing can interleave with the captured JSON. (When the model
+returns non-conforming output, `payload.result` is null but `payload.rawOutput` still carries the raw
+model text inside the same `--json` payload — the degraded fallback parses that, NOT a separate
+non-`--json` run; see §6.)
 
 ```bash
 # Resolve companion script (latest installed version)
@@ -150,14 +152,17 @@ workflow wrote), not from the Workflow return value.
 
 ```
 for each finding in workflowResult.reviewers[*].findings:
-    if finding.file and finding.line and finding.verbatim (>= 5 chars):
-        content = Read(finding.file, offset=max(0, finding.line-2), limit=5)
-        if collapse_whitespace(finding.verbatim) in collapse_whitespace(content):
-            finding.verification = "ok"
+    if finding.file and finding.line and finding.verbatim:
+        if len(collapse_whitespace(finding.verbatim)) < 5:
+            finding.verification = "dropped_quote_too_short"   -> move to dropped list
         else:
-            finding.verification = "dropped_no_match"   -> move to dropped list
+            content = Read(finding.file, offset=max(0, finding.line-2), limit=5)
+            if collapse_whitespace(finding.verbatim) in collapse_whitespace(content):
+                finding.verification = "ok"
+            else:
+                finding.verification = "dropped_no_match"       -> move to dropped list
     else:
-        finding.verification = "dropped_no_citation"     -> move to dropped list
+        finding.verification = "dropped_no_citation"            -> move to dropped list
 ```
 
 `collapse_whitespace`: replace runs of whitespace (incl. newlines) with a single space, then trim.
@@ -166,12 +171,15 @@ Codex (`adversarial-review --json`) returns a structured payload, parsed from
 `raw/codex-adversarial.json`:
 
 ```
+payload.target   // ALWAYS present (assigned before result/parseError; absence ⇒ companion crash).
+                 //   base / --full: { mode: "branch", baseRef: "<ref>", explicit: true }
+                 //   working-tree:  { mode: "working-tree", explicit: true }   (no baseRef)
 payload.result   // null on parse failure; else matches review-output.schema.json:
                  //   { verdict: "approve"|"needs-attention", summary,
                  //     findings: [ { severity: critical|high|medium|low, title, body,
                  //                   file, line_start, line_end, confidence: 0-1, recommendation } ],
                  //     next_steps: [ ... ] }
-payload.rawOutput   // raw model text (used by the fallback path)
+payload.rawOutput   // raw model text (used by the degraded fallback path)
 payload.parseError  // set when result is null
 ```
 
@@ -182,7 +190,19 @@ length; on failure move it to Dropped Findings (`codex_file_missing` / `codex_li
 Include surviving findings under "Adversarial-Codex" and note they are existence-checked, not
 quote-verified.
 
-**Fallback** (`payload.result` is `null`, `payload.parseError` set — Codex returned non-conforming
-output): existence-check any `file:line` references parsed from `payload.rawOutput` (file exists + line
-within length) and mark Codex DONE, noting that structured output was unavailable. Only an
-empty/unparseable file (companion crash — see `codex-adversarial.stderr.log`) is BLOCKED.
+**Harvest** the payload as a validity/staleness gate, then a two-outcome branch — a structured-output
+failure must never report as a clean success:
+
+1. **Gate A — validity/crash:** file missing/empty/not valid JSON, or `payload.target` absent, or the
+   Bash task not yet terminated → **BLOCKED** (companion crash — see `codex-adversarial.stderr.log`).
+2. **Gate B — staleness:** `payload.target` must match the run just launched, else **BLOCKED** (stale /
+   foreign): base / `--full` → `target.mode === "branch"` AND `target.baseRef === <the launched ref>`;
+   working-tree → `target.mode === "working-tree"`. (This is the Codex analogue of the
+   `workflow-result.json` scopeLabel/mode guard.)
+3. **Route on `result`:**
+   - **Structured** — `payload.result` is a non-null object with a `findings` array → existence-check
+     each finding (above) and mark Codex DONE.
+   - **Degraded** — otherwise (`result` null / absent / not findings-bearing) → existence-check any
+     `file:line` references parsed from `payload.rawOutput`: **≥1 recovered** → Codex DONE with a
+     mandatory degraded note (structured output unavailable, not schema-validated); **zero recovered** →
+     Codex **BLOCKED**.

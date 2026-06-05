@@ -51,6 +51,9 @@
 | documentation     | DONE                         | DOCS_OK/DOCS_DRIFT/DOCS_BLOCKED | <n>      |
 | codex-adversarial | DONE/SKIPPED/BLOCKED         | APPROVE/NEEDS-ATTENTION         | <n>      |
 
+_(codex-adversarial Verdict gets the suffix `(degraded — narrative fallback)` when DONE via the degraded
+path — see the Adversarial-Codex note below.)_
+
 ## Summary
 
 **Total findings: <N>**
@@ -137,7 +140,10 @@ _(only present if --spec provided)_
 ### Adversarial-Codex
 
 _(only present if Codex ran. Codex findings are existence-checked, not quote-verified — the review
-schema has no `verbatim` field — and carry their native severity + confidence.)_
+schema has no `verbatim` field — and carry their native severity + confidence. When Codex is DONE via
+the degraded narrative fallback (structured output unavailable), the Reviewers-table Verdict cell is
+suffixed `(degraded — narrative fallback)` and this section opens with a line stating the findings were
+recovered from raw model text and are **not schema-validated**.)_
 
 #### [critical|important|minor] `file:line_start[-line_end]` — <one-line title>
 
@@ -199,7 +205,7 @@ the 4→3 collapse loses no signal.
   "fix_sketch": "<one sentence>",
   "confidence": "<0-1; Codex findings only>",
   "codex_severity": "<critical|high|medium|low; Codex findings only, native level pre-mapping>",
-  "verification": "ok|dropped_no_match|dropped_no_citation|codex_file_missing|codex_line_out_of_range"
+  "verification": "ok|dropped_no_match|dropped_no_citation|dropped_quote_too_short|codex_file_missing|codex_line_out_of_range"
 }
 ```
 

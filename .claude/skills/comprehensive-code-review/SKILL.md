@@ -205,16 +205,35 @@ unparseable, mark every dispatched reviewer BLOCKED("workflow-result.json missin
 Then harvest Codex if `CODEX_AVAILABLE=true`: the Codex review ran as a backgrounded **Bash** task that
 wrote its structured JSON to `.comprehensive-code-review/raw/codex-adversarial.json`. When the Bash task
 terminates, **Read that file and `JSON.parse` it** — there is no companion job to poll. Wait for it to
-finish before emitting the report (Iron Law 2). Then branch on the parsed payload:
+finish before emitting the report (Iron Law 2). Then run the harvest as a **validity/staleness gate,
+then a two-outcome branch** (do NOT mark a structured-output failure as a clean success):
 
-- `payload.result` is an object → use the structured review: `verdict` (`approve` / `needs-attention`),
-  `summary`, `findings[]`, and `next_steps[]`. Mark Codex DONE.
-- `payload.result` is `null` (`payload.parseError` set — Codex returned non-conforming output) →
-  **fallback**: existence-check any `file:line` references in `payload.rawOutput` (the legacy narrative
-  path) and mark Codex DONE, noting in the report (Reviewers table + Codex section) that structured
-  output was unavailable and findings came from the narrative fallback.
-- File missing/empty or not valid JSON (companion crashed — see `codex-adversarial.stderr.log`), or the
-  task has not terminated after a reasonable wait → mark Codex BLOCKED("no output / did not terminate").
+**Gate A — validity/crash:** if the file is missing/empty/not valid JSON, or `payload.target` is absent
+(the companion always assigns `target` before `result`/`parseError`, so its absence means a crash mid-emit),
+or the task has not terminated after a reasonable wait → Codex **BLOCKED**("codex-adversarial.json
+missing/unparseable — companion crash / did not terminate; see codex-adversarial.stderr.log").
+
+**Gate B — staleness:** verify `payload.target` matches the run just launched, else **BLOCKED**
+("codex-adversarial.json stale/foreign — target mismatch"):
+
+- base / `--full` mode: `payload.target.mode === "branch"` AND `payload.target.baseRef === $BASE_REF`
+  (`$CODEX_BASE` under `--full` alone).
+- working-tree mode: `payload.target.mode === "working-tree"`.
+
+**Outcome 1 — structured:** `payload.result` is a non-null object containing a `findings` array → use the
+structured review: `verdict` (`approve` / `needs-attention`), `summary`, `findings[]`, and `next_steps[]`.
+Mark Codex DONE.
+
+**Outcome 2 — degraded fallback:** otherwise (`payload.result` is null, absent, or not a findings-bearing
+object — i.e. `payload.parseError` set or the payload is malformed) → existence-check any `file:line`
+references parsed from `payload.rawOutput`:
+
+- **≥1 reference passes** the existence-check → Codex DONE, and add a **mandatory degraded note** in both
+  the Reviewers table Verdict cell (suffix `(degraded — narrative fallback)`) and the Codex section
+  ("structured output unavailable — findings recovered from narrative fallback; degraded, not
+  schema-validated").
+- **zero references** recover → Codex **BLOCKED**("structured output unavailable and no findings
+  recoverable from narrative output").
 
 ## Phase 7 — Citation Verification (deterministic)
 
@@ -228,8 +247,8 @@ Collect dropped findings into the "Dropped Findings" list. Codex's structured fi
 `verbatim` (the review schema has no quote field), so they are existence-checked, not quote-verified:
 the cited `file` must exist AND `line_start`/`line_end` must fall within the file's length. A finding
 that fails this check moves to Dropped Findings (`codex_file_missing` / `codex_line_out_of_range`) —
-never silently discarded. (On the narrative fallback path, existence-check the `file:line` references
-parsed from `payload.rawOutput` instead.)
+never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), existence-check the
+`file:line` references parsed from `payload.rawOutput` instead.)
 
 ## Phase 8 — Group, Sort, Emit
 
