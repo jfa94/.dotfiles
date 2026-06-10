@@ -44,6 +44,16 @@ deprecated; the completion notification carries only prose). Each `findings[]` e
 canonical schema below. Every reviewer named in `args.reviewers` appears in the result (BLOCKED with a
 reason if its agent failed or was skipped).
 
+Two behaviors live inside the workflow, not the skill:
+
+- **Adversarial Verify stage**: each critical/important finding is handed to a fresh refuter agent
+  that sees only the claim + location (title, severity, file:line, verbatim quote — NOT the
+  reviewer's `why` reasoning chain) and must hunt for concrete counter-evidence. Refuted findings
+  stay in the payload annotated `refuted: true` + `refute_reason` — the skill moves them to Dropped
+  Findings (never silently deleted, never resurrected). A verifier that dies/skips keeps the finding.
+- **Diffless reviewers**: `documentation-reviewer` audits current state, not the change; the workflow
+  withholds the diff from it (it gets the changed-files list only) to avoid context dilution.
+
 ## 2. Canonical FINDINGS_SCHEMA (defined in the workflow script)
 
 ```json
@@ -67,6 +77,16 @@ reason if its agent failed or was skipped).
 
 `verbatim` min length (5) and the `severity` enum are enforced by the schema validator, not by a
 downstream parser. There is no STATUS line and no prose verdict block any more.
+
+After validation, the workflow's Verify stage may annotate a finding with two extra fields the
+schema does not declare (they are workflow annotations, not reviewer output):
+
+```json
+{
+  "refuted": true,
+  "refute_reason": "<refuter's counter-evidence, with file:line>"
+}
+```
 
 ## 3. Codex invocation pattern
 
@@ -135,15 +155,22 @@ Codex.)
 ## 5. Diff size management (base / working-tree modes only)
 
 `--full` sends no diff (agents Read files themselves). For `--base` and working-tree modes, build the
-diff and truncate at 8000 lines:
+diff and truncate at 2000 lines — LLM review detection degrades as context grows, and every line is
+duplicated into all ~10 reviewer prompts:
 
 ```bash
 git diff <range> 2>/dev/null | wc -l         # total lines
 ```
 
-If the diff exceeds 8000 lines, truncate `reviewInput` to the first 8000 and prepend:
-`[TRUNCATED: diff is <N> lines; showing first 8000. All changed files listed above.]`
-Always pass the complete `changedFiles` list even when the diff is truncated.
+Working-tree mode diffs with `git diff HEAD` (staged + unstaged — bare `git diff` misses staged
+changes) and appends untracked files (`git ls-files --others --exclude-standard`) to `changedFiles`;
+untracked files carry no diff hunks, so note in `reviewInput` that agents must Read them directly.
+
+If the diff exceeds 2000 lines, truncate `reviewInput` to the first 2000 and prepend:
+`[TRUNCATED: diff is <N> lines; showing first 2000. All changed files listed above — Read the rest
+directly. Large diffs review poorly; recommend splitting into chunked --base runs.]`
+Always pass the complete `changedFiles` list even when the diff is truncated, and surface the
+truncation + chunked-runs recommendation in the report's Scope section.
 
 ## 6. Citation verification pseudocode (main session, deterministic)
 
@@ -152,13 +179,23 @@ workflow wrote), not from the Workflow return value.
 
 ```
 for each finding in workflowResult.reviewers[*].findings:
-    if finding.file and finding.line and finding.verbatim:
+    if finding.refuted:
+        finding.verification = "refuted"                        -> move to dropped list
+        # record refute_reason in the dropped table; NEVER resurrect a refuted finding
+    elif finding.file and finding.line and finding.verbatim:
         if len(collapse_whitespace(finding.verbatim)) < 5:
             finding.verification = "dropped_quote_too_short"   -> move to dropped list
         else:
             content = Read(finding.file, offset=max(0, finding.line-2), limit=5)
             if collapse_whitespace(finding.verbatim) in collapse_whitespace(content):
                 finding.verification = "ok"
+            elif finding.verbatim is single-line:
+                # Rescue: line-number drift is the canonical LLM citation failure.
+                matches = Grep(finding.file, fixed-string = trim(finding.verbatim), with line numbers)
+                if exactly 1 matching line:
+                    finding.line = matched line; finding.verification = "relocated_ok"
+                else:
+                    finding.verification = "dropped_no_match"   -> move to dropped list
             else:
                 finding.verification = "dropped_no_match"       -> move to dropped list
     else:
@@ -166,6 +203,8 @@ for each finding in workflowResult.reviewers[*].findings:
 ```
 
 `collapse_whitespace`: replace runs of whitespace (incl. newlines) with a single space, then trim.
+The Grep rescue applies only to single-line quotes (grep is line-based); a multi-line quote that
+fails the line±2 check is dropped as before.
 
 Codex (`adversarial-review --json`) returns a structured payload, parsed from
 `raw/codex-adversarial.json`:

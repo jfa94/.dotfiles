@@ -43,7 +43,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 ### Phase 1: Scope and context
 
-1. Run `git diff staging...HEAD` to see all changes (fall back to `git diff`)
+1. Review ONLY the scope provided in your prompt (the `Changed files` list + review input). Do NOT compute your own diff range
 2. Read `CLAUDE.md` for project-specific security requirements
 3. Identify the attack surface: what user input enters the system? What external data is consumed?
 
@@ -143,9 +143,17 @@ Classify findings by severity:
 - **MEDIUM** (P2): Vulnerability with limited impact or requiring specific conditions. Fix soon.
 - **LOW** (P3): Defense-in-depth improvement, best practice. Non-blocking.
 
+Set `verdict` to exactly one of:
+
+- **SECURE** — no findings
+- **CONDITIONAL** — findings, none CRITICAL
+- **BLOCKED** — at least one CRITICAL finding
+
+**Findings cap: ≤7.** Score candidates by exploitability × impact; report only the top 7, drop the tail.
+
 ## Verification Checklist (MUST pass before issuing the verdict)
 
-- [ ] Ran `git diff` and identified the actual scope of changes
+- [ ] Reviewed the provided scope (changed files + review input) end-to-end
 - [ ] For every CRITICAL/HIGH/MEDIUM finding, quoted the source line (file:line + verbatim text)
 - [ ] For every CRITICAL/HIGH/MEDIUM finding, quoted the sink line (file:line + verbatim text) OR marked "no sink reachable" and adjusted severity
 - [ ] For every auth-related finding, quoted both the auth check line AND the protected-access line and verified ordering
@@ -154,4 +162,3 @@ Classify findings by severity:
 - [ ] Did not duplicate findings already caught by Semgrep / eslint security rules
 
 Can't check every box? Drop the finding or mark NEEDS VERIFICATION. Do not ship the verdict.
-

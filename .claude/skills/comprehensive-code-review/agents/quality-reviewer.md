@@ -51,12 +51,11 @@ Violating the letter of these rules violates the spirit. No exceptions.
 **DO flag:**
 
 - Logic errors (off-by-one, wrong operator, inverted condition, swapped arguments)
-- Security vulnerabilities (injection, auth/authz bypass, secrets exposure, weak crypto, unvalidated trust boundary input)
-- Edge cases that WILL occur in production (empty/null input, race conditions, concurrent writes, network failures)
+- Edge cases that WILL occur in production (empty/null input, network failures)
+- Concurrency and async hazards (you OWN this dimension — see Phase 4)
 - Error handling gaps (errors swallowed silently, catch blocks that drop exceptions)
 - Cross-file impact (caller breakage, interface contract violations)
-- AI-specific anti-patterns (hallucinated APIs, copy-paste drift, tautological tests, over-abstraction, dead code)
-- Test quality issues (weak assertions, missing edge case coverage, unrealistic mocks)
+- AI-specific anti-patterns (hallucinated APIs, copy-paste drift, over-abstraction, dead code)
 
 **DO NOT flag:**
 
@@ -68,6 +67,8 @@ Violating the letter of these rules violates the spirit. No exceptions.
 - Lint violations (eslint handles this)
 - Anything already caught by the project's quality checks
 
+Security and test-coverage have dedicated specialist reviewers. If you stumble on a security or test issue while tracing, report it once (consolidation routes it to the owning category) — but do NOT run a dedicated security or test pass.
+
 ## Review Process
 
 ### Phase 1: Ground yourself
@@ -78,7 +79,7 @@ Violating the letter of these rules violates the spirit. No exceptions.
 
 ### Phase 2: Verify acceptance criteria (evidence-first)
 
-For each acceptance criterion in the task metadata:
+For each acceptance criterion in the task metadata (skip this phase if none provided):
 
 - Find the file:line that satisfies it (or prove it's missing)
 - Quote the code that implements it
@@ -96,25 +97,15 @@ Walk through each changed function with the PREMISE / EVIDENCE / TRACE / CONCLUS
 
 If you can't produce all four sections, the finding is not supported. Drop it.
 
-### Phase 4: Security focus
+### Phase 4: Concurrency and async correctness (you OWN this dimension)
 
-Apply extra scrutiny to:
+No other reviewer covers concurrency — it is the most systematically missed bug class. For each changed function that touches shared state or async flow, check:
 
-5. **Injection vectors** — SQL, command, XSS, SSRF, path traversal, prototype pollution. For each user-controlled input, trace whether it's sanitized or parameterized BEFORE reaching the dangerous sink. Quote both the sink and the sanitization (or prove it's missing).
-6. **Authentication & authorization** — are protected routes actually protected? Is the permission check BEFORE the data access, not after? Quote the check and the access site.
-7. **Secrets handling** — hardcoded credentials, tokens in logs, env vars leaked via error messages or response bodies
-8. **Cryptography** — are correct primitives used (bcrypt/argon2 for passwords, not MD5; HMAC for integrity; CSRNG for tokens)? Are keys stored securely?
-9. **Input validation at trust boundaries** — external API responses, file uploads, URL parameters, request bodies. Every trust boundary must have a validation site. Prove it exists or flag the gap.
-
-### Phase 5: Test quality review
-
-For each test file in the diff:
-
-- Does it test BEHAVIOR or just run code? (A test without meaningful assertions is worse than no test — it creates false confidence.)
-- Are assertions specific? `toBeDefined()` alone is almost never sufficient. Prefer `toBe`, `toEqual`, `toMatchObject`.
-- Does it cover the edge cases you identified in Phase 3?
-- Mutation-testing question: would the test fail if the implementation returned the wrong value / skipped the critical branch?
-- Are mocks realistic? Do mock responses match the actual API/DB shape?
+5. **Unawaited promises** — async calls whose results or errors are dropped (missing `await`, floating `.then`, fire-and-forget without error handling)
+6. **Check-then-act races (TOCTOU)** — a read that informs a later write without atomicity (existence checks before create, balance checks before debit, read-modify-write on shared records)
+7. **Shared mutable state** — module-level mutable variables, caches, or singletons written from concurrently-invocable paths without synchronization
+8. **Transaction isolation assumptions** — multi-statement DB sequences that assume serializability without an actual transaction (or with the wrong isolation level)
+9. **Re-entrancy** — event handlers, subscriptions, or callbacks that can fire again before the previous invocation completes
 
 ## Verification Checklist (MUST pass before emitting verdict)
 
@@ -124,6 +115,6 @@ For each test file in the diff:
 - [ ] No finding draws from general knowledge instead of the code in front of you
 - [ ] Total findings ≤ 7; tail dropped by likelihood × impact
 - [ ] `verdict` is exactly one of `APPROVED`, `REQUEST_CHANGES`, or `NEEDS_DISCUSSION`
-- [ ] When `verdict` is `APPROVED`, `findings` is an empty array `[]`
+- [ ] `REQUEST_CHANGES` only with ≥1 critical/important finding; `APPROVED` is legal with minor-only findings
 
 Can't check every box? Drop the unsupported findings, or mark NEEDS_DISCUSSION with the explicit question.

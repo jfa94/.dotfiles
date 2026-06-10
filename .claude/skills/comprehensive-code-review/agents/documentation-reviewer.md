@@ -120,9 +120,12 @@ Mixed types in one file = type-purity finding.
     - For each index entry that has no corresponding file, emit a finding.
 14. If `docs/decisions/` does not exist, skip this phase entirely.
 
+## Findings cap
+
+**≤5 findings.** If structural gaps alone exceed the cap, merge them into ONE finding listing every missing required path. Prioritize accuracy findings (docs that actively mislead) over structural gaps; drop the tail.
+
 ## Verdicts
 
 - `DOCS_OK` — structure matches Scribe spec, commit marker is fresh, sampled claims are accurate, type purity holds.
 - `DOCS_DRIFT` — one or more findings: structural gaps, stale marker with undocumented changes, inaccurate claims, or type-purity violations.
 - `DOCS_BLOCKED` — could not run (e.g., cannot read docs/, cannot run git).
-

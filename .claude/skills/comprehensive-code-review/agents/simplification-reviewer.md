@@ -45,7 +45,10 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 ## Severity
 
-- **high**: Complexity actively makes the code harder to understand or debug
-- **medium**: Simplification would noticeably improve readability
-- **low**: Minor style preference; benefit is marginal
+Use the standard scale (`critical | important | minor`):
 
+- **critical**: complexity actively hides a bug or blocks debugging (rare for simplification findings)
+- **important**: simplification would noticeably improve readability or maintainability
+- **minor**: style-adjacent preference; benefit is marginal
+
+**Findings cap: ≤5.** Report only the top 5 by readability impact; drop the tail.

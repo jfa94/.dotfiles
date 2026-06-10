@@ -1,11 +1,16 @@
 export const meta = {
   name: "comprehensive-review-fanout",
   description:
-    "Fan out specialist code reviewers in parallel; each is forced into one canonical findings schema. Persists the consolidated findings to a file the calling skill reads (the JS return value is not harvestable).",
+    "Fan out specialist code reviewers in parallel; adversarially verify critical/important findings with fresh refuter agents; persist the consolidated findings to a file the calling skill reads (the JS return value is not harvestable).",
   phases: [
     {
       title: "Review",
       detail: "one specialist reviewer agent per dimension, run concurrently",
+    },
+    {
+      title: "Verify",
+      detail:
+        "one fresh refuter agent per critical/important finding (claim + location only, no reasoning chain)",
     },
     {
       title: "Persist",
@@ -19,6 +24,9 @@ export const meta = {
 // bespoke JSON block + prose verdict fallback + STATUS line. The schema layer
 // validates and retries on mismatch, so `verbatim` length and severity enum are
 // enforced here rather than by hand-written parser rules downstream.
+// NOTE: the Verify stage annotates findings post-validation with `refuted` +
+// `refute_reason`; those fields are intentionally NOT in this schema (it
+// validates reviewer output, not the workflow's own annotations).
 const FINDINGS_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -47,12 +55,30 @@ const FINDINGS_SCHEMA = {
   },
 };
 
+const VERIFY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["refuted", "reason"],
+  properties: {
+    refuted: { type: "boolean" },
+    reason: { type: "string", minLength: 1 },
+  },
+};
+
+// Reviewers that audit current state rather than the change itself; sending
+// them the diff only dilutes their context (LLM detection degrades as
+// non-relevant context grows).
+const DIFFLESS_REVIEWERS = new Set(["documentation-reviewer"]);
+
 function buildPrompt(reviewer, ctx) {
   const specBlock = ctx.spec
     ? ["", "## Spec file: " + ctx.spec.path, "", ctx.spec.content, ""].join(
         "\n",
       )
     : "";
+  const reviewInput = DIFFLESS_REVIEWERS.has(reviewer.name)
+    ? "No diff provided for this role — audit the current state against the changed-files list above; Read files as needed."
+    : ctx.reviewInput;
   return [
     "You are the " + reviewer.name + " for a comprehensive code review.",
     "",
@@ -67,7 +93,7 @@ function buildPrompt(reviewer, ctx) {
     "Changed files:",
     ctx.changedFiles,
     "",
-    ctx.reviewInput,
+    reviewInput,
     "",
     "## Context",
     "- Repo root: " + ctx.repoRoot,
@@ -81,6 +107,32 @@ function buildPrompt(reviewer, ctx) {
   ].join("\n");
 }
 
+// Adversarial verification: the refuter sees only the claim + location — NOT
+// the reviewer's `why` reasoning chain — so it evaluates the claim on its own
+// terms instead of being anchored by the reviewer's argument.
+function buildVerifyPrompt(reviewerName, f) {
+  return [
+    "You are an adversarial verifier for ONE code-review finding. A " +
+      reviewerName +
+      " claims:",
+    "",
+    "- Title: " + f.title,
+    "- Severity: " + f.severity,
+    "- Location: " + f.file + ":" + f.line,
+    "- Quoted code: " + f.verbatim,
+    "",
+    "Your job is to REFUTE this claim if you can. Read " +
+      f.file +
+      " around line " +
+      f.line +
+      " and whatever code is needed to follow the claim (callers, callees, guards, types).",
+    "Look for: handling the reviewer missed, a misreading of the code, preconditions that make the issue impossible, or the claim describing intended/documented behavior.",
+    "",
+    "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
+    "If the claim stands, or you cannot find counter-evidence, set refuted=false and state in reason what you checked.",
+  ].join("\n");
+}
+
 // The Workflow runtime may hand `args` to the script as a JSON string rather
 // than a parsed object; normalize so the caller can pass args either way.
 const input = typeof args === "string" ? JSON.parse(args) : args || {};
@@ -91,32 +143,58 @@ if (reviewers.length === 0) {
   return { reviewers: [] };
 }
 
-phase("Review");
-const results = await parallel(
-  reviewers.map(
-    (r) => () =>
-      agent(buildPrompt(r, input), {
-        label: "review:" + r.name,
-        phase: "Review",
-        schema: FINDINGS_SCHEMA,
-      })
-        .then((res) =>
-          res
-            ? Object.assign({ name: r.name }, res)
-            : {
-                name: r.name,
-                status: "BLOCKED",
-                blocked_reason: "agent returned no output (skipped)",
-                findings: [],
-              },
-        )
-        .catch((e) => ({
-          name: r.name,
-          status: "BLOCKED",
-          blocked_reason: String((e && e.message) || e),
-          findings: [],
-        })),
-  ),
+// pipeline, not parallel: each reviewer's findings go to verification as soon
+// as that reviewer finishes — no barrier waiting on the slowest reviewer.
+const results = await pipeline(
+  reviewers,
+  (r) =>
+    agent(buildPrompt(r, input), {
+      label: "review:" + r.name,
+      phase: "Review",
+      schema: FINDINGS_SCHEMA,
+    })
+      .then((res) =>
+        res
+          ? Object.assign({ name: r.name }, res)
+          : {
+              name: r.name,
+              status: "BLOCKED",
+              blocked_reason: "agent returned no output (skipped)",
+              findings: [],
+            },
+      )
+      .catch((e) => ({
+        name: r.name,
+        status: "BLOCKED",
+        blocked_reason: String((e && e.message) || e),
+        findings: [],
+      })),
+  async (res) => {
+    if (!res || res.status !== "DONE") return res;
+    const toVerify = (res.findings || []).filter(
+      (f) => f.severity === "critical" || f.severity === "important",
+    );
+    if (toVerify.length === 0) return res;
+    const verdicts = await parallel(
+      toVerify.map(
+        (f) => () =>
+          agent(buildVerifyPrompt(res.name, f), {
+            label: "verify:" + res.name + ":" + f.file + ":" + f.line,
+            phase: "Verify",
+            schema: VERIFY_SCHEMA,
+          }),
+      ),
+    );
+    // A null verdict (verifier skipped/died) keeps the finding — verification
+    // failure must not silently delete a reviewer's finding.
+    verdicts.forEach((v, i) => {
+      if (v && v.refuted) {
+        toVerify[i].refuted = true;
+        toVerify[i].refute_reason = v.reason;
+      }
+    });
+    return res;
+  },
 );
 
 // Stamp the run's scope into the result so the skill can detect a stale file
@@ -133,7 +211,6 @@ const consolidated = {
 // Write) to persist the consolidated findings to a fixed path the skill reads.
 // Findings caps keep this payload small, so verbatim transcription is reliable;
 // the agent reads the file back to confirm it parses before returning.
-phase("Persist");
 const repoRoot = input.repoRoot || ".";
 const outPath =
   repoRoot + "/.comprehensive-code-review/raw/workflow-result.json";

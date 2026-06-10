@@ -3,8 +3,9 @@ name: comprehensive-code-review
 description: >
   Run a comprehensive code review using parallel specialist reviewers and a Codex adversarial
   review. Covers architecture, security, quality, tests, types, comments, simplification,
-  silent failures, documentation, and optionally implementation-vs-spec. Consolidates all
-  findings into a single standardized report with verified file:line citations.
+  silent failures, documentation, and optionally implementation-vs-spec. Every critical and
+  important finding is adversarially verified by a fresh refuter agent before it can ship.
+  Consolidates all findings into a single deduplicated report with verified file:line citations.
   Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>]
 argument-hint: "[--base <ref>] [--full] [--spec <path>]"
 ---
@@ -12,10 +13,11 @@ argument-hint: "[--base <ref>] [--full] [--spec <path>]"
 # Comprehensive Code Review
 
 You are the orchestrator for a comprehensive, multi-dimensional code review. You dispatch the
-specialist reviewers through a **Workflow** (which forces every reviewer into one findings schema and
-writes the consolidated result to a file), run **Codex** as a concurrent backgrounded Bash job whose
-scope mirrors the reviewers (bounded only under `--full`), verify every finding has a real file:line
-citation, group results by category, and emit one consolidated report.
+specialist reviewers through a **Workflow** (which forces every reviewer into one findings schema,
+adversarially verifies every critical/important finding with a fresh refuter agent, and writes the
+consolidated result to a file), run **Codex** as a concurrent backgrounded Bash job whose scope
+mirrors the reviewers (bounded only under `--full`), verify every finding has a real file:line
+citation, dedup across reviewers, group results by category, and emit one consolidated report.
 
 Read `references/workflow-and-codex.md` and `references/report-format.md` (in this skill's
 directory) before proceeding — they define the workflow contract, the findings schema, the Codex
@@ -54,6 +56,8 @@ target-resolution table, and the output format.
 | "I'll harvest the Workflow's return value"   | No. Read .comprehensive-code-review/raw/workflow-result.json instead.              |
 | "--full, so I'll build a root..HEAD diff"    | No. --full sends agents the file inventory; they Read files.                       |
 | "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                     |
+| "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.          |
+| "Same issue from 3 reviewers = 3 findings"   | Dedup first (Phase 8). Merge, keep highest severity, annotate "Also flagged by".   |
 
 ## Additional review dimensions (cross-cutting)
 
@@ -68,7 +72,8 @@ reviewer surfaces them):
 - **Semantic duplication**: near-identical logic blocks that differ by one token (AST clones)
 - **Hotspot/churn risk**: high-churn files with diffuse ownership (flag if CODEOWNERS absent)
 - **Test pyramid health**: too many unit tests on implementation details, too few integration tests
-- **Diff reviewability**: PRs >400 lines are harder to review meaningfully; note if applicable
+- **Diff reviewability**: detection degrades past ~400 lines; the skill truncates at 2000 (Phase 1) —
+  when a diff blows past either bound, note it and recommend splitting into chunked `--base` runs
 
 ---
 
@@ -79,9 +84,12 @@ Parse the skill arguments (from `$ARGUMENTS`):
 ```
 --base <ref>   → mode = "base";  scope = git diff <ref>...HEAD
 --full         → mode = "full";  scope = ENTIRE CODEBASE, current state
-(no args)      → mode = "working-tree"; scope = git diff (working tree vs HEAD)
+(no args)      → mode = "working-tree"; scope = git diff HEAD (staged + unstaged) + untracked files
 --spec <path>  → path to spec file for implementation-reviewer
 ```
+
+`--base <ref>` + `--full` together: mode = "full" for the agents (entire codebase), and `<ref>`
+replaces `HEAD~10` as the Codex window (Phase 3's `--base` branch already does this).
 
 Build `reviewInput` + `changedFiles` per mode:
 
@@ -91,16 +99,24 @@ CHANGED_FILES=$(git ls-files)
 # reviewInput = "Review the ENTIRE codebase at its current committed state. Use Read/Grep/Glob to
 #   open and inspect the actual files listed under 'Changed files' above. Do NOT expect a diff."
 # Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: no tracked files." STATUS: DONE. Stop.
+# Hotspot priority: agents cannot read everything — rank by churn so coverage is deliberate:
+HOTSPOTS=$(git log --since="12 months ago" --format= --name-only | sort | uniq -c | sort -rn | head -20)
+# Append to reviewInput: "Prioritize these high-churn hotspot files (defect density concentrates
+#   in churn): <HOTSPOTS>. Cover hotspots first, then sample the rest."
+# Note in the report's Scope section that --full coverage is hotspot-prioritized sampling, not exhaustive.
 
 # mode = base
 CHANGED_FILES=$(git diff --name-only <ref>...HEAD)
-# reviewInput = the diff (git diff <ref>...HEAD), truncated at 8000 lines per the reference.
+# reviewInput = the diff (git diff <ref>...HEAD), truncated at 2000 lines per the reference.
+# Empty guard: if diff empty -> print "Nothing to review: no changes vs <ref>." STATUS: DONE. Stop.
 
 # mode = working-tree
-CHANGED_FILES=$(git diff --name-only)
-# reviewInput = the diff (git diff), truncated at 8000 lines.
-# Empty guard: if diff empty AND working tree clean -> print "Nothing to review: working tree is
-#   clean and no --base was specified." STATUS: DONE. Stop.
+CHANGED_FILES=$( { git diff HEAD --name-only; git ls-files --others --exclude-standard; } | sort -u )
+# reviewInput = the diff (git diff HEAD — staged + unstaged; bare `git diff` misses staged changes),
+#   truncated at 2000 lines per the reference. Untracked files carry no diff hunks — append to
+#   reviewInput: "Untracked files in the changed-files list have no diff; Read them directly."
+# Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: working tree matches HEAD
+#   and no untracked files." STATUS: DONE. Stop.
 ```
 
 Read the 10 reviewer agent files (`agents/<name>.md`) into the `reviewers` array as
@@ -239,9 +255,15 @@ references parsed from `payload.rawOutput`:
 
 For every finding from every reviewer (per the pseudocode in `references/workflow-and-codex.md`):
 
+0. If the finding carries `refuted: true` (the workflow's adversarial Verify stage disproved it) →
+   move to Dropped Findings as `refuted`, recording `refute_reason`. Never resurrect a refuted
+   finding, however right it looks.
 1. Require `file`, `line`, `verbatim` (>=5 chars) — else drop (`dropped_no_citation` / `dropped_quote_too_short`).
 2. Read the file at `line ±2`, collapse whitespace on both quote and content, and require the quote
-   to be a substring — else drop (`dropped_no_match`).
+   to be a substring. On miss, rescue single-line quotes before dropping: Grep the file for the
+   fixed-string trimmed quote — exactly 1 matching line → correct `line` and keep as `relocated_ok`
+   (line-number drift is the canonical LLM citation failure); 0 or >1 matches, or a multi-line
+   quote → drop (`dropped_no_match`).
 
 Collect dropped findings into the "Dropped Findings" list. Codex's structured findings carry no
 `verbatim` (the review schema has no quote field), so they are existence-checked, not quote-verified:
@@ -258,24 +280,28 @@ never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), ex
    `.comprehensive-code-review/raw/codex-adversarial.json` (written in Phase 5); render a human-readable
    `.comprehensive-code-review/raw/codex-adversarial-<UTC-iso>.md` from it (verdict, summary, findings,
    `next_steps`) for parity with the other reviewers' `.md` files.
-3. Categorize each verified finding per `references/report-format.md`.
-4. Map severity per the table in `references/report-format.md` (Codex's `critical|high|medium|low` map
+3. **Dedup across reviewers** (overlapping mandates guarantee duplicates): two verified findings
+   merge when they cite the same file AND (lines within ±3 OR identical collapsed verbatim). Keep
+   the primary reviewer's finding at the highest severity of the group; list the others under
+   `also_flagged_by`. All counts below are post-dedup.
+4. Categorize each verified finding per `references/report-format.md`.
+5. Map severity per the table in `references/report-format.md` (Codex's `critical|high|medium|low` map
    to `critical|important|important|minor`; keep the native severity + `confidence` on each rendered
    Codex finding so the 4→3 collapse loses no signal).
-5. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by
+6. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by
    severity DESC, then `confidence` DESC, then file ASC (confidence orders, never filters).
-6. Write the consolidated report to `.comprehensive-code-review/report-<UTC-iso>.md` using the
+7. Write the consolidated report to `.comprehensive-code-review/report-<UTC-iso>.md` using the
    skeleton in `references/report-format.md`. In the Scope section, note the agent vs. Codex scope
    when mode = full.
-7. Print the summary:
+8. Print the summary:
 
    ```
    ## Comprehensive Code Review complete
 
    Report: .comprehensive-code-review/report-<ts>.md
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
-   Findings: <total> verified (<n> critical, <n> important, <n> minor)
-   Dropped: <n> (citation unverifiable)
+   Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
+   Dropped: <n> (<n> citation-unverifiable, <n> refuted)
    ```
 
 ## Phase 9 — STATUS line

@@ -58,3 +58,12 @@ When analyzing a type, you will:
    - Is it impossible to create invalid instances?
    - Are runtime checks appropriate and comprehensive?
 
+## Severity mapping & cap
+
+The 1-10 ratings are your analysis tool; each reported finding uses the standard scale (`critical | important | minor`):
+
+- **critical** — the type admits an invalid state that corrupts data or breaks a production invariant
+- **important** — invariants exist but are unenforced (invalid construction or unguarded mutation is possible)
+- **minor** — expressiveness or documentation-of-intent improvements
+
+**Findings cap: ≤5.** Report only the top 5 by invariant impact; drop the tail.

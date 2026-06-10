@@ -59,3 +59,8 @@ Violating the letter of this rule violates the spirit. No exceptions.
 - 3-4: Nice-to-have coverage for completeness
 - 1-2: Minor improvements that are optional
 
+## Severity mapping & cap
+
+The 1-10 criticality rating is your analysis tool; each reported finding uses the standard scale: 9-10 → `critical`, 7-8 → `important`, ≤6 → `minor`.
+
+**Findings cap: ≤5.** Report only the top 5 gaps by criticality; drop the tail.

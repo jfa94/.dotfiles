@@ -34,29 +34,37 @@
 - Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~10...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
 - Files reviewed: <N>
 - Lines changed: +<M> -<K> (omit for --full)
+- Coverage note: <only when applicable — `--full`: "hotspot-prioritized sampling, not exhaustive";
+  diff modes with >2000-line diff: "diff truncated to first 2000 lines; recommend chunked --base runs">
 
 ## Reviewers
 
-| Reviewer          | Status                       | Verdict                         | Findings |
-| ----------------- | ---------------------------- | ------------------------------- | -------- |
-| architecture      | DONE                         | APPROVE/WARNING/VIOLATION       | <n>      |
-| quality           | DONE                         | APPROVED/REQUEST_CHANGES        | <n>      |
-| security          | DONE                         | SECURE/CONDITIONAL/BLOCKED      | <n>      |
-| implementation    | SKIPPED — no --spec provided | —                               | —        |
-| silent-failures   | DONE                         | —                               | <n>      |
-| test-coverage     | DONE                         | —                               | <n>      |
-| type-design       | DONE                         | —                               | <n>      |
-| comment-accuracy  | DONE                         | —                               | <n>      |
-| simplification    | DONE                         | —                               | <n>      |
-| documentation     | DONE                         | DOCS_OK/DOCS_DRIFT/DOCS_BLOCKED | <n>      |
-| codex-adversarial | DONE/SKIPPED/BLOCKED         | APPROVE/NEEDS-ATTENTION         | <n>      |
+| Reviewer          | Status                       | Verdict                                   | Findings |
+| ----------------- | ---------------------------- | ----------------------------------------- | -------- |
+| architecture      | DONE                         | APPROVE/WARNING/VIOLATION                 | <n>      |
+| quality           | DONE                         | APPROVED/REQUEST_CHANGES/NEEDS_DISCUSSION | <n>      |
+| security          | DONE                         | SECURE/CONDITIONAL/BLOCKED                | <n>      |
+| implementation    | SKIPPED — no --spec provided | —                                         | —        |
+| silent-failures   | DONE                         | —                                         | <n>      |
+| test-coverage     | DONE                         | —                                         | <n>      |
+| type-design       | DONE                         | —                                         | <n>      |
+| comment-accuracy  | DONE                         | —                                         | <n>      |
+| simplification    | DONE                         | —                                         | <n>      |
+| documentation     | DONE                         | DOCS_OK/DOCS_DRIFT/DOCS_BLOCKED           | <n>      |
+| codex-adversarial | DONE/SKIPPED/BLOCKED         | APPROVE/NEEDS-ATTENTION                   | <n>      |
 
 _(codex-adversarial Verdict gets the suffix `(degraded — narrative fallback)` when DONE via the degraded
 path — see the Adversarial-Codex note below.)_
 
 ## Summary
 
-**Total findings: <N>**
+**Overall: SHIP | NEEDS-CHANGES | INCOMPLETE**
+
+_(deterministic rule — INCOMPLETE: ≥1 reviewer track BLOCKED (judge from what completed; name the
+missing tracks). NEEDS-CHANGES: ≥1 verified critical finding, OR security verdict BLOCKED, OR
+architecture verdict VIOLATION, OR quality verdict REQUEST_CHANGES. SHIP: none of the above.)_
+
+**Total findings: <N>** _(post-dedup; <n> duplicates merged across reviewers)_
 
 - critical: <n>
 - important: <n>
@@ -77,6 +85,11 @@ By category:
 - Adversarial-Codex: <n>
 - Other: <n>
 
+## Themes
+
+_(≤3 bullets; only when ≥2 verified findings share a root cause — name the root cause and list the
+finding titles it explains. Omit the section when no shared root cause exists.)_
+
 ---
 
 ## Findings by Category
@@ -91,6 +104,7 @@ _(sorted severity DESC, then file ASC within each category)_
 - **Quote**: `<verbatim ≥5 chars>`
 - **Why**: <reasoning from reviewer output>
 - **Fix sketch**: <one sentence>
+- **Also flagged by**: <other reviewers, only when the finding was deduped across reviewers — omit otherwise>
 
 ---
 
@@ -161,11 +175,23 @@ _(findings that don't fit above categories — reviewer name preserved)_
 
 ## Dropped Findings
 
-_(findings that failed citation verification — listed for transparency)_
+_(findings that failed citation verification or were adversarially refuted — listed for
+transparency. `refuted` rows include the refuter's counter-evidence so they can be audited, but
+refuted findings are never resurrected into the report body.)_
 
-| Reviewer | Claimed file:line | Verbatim   | Drop reason                    |
-| -------- | ----------------- | ---------- | ------------------------------ |
-| quality  | src/foo.ts:42     | `someText` | verification: dropped_no_match |
+| Reviewer | Claimed file:line | Verbatim   | Drop reason                             |
+| -------- | ----------------- | ---------- | --------------------------------------- |
+| quality  | src/foo.ts:42     | `someText` | verification: dropped_no_match          |
+| security | src/bar.ts:10     | `getUser(` | verification: refuted — <refute_reason> |
+
+---
+
+## Not Covered
+
+This review is static analysis by LLM reviewers. It does NOT cover: runtime performance/profiling,
+timing-dependent concurrency races (only statically-visible async/shared-state hazards are checked),
+database migration & rollback safety, dead code reachable only via dynamic dispatch/reflection, and
+cross-repo/external API contract compatibility. Absence of findings here is not evidence of absence.
 
 ---
 
@@ -205,9 +231,16 @@ the 4→3 collapse loses no signal.
   "fix_sketch": "<one sentence>",
   "confidence": "<0-1; Codex findings only>",
   "codex_severity": "<critical|high|medium|low; Codex findings only, native level pre-mapping>",
-  "verification": "ok|dropped_no_match|dropped_no_citation|dropped_quote_too_short|codex_file_missing|codex_line_out_of_range"
+  "also_flagged_by": [
+    "<reviewer names; only on findings deduped across reviewers>"
+  ],
+  "refute_reason": "<refuter counter-evidence; only when verification is refuted>",
+  "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|codex_file_missing|codex_line_out_of_range"
 }
 ```
+
+`relocated_ok` = the quote did not match at the claimed line but was found at exactly one other line
+in the file (line-number drift); the finding is kept with the corrected line.
 
 ## Category assignment rules
 

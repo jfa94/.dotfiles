@@ -47,7 +47,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 1. Read `.dependency-cruiser.cjs` or `.dependency-cruiser.mjs` to understand declared boundary rules (if present)
 2. Read `eslint.config.mjs` for any eslint-plugin-boundaries configuration (if present)
 3. Read `CLAUDE.md` and any architecture documentation
-4. Run `git diff staging...HEAD --name-only` to understand scope of changes (fall back to `git diff --name-only` if no staging branch)
+4. Review ONLY the scope provided in your prompt (the `Changed files` list + review input). Do NOT compute your own diff range
 
 ### Phase 2: Automated fitness checks
 
@@ -61,7 +61,7 @@ Run these checks and capture output:
 
 For each changed file, check:
 
-8. **Layer violations** -- verify imports follow the dependency direction. Quote the offending import line for any violation:
+8. **Layer violations** -- verify imports follow the project's dependency direction. Derive the actual layers from the boundary config, CLAUDE.md, or docs read in Phase 1 — the diagram below is an EXAMPLE of a typical frontend layering, not a universal rule. Quote the offending import line for any violation:
 
    ```
    components/ -> hooks/ -> services/ -> domain/
@@ -70,10 +70,7 @@ For each changed file, check:
    domain/ -> NOTHING (zero external deps)
    ```
 
-9. **God object detection** -- flag files that:
-   - Exceed 300 lines (warn) or 500 lines (error)
-   - Export more than 15 symbols
-   - Mix multiple responsibilities (e.g., data fetching + UI rendering + business logic) — cite the specific imports/exports that prove the mix
+9. **God object detection** -- size and export count are SIGNALS to investigate, never findings by themselves (see Red Flags). Investigate files exceeding ~300 lines or exporting more than 15 symbols; flag ONLY when you can cite the specific imports/exports that prove mixed responsibilities (e.g., data fetching + UI rendering + business logic)
 
 10. **Coupling analysis** -- for each changed module, check:
     - Afferent coupling (Ca): how many modules depend on it
@@ -111,6 +108,14 @@ Rate each category:
 - **Structural integrity**: PASS / WARNING / VIOLATION
 - **Dependency hygiene**: PASS / WARNING / VIOLATION
 
+Set `verdict` to exactly one of:
+
+- **APPROVE** — all categories PASS
+- **WARNING** — at least one WARNING, no VIOLATION
+- **VIOLATION** — at least one VIOLATION
+
+**Findings cap: ≤5.** Score candidates by likelihood × impact; report only the top 5, drop the tail.
+
 ## Verification Checklist (MUST pass before issuing the verdict)
 
 - [ ] Read declared boundary config (dependency-cruiser, eslint-plugin-boundaries) if present
@@ -122,4 +127,3 @@ Rate each category:
 - [ ] No finding without quoted code evidence
 
 Can't check every box? Drop the finding or downgrade. Do not ship the verdict.
-

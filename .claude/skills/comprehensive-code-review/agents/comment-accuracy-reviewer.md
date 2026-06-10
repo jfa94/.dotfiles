@@ -57,3 +57,6 @@ When analyzing comments, you will:
    - Recommendations for additional context where needed
    - Clear rationale for why comments should be removed
 
+## Findings cap
+
+**≤5 findings.** Prioritize comments that actively mislead (wrong behavior claims) over stale-but-harmless ones; drop the tail.
