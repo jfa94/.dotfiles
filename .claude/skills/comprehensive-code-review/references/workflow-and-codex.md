@@ -154,23 +154,82 @@ Codex.)
 
 ## 5. Diff size management (base / working-tree modes only)
 
-`--full` sends no diff (agents Read files themselves). For `--base` and working-tree modes, build the
-diff and truncate at 2000 lines — LLM review detection degrades as context grows, and every line is
-duplicated into all ~10 reviewer prompts:
+`--full` sends no diff (agents Read files themselves). For `--base` and working-tree modes, the
+2000-line number is a **mode switch, not a cut point** — nothing is ever truncated. LLM review
+detection degrades as context grows and every diff line is duplicated into all ~10 reviewer prompts,
+so a large diff is moved out of the prompt and onto disk rather than discarded:
 
 ```bash
-git diff <range> 2>/dev/null | wc -l         # total lines
+git diff <range> 2>/dev/null | wc -l         # total lines decide the mode
 ```
 
 Working-tree mode diffs with `git diff HEAD` (staged + unstaged — bare `git diff` misses staged
 changes) and appends untracked files (`git ls-files --others --exclude-standard`) to `changedFiles`;
 untracked files carry no diff hunks, so note in `reviewInput` that agents must Read them directly.
+Always pass the complete `changedFiles` list in every mode.
 
-If the diff exceeds 2000 lines, truncate `reviewInput` to the first 2000 and prepend:
-`[TRUNCATED: diff is <N> lines; showing first 2000. All changed files listed above — Read the rest
-directly. Large diffs review poorly; recommend splitting into chunked --base runs.]`
-Always pass the complete `changedFiles` list even when the diff is truncated, and surface the
-truncation + chunked-runs recommendation in the report's Scope section.
+### Inline mode — diff ≤ 2000 lines
+
+`reviewInput` is the diff text itself (unchanged behavior). No artifact, no manifest, no extra tool
+calls. This is the common case and must stay byte-for-byte as it was.
+
+### Manifest mode — diff > 2000 lines
+
+Reviewers mirror what Codex already does (§3, self-collect): they get a pointer to the **complete**
+diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
+
+1. **Write the full diff to disk, once:**
+
+   ```bash
+   git diff <range> > .comprehensive-code-review/raw/full-diff.patch     # never truncated
+   ```
+
+   (base: `<range>` = `<ref>...HEAD`; working-tree: `<range>` = `HEAD`.)
+
+2. **Build a per-file line index into the patch** (start line of each file's section), so a reviewer
+   can page the patch deterministically with Read offset/limit:
+
+   ```bash
+   grep -n '^diff --git' .comprehensive-code-review/raw/full-diff.patch   # "line:diff --git a/<f> b/<f>"
+   ```
+
+3. **Rank the changed files by risk** (so highest-risk content is read first; this is what removes the
+   old filename-ordered arbitrariness). Sort by these three signals, in order:
+   - **Security-sensitive path/name match** — a path matching the documented glob list
+     (`auth`, `login`, `session`, `password`, `secret`, `token`, `crypto`, `payment`, `billing`,
+     `sql`/`query`, `exec`, `deserialize`). Keep the list minimal.
+   - **Churn** — reuse `--full`'s hotspot computation
+     (`git log --since="12 months ago" --format= --name-only | sort | uniq -c | sort -rn`).
+   - **Change size** — `+adds`/`−dels` per file (`git diff --numstat <range>`).
+
+4. **Set `reviewInput`** to an instruction block + the risk-ranked manifest table (NOT diff text):
+
+   ```
+   The complete diff is at <repoRoot>/.comprehensive-code-review/raw/full-diff.patch (<N> lines).
+   Read ALL of it before reviewing — page through it with Read offset/limit using the per-file line
+   index below. The manifest is a reading order, not a substitute for the diff.
+
+   | risk | file | +/− | patch line |
+   | ---- | ---- | --- | ---------- |
+   | sec  | api/auth/session.ts | +120/−4 | 1 |
+   | churn| billing/charge.ts   | +60/−12 | 540 |
+   | ...  | ...                 | ...     | ... |
+   ```
+
+**Pathological fallback (disclose-and-proceed):** if a diff is so large a single reviewer cannot read
+it all within its context, the risk ordering guarantees the highest-risk content is read first. This
+is the ONLY place sampling survives, and it is now risk-ranked, not filename-ordered. Surface the
+partial-coverage caveat explicitly in the report's Scope section. (Auto-chunking the panel is a
+future v2.)
+
+**Report disclosure (Scope section):** note that manifest mode was used, the `full-diff.patch` path,
+that reviewers were instructed to read all of it in risk order, and any pathological partial-coverage
+caveat. The old "split into chunked `--base` runs" line is optional advice now, not a required
+remediation.
+
+The workflow script forwards `reviewInput` verbatim into each reviewer prompt (`buildPrompt`), so the
+manifest needs no script change; `DIFFLESS_REVIEWERS` (documentation-reviewer) still get the
+changed-files list only.
 
 ## 6. Citation verification pseudocode (main session, deterministic)
 

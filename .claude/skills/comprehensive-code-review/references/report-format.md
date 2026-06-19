@@ -35,7 +35,9 @@
 - Files reviewed: <N>
 - Lines changed: +<M> -<K> (omit for --full)
 - Coverage note: <only when applicable — `--full`: "hotspot-prioritized sampling, not exhaustive";
-  diff modes with >2000-line diff: "diff truncated to first 2000 lines; recommend chunked --base runs">
+  diff modes with >2000-line diff: "manifest mode: full diff at .comprehensive-code-review/raw/full-diff.patch,
+  reviewers instructed to read all of it in risk order"; add "partial coverage — diff exceeds a single
+  reviewer's context, highest-risk files prioritized" only if the pathological fallback triggered>
 
 ## Reviewers
 

@@ -72,8 +72,9 @@ reviewer surfaces them):
 - **Semantic duplication**: near-identical logic blocks that differ by one token (AST clones)
 - **Hotspot/churn risk**: high-churn files with diffuse ownership (flag if CODEOWNERS absent)
 - **Test pyramid health**: too many unit tests on implementation details, too few integration tests
-- **Diff reviewability**: detection degrades past ~400 lines; the skill truncates at 2000 (Phase 1) —
-  when a diff blows past either bound, note it and recommend splitting into chunked `--base` runs
+- **Diff reviewability**: detection degrades past ~400 lines; at 2000 lines the skill switches from
+  inline diff to manifest mode (full diff on disk + risk-ordered read-all, never truncated — Phase 1) —
+  note the switch in Scope, and disclose any pathological partial coverage
 
 ---
 
@@ -107,13 +108,15 @@ HOTSPOTS=$(git log --since="12 months ago" --format= --name-only | sort | uniq -
 
 # mode = base
 CHANGED_FILES=$(git diff --name-only <ref>...HEAD)
-# reviewInput = the diff (git diff <ref>...HEAD), truncated at 2000 lines per the reference.
+# reviewInput = the diff (git diff <ref>...HEAD). Diff <=2000 lines -> inline it; >2000 lines ->
+#   manifest mode (write full-diff.patch + risk-ranked manifest, never truncated) per the reference.
 # Empty guard: if diff empty -> print "Nothing to review: no changes vs <ref>." STATUS: DONE. Stop.
 
 # mode = working-tree
 CHANGED_FILES=$( { git diff HEAD --name-only; git ls-files --others --exclude-standard; } | sort -u )
-# reviewInput = the diff (git diff HEAD — staged + unstaged; bare `git diff` misses staged changes),
-#   truncated at 2000 lines per the reference. Untracked files carry no diff hunks — append to
+# reviewInput = the diff (git diff HEAD — staged + unstaged; bare `git diff` misses staged changes).
+#   Diff <=2000 lines -> inline it; >2000 lines -> manifest mode per the reference (never truncated).
+#   Untracked files carry no diff hunks — append to
 #   reviewInput: "Untracked files in the changed-files list have no diff; Read them directly."
 # Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: working tree matches HEAD
 #   and no untracked files." STATUS: DONE. Stop.
