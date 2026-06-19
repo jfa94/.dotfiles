@@ -92,34 +92,58 @@ Parse the skill arguments (from `$ARGUMENTS`):
 `--base <ref>` + `--full` together: mode = "full" for the agents (entire codebase), and `<ref>`
 replaces `HEAD~10` as the Codex window (Phase 3's `--base` branch already does this).
 
-Build `reviewInput` + `changedFiles` per mode:
+Build `reviewInput` + `changedFiles` per mode.
+
+**Build-output exclusion.** Generated/minified output (committed or untracked) is skipped so
+reviewers see only hand-written code. Define `EXCLUDES` once and append `-- . "${EXCLUDES[@]}"`
+to _every_ file/diff gathering command below (full / base / working-tree, inline and manifest).
+The positive `.` is required so the exclude-only pathspecs resolve against the whole repo;
+`top`+`glob` anchoring catches nested monorepo paths (`packages/x/dist/…`), not just repo-root.
+This same list is reused by the manifest commands in `references/workflow-and-codex.md` §5 and
+as the Phase 7 drop predicate. Edit this list to change what review skips:
+
+```bash
+EXCLUDES=(
+  ':(top,exclude,glob)**/dist/**'
+  ':(top,exclude,glob)**/build/**'
+  ':(top,exclude,glob)**/out/**'
+  ':(top,exclude,glob)**/.next/**'
+  ':(top,exclude,glob)**/.nuxt/**'
+  ':(top,exclude,glob)**/.svelte-kit/**'
+  ':(top,exclude,glob)**/.output/**'
+  ':(top,exclude,glob)**/coverage/**'
+  ':(top,exclude,glob)**/*.min.js'
+  ':(top,exclude,glob)**/*.min.css'
+  ':(top,exclude,glob)**/*.map'
+)
+```
 
 ```bash
 # mode = full  → agents Read files themselves; send the inventory, not a diff
-CHANGED_FILES=$(git ls-files)
+CHANGED_FILES=$(git ls-files -- . "${EXCLUDES[@]}")
 # reviewInput = "Review the ENTIRE codebase at its current committed state. Use Read/Grep/Glob to
 #   open and inspect the actual files listed under 'Changed files' above. Do NOT expect a diff."
-# Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: no tracked files." STATUS: DONE. Stop.
+# Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: no tracked files (build outputs excluded)." STATUS: DONE. Stop.
 # Hotspot priority: agents cannot read everything — rank by churn so coverage is deliberate:
-HOTSPOTS=$(git log --since="12 months ago" --format= --name-only | sort | uniq -c | sort -rn | head -20)
+HOTSPOTS=$(git log --since="12 months ago" --format= --name-only -- . "${EXCLUDES[@]}" | sort | uniq -c | sort -rn | head -20)
 # Append to reviewInput: "Prioritize these high-churn hotspot files (defect density concentrates
 #   in churn): <HOTSPOTS>. Cover hotspots first, then sample the rest."
 # Note in the report's Scope section that --full coverage is hotspot-prioritized sampling, not exhaustive.
 
 # mode = base
-CHANGED_FILES=$(git diff --name-only <ref>...HEAD)
-# reviewInput = the diff (git diff <ref>...HEAD). Diff <=2000 lines -> inline it; >2000 lines ->
-#   manifest mode (write full-diff.patch + risk-ranked manifest, never truncated) per the reference.
-# Empty guard: if diff empty -> print "Nothing to review: no changes vs <ref>." STATUS: DONE. Stop.
+CHANGED_FILES=$(git diff --name-only <ref>...HEAD -- . "${EXCLUDES[@]}")
+# reviewInput = the diff (git diff <ref>...HEAD -- . "${EXCLUDES[@]}"). Diff <=2000 lines -> inline it;
+#   >2000 lines -> manifest mode (write full-diff.patch + risk-ranked manifest, never truncated) per the reference.
+# Empty guard: if diff empty -> print "Nothing to review: no changes vs <ref> (build outputs excluded)." STATUS: DONE. Stop.
 
 # mode = working-tree
-CHANGED_FILES=$( { git diff HEAD --name-only; git ls-files --others --exclude-standard; } | sort -u )
-# reviewInput = the diff (git diff HEAD — staged + unstaged; bare `git diff` misses staged changes).
+CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files --others --exclude-standard -- . "${EXCLUDES[@]}"; } | sort -u )
+# reviewInput = the diff (git diff HEAD -- . "${EXCLUDES[@]}" — staged + unstaged; bare `git diff` misses staged changes).
 #   Diff <=2000 lines -> inline it; >2000 lines -> manifest mode per the reference (never truncated).
 #   Untracked files carry no diff hunks — append to
 #   reviewInput: "Untracked files in the changed-files list have no diff; Read them directly."
 # Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: working tree matches HEAD
-#   and no untracked files." STATUS: DONE. Stop.
+#   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
 Read the 10 reviewer agent files (`agents/<name>.md`) into the `reviewers` array as
@@ -256,7 +280,14 @@ references parsed from `payload.rawOutput`:
 
 ## Phase 7 — Citation Verification (deterministic)
 
-For every finding from every reviewer (per the pseudocode in `references/workflow-and-codex.md`):
+**First, drop excluded build output (every track, incl. Codex).** If a finding's `file` matches
+the Phase 1 `EXCLUDES` set — a path segment of `dist/`, `build/`, `out/`, `.next/`, `.nuxt/`,
+`.svelte-kit/`, `.output/`, or `coverage/`, or a name ending in `.min.js`, `.min.css`, or `.map`
+— move it to Dropped Findings as `dropped_excluded_build_output`. Workflow reviewers never see
+these files (their input is filtered upstream); this backstops Codex, which self-collects its
+own diff and cannot honor the pathspecs.
+
+Then, for every surviving finding from every reviewer (per the pseudocode in `references/workflow-and-codex.md`):
 
 0. If the finding carries `refuted: true` (the workflow's adversarial Verify stage disproved it) →
    move to Dropped Findings as `refuted`, recording `refute_reason`. Never resurrect a refuted
@@ -294,8 +325,8 @@ never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), ex
 6. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by
    severity DESC, then `confidence` DESC, then file ASC (confidence orders, never filters).
 7. Write the consolidated report to `.comprehensive-code-review/report-<UTC-iso>.md` using the
-   skeleton in `references/report-format.md`. In the Scope section, note the agent vs. Codex scope
-   when mode = full.
+   skeleton in `references/report-format.md`. In the Scope section, list the excluded
+   build-output patterns (Phase 1 `EXCLUDES`), and note the agent vs. Codex scope when mode = full.
 8. Print the summary:
 
    ```
@@ -304,7 +335,7 @@ never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), ex
    Report: .comprehensive-code-review/report-<ts>.md
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
-   Dropped: <n> (<n> citation-unverifiable, <n> refuted)
+   Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    ```
 
 ## Phase 9 — STATUS line

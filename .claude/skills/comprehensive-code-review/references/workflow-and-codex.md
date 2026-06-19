@@ -160,11 +160,16 @@ detection degrades as context grows and every diff line is duplicated into all ~
 so a large diff is moved out of the prompt and onto disk rather than discarded:
 
 ```bash
-git diff <range> 2>/dev/null | wc -l         # total lines decide the mode
+git diff <range> -- . "${EXCLUDES[@]}" 2>/dev/null | wc -l   # total lines decide the mode
 ```
 
-Working-tree mode diffs with `git diff HEAD` (staged + unstaged — bare `git diff` misses staged
-changes) and appends untracked files (`git ls-files --others --exclude-standard`) to `changedFiles`;
+`EXCLUDES` is the build-output pathspec list defined in `SKILL.md` Phase 1 — it must be in
+scope here. Every diff command in this section carries `-- . "${EXCLUDES[@]}"` so the
+mode-switch count, the on-disk patch, and the risk ranking all reflect the filtered set.
+
+Working-tree mode diffs with `git diff HEAD -- . "${EXCLUDES[@]}"` (staged + unstaged — bare
+`git diff` misses staged changes) and appends untracked files
+(`git ls-files --others --exclude-standard -- . "${EXCLUDES[@]}"`) to `changedFiles`;
 untracked files carry no diff hunks, so note in `reviewInput` that agents must Read them directly.
 Always pass the complete `changedFiles` list in every mode.
 
@@ -181,7 +186,7 @@ diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
 1. **Write the full diff to disk, once:**
 
    ```bash
-   git diff <range> > .comprehensive-code-review/raw/full-diff.patch     # never truncated
+   git diff <range> -- . "${EXCLUDES[@]}" > .comprehensive-code-review/raw/full-diff.patch   # never truncated
    ```
 
    (base: `<range>` = `<ref>...HEAD`; working-tree: `<range>` = `HEAD`.)
@@ -199,8 +204,8 @@ diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
      (`auth`, `login`, `session`, `password`, `secret`, `token`, `crypto`, `payment`, `billing`,
      `sql`/`query`, `exec`, `deserialize`). Keep the list minimal.
    - **Churn** — reuse `--full`'s hotspot computation
-     (`git log --since="12 months ago" --format= --name-only | sort | uniq -c | sort -rn`).
-   - **Change size** — `+adds`/`−dels` per file (`git diff --numstat <range>`).
+     (`git log --since="12 months ago" --format= --name-only -- . "${EXCLUDES[@]}" | sort | uniq -c | sort -rn`).
+   - **Change size** — `+adds`/`−dels` per file (`git diff --numstat <range> -- . "${EXCLUDES[@]}"`).
 
 4. **Set `reviewInput`** to an instruction block + the risk-ranked manifest table (NOT diff text):
 
@@ -236,8 +241,16 @@ changed-files list only.
 Source the reviewer findings from `.comprehensive-code-review/raw/workflow-result.json` (the file the
 workflow wrote), not from the Workflow return value.
 
+`is_excluded_build_output(path)` matches the Phase 1 `EXCLUDES` set: a `dist/`, `build/`, `out/`,
+`.next/`, `.nuxt/`, `.svelte-kit/`, `.output/`, or `coverage/` path segment, or a name ending in
+`.min.js`, `.min.css`, or `.map`. Apply it to every track (incl. the Codex findings in §7 below) —
+it backstops Codex, which self-collects its diff and cannot honor the gathering pathspecs.
+
 ```
-for each finding in workflowResult.reviewers[*].findings:
+for each finding in (workflowResult.reviewers[*].findings + codex findings):
+    if is_excluded_build_output(finding.file):
+        finding.verification = "dropped_excluded_build_output" -> move to dropped list
+        continue                                                # backstops Codex; reviewers are pre-filtered
     if finding.refuted:
         finding.verification = "refuted"                        -> move to dropped list
         # record refute_reason in the dropped table; NEVER resurrect a refuted finding

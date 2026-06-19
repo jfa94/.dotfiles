@@ -33,6 +33,7 @@
 - Agent scope: <e.g., "ENTIRE CODEBASE (current state)" | "abc123...HEAD" | "working tree vs HEAD">
 - Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~10...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
 - Files reviewed: <N>
+- Excluded build outputs: dist, build, out, .next, .nuxt, .svelte-kit, .output, coverage, _.min.js, _.min.css, \*.map
 - Lines changed: +<M> -<K> (omit for --full)
 - Coverage note: <only when applicable — `--full`: "hotspot-prioritized sampling, not exhaustive";
   diff modes with >2000-line diff: "manifest mode: full diff at .comprehensive-code-review/raw/full-diff.patch,
