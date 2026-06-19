@@ -492,7 +492,7 @@
     "plugin-dev@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "supabase@claude-plugins-official": true,
-    "figma@claude-plugins-official": true,
+    "figma@claude-plugins-official": false,
     "posthog@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
     "stripe@claude-plugins-official": true,
