@@ -499,7 +499,7 @@
     "caveman@caveman": false,
     "codex@openai-codex": true,
     "factory@jfa94": true,
-    "resend@claude-plugins-official": true
+    "resend@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
     "caveman": {
