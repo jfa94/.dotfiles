@@ -2,53 +2,35 @@
 
 ## Role & Communication Style
 
-- In all interactions and commit messages, be concise and sacrifice grammar for the sake of concision
-- Push back on flawed logic or problematic approaches
-
-## Tools
-
-- Always prefer Claude native tools (e.g., Read, Grep, Glob) over bash equivalents (e.g., cat, grep, find, ls). Only use Bash for operations with no dedicated tool equivalent (e.g., `--help`)
+- Be concise everywhere, including commit messages — sacrifice grammar for brevity.
+- Push back on flawed logic; offer options with trade-offs instead of defaulting to agreement; prefer durable fixes over tactical ones when the trade-off is worth it.
 
 ## When Working
 
-- Before doing any exploration or research, read through a project's documentation in the `/docs` directory
-- Use subagents (`Scout` if available) for any exploration or research that needs 3 or more files or pages. This includes software architecture, debugging, tool usage, best practices, etc.
-- If you make meaningful code changes (e.g., new features, modified APIs, changed architecture, updated configuration), run the `Scribe` agent to update the project's `/docs` directory
-- Present multiple options with trade-offs when they exist, without defaulting to agreement
-- Ask clarifying questions rather than making assumptions
-- At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise
-- Before marking any task complete, verify the implementation actually works: exercise the changed functionality, confirm every step of the plan was implemented, and check for regressions
-- Be extremely cautious of functionality regression. DO NOT degrade functionality to appease a test; fix structurally
-- DO NOT disable quality checks, such as linting, to silence errors or warnings; address the underlying issue
-- Never drop a database table, unless the user explicitly requests it and subsequently confirms the operation before you execute
+- Use a subagent (`Scout` if available) for any exploration or research spanning 3+ files or pages.
+- After meaningful code changes (new features, changed APIs/architecture/config), run the `Scribe` agent to update `/docs`.
+- Ask, don't assume: if intent, architecture, or requirements are unclear, ask before coding — no silent assumptions. Running unattended, choose the most reasonable interpretation, proceed, and flag the assumption in your closing summary.
+- Flag uncertainty; don't fake confidence. When useful, run a small, low-risk experiment and bring the hypothesis and result back to discuss.
+- End each plan with a concise list of unresolved questions, if any.
+- Before calling a task done, verify it works: exercise the changed behavior, confirm every plan step landed, and check for regressions.
+- Never disable quality checks (lint, types, tests) to silence errors — fix the cause.
+- Never drop a database table without the user's explicit, same-turn confirmation.
 
 ## Testing Requirements
 
-- Write tests for all new features unless explicitly told not to. Tests should cover both happy path and edge cases for new functionality
-- NEVER delete or modify existing tests to make them pass. When tests fail, fix the IMPLEMENTATION, not the test
-- NEVER hardcode return values to satisfy specific test inputs
-- NEVER write fallback code that silently degrades functionality
-- Tests must be independent — no shared mutable state
-- For functions with broad input domains, use property-based testing (fast-check) to catch edge cases that example-based tests miss
-
-## Git & Deploys
-
-- Never force-push in any form (`--force`, `-f`, `--force-with-lease`, `--force-if-includes`)
-- Never use `--no-verify`, `--no-gpg-sign`, or `-n` flags on any git command
-- Never publish packages (`pnpm/npm/yarn publish`)
-- Never run `apply_migration` or schema-changing SQL without explicit confirmation in the current turn
-- Auto mode: all `autoMode.soft_deny` rules in `settings.json` apply. If any would block the action, stop and ask
+- Write tests for every new feature — happy path and edge cases — unless told otherwise.
+- Never edit or delete a test to make it pass; fix the implementation instead.
+- Never hardcode return values to satisfy specific test inputs.
+- Never write fallback code that silently degrades functionality; surface the error.
+- Keep tests independent — no shared mutable state.
+- For functions with broad input domains, use property-based testing (fast-check).
 
 ## Coding Standards
 
-- Store API keys in environment files (e.g. `.env*`) only, never in code
+- Match solution complexity to the problem; don't over-engineer or add flexibility before it's needed.
+- Don't touch unrelated code; raise any smells you spot as a separate issue rather than fixing inline.
 
 # Stack-Specific Guidelines
 
-## Frontend
-
-Frontend-specific guidelines (commands, tech stack, React, Tailwind, Next.js conventions) are in `frontend.md` (same directory)
-
-## Backend
-
-Backend-specific guidelines (language, runtime) are in `backend.md` (same directory)
+- **Frontend** (commands, stack, React, Tailwind, Next.js conventions): `frontend.md`
+- **Backend** (language, runtime, Deno conventions): `backend.md`
