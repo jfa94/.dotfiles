@@ -499,7 +499,8 @@
     "caveman@caveman": false,
     "codex@openai-codex": true,
     "factory@jfa94": true,
-    "resend@claude-plugins-official": false
+    "resend@claude-plugins-official": false,
+    "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
     "caveman": {
@@ -519,10 +520,17 @@
         "source": "github",
         "repo": "jfa94/factory"
       }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
     }
   },
   "effortLevel": "high",
   "awaySummaryEnabled": false,
+  "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
