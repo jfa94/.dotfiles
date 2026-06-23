@@ -2,10 +2,12 @@
 set -uo pipefail
 input=$(cat)
 
+WINDOW="seven_day"   # "five_hour" = session limit, "seven_day" = weekly limit
+
 MODEL=$(echo "$input" | jq -r '.model.display_name' | sed 's/ [0-9][0-9.]*$//')
 DIR_PATH=$(echo "$input" | jq -r '.workspace.current_dir')
 DIR=$(echo "$DIR_PATH" | sed 's|.*/||')
-RESETS=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+RESETS=$(echo "$input" | jq -r ".rate_limits.${WINDOW}.resets_at // empty")
 
 GIT=""
 if BRANCH=$(git -C "$DIR_PATH" branch --show-current 2>/dev/null) && [ -n "$BRANCH" ]; then
@@ -32,11 +34,17 @@ if [ -n "$RESETS" ]; then
     if (( REMAINING <= 0 )); then
         echo "$MODEL in $DIR$GIT | $CTX | window reset pending"
     else
-        HOURS=$((REMAINING / 3600))
+        DAYS=$((REMAINING / 86400))
+        HOURS=$(((REMAINING % 86400) / 3600))
         MINS=$(((REMAINING % 3600) / 60))
-        USAGE=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // 0' | cut -d. -f1)
+        if (( DAYS > 0 )); then
+            TIMELEFT="${DAYS}d ${HOURS}h"
+        else
+            TIMELEFT="${HOURS}h ${MINS}m"
+        fi
+        USAGE=$(echo "$input" | jq -r ".rate_limits.${WINDOW}.used_percentage // 0" | cut -d. -f1)
         REMAINING_PCT=$((100 - USAGE))
-        echo "$MODEL in $DIR$GIT | $CTX | ${REMAINING_PCT}% left for ${HOURS}h ${MINS}m"
+        echo "$MODEL in $DIR$GIT | $CTX | ${REMAINING_PCT}% left for ${TIMELEFT}"
     fi
 else
     echo "$MODEL in $DIR$GIT | $CTX"
