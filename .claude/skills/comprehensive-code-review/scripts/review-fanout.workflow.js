@@ -212,8 +212,10 @@ const consolidated = {
 // Findings caps keep this payload small, so verbatim transcription is reliable;
 // the agent reads the file back to confirm it parses before returning.
 const repoRoot = input.repoRoot || ".";
-const outPath =
-  repoRoot + "/.comprehensive-code-review/raw/workflow-result.json";
+// outDir lets a derived skill (e.g. quick-code-review) persist to its own dir;
+// default preserves the comprehensive skill's path.
+const outDir = input.outDir || ".comprehensive-code-review";
+const outPath = repoRoot + "/" + outDir + "/raw/workflow-result.json";
 const payload = JSON.stringify(consolidated, null, 2);
 // Collision-proof delimiter: extend the marker until it cannot occur inside the
 // payload, so a verbatim finding quote that happens to contain the literal marker
@@ -229,7 +231,9 @@ await agent(
     "Steps:",
     "1. Ensure the parent directory exists (create " +
       repoRoot +
-      "/.comprehensive-code-review/raw/ if missing).",
+      "/" +
+      outDir +
+      "/raw/ if missing).",
     "2. Write the file at this absolute path: " + outPath,
     "   Its ENTIRE contents must be EXACTLY the text between the " +
       openTag +
