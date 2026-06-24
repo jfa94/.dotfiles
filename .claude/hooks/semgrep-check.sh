@@ -36,9 +36,28 @@ fi
 if [[ -n "$CACHE_FILE" ]] && [ -f "$CACHE_FILE" ]; then
   SEMGREP_OUT=$(cat "$CACHE_FILE")
 else
-  # Run semgrep on changed files only; use array to handle paths with spaces
+  # Run semgrep on changed files only; use array to handle paths with spaces.
+  # Pre-filter against .semgrepignore: when semgrep receives explicit file paths
+  # it bypasses .semgrepignore, so we enforce it here manually.
+  exclude_patterns=()
+  if [[ -f .semgrepignore ]]; then
+    while IFS= read -r line; do
+      [[ -z "$line" || "$line" == \#* ]] && continue
+      exclude_patterns+=("${line%/}")  # strip trailing slash for prefix matching
+    done < .semgrepignore
+  fi
   args=()
-  while IFS= read -r f; do [[ -n "$f" ]] && args+=("$f"); done <<< "$CHANGED"
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    skip=false
+    for pat in "${exclude_patterns[@]+"${exclude_patterns[@]}"}"; do
+      if [[ "$f" == "$pat" || "$f" == "$pat/"* ]]; then
+        skip=true; break
+      fi
+    done
+    $skip || args+=("$f")
+  done <<< "$CHANGED"
+  [[ ${#args[@]} -eq 0 ]] && exit 0
   SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null || true)
   # Only cache if output is valid JSON with a .results key
   if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
