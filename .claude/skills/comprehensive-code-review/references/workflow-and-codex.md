@@ -31,6 +31,10 @@ Workflow({
         role: "<full body of agents/quality-reviewer.md>",
       },
       // ... one entry per reviewer ...
+      {
+        name: "systemic-failure-reviewer",
+        role: "<full body of agents/systemic-failure-reviewer.md>",
+      },
       // include implementation-reviewer ONLY if --spec is valid (Phase 4)
     ],
   },
@@ -69,7 +73,18 @@ Two behaviors live inside the workflow, not the skill:
       "verbatim": "<exact quote, >= 5 chars>",
       "title": "<one-line title>",
       "why": "<reasoning>",
-      "fix_sketch": "<one sentence, optional>"
+      "fix_sketch": "<one sentence, optional>",
+      "kind": "local | systemic (systemic-failure-reviewer only)",
+      "failure_mode": "stuck-state | invariant-without-repair | unsafe-recovery | over-pinned-contract (systemic only)",
+      "scenario": "<one-sentence trigger→stuck-state chain (systemic only)>",
+      "anchors": [
+        {
+          "file": "...",
+          "line": 42,
+          "verbatim": "...",
+          "role": "(optional stage label)"
+        }
+      ]
     }
   ]
 }
@@ -132,21 +147,21 @@ caps Codex to the recent window even though the agents review everything.
 | Mode                                      | Codex target                                                                        |
 | ----------------------------------------- | ----------------------------------------------------------------------------------- |
 | `--base <ref>` (with or without `--full`) | `--base <ref>` (mirrors the reviewers' `<ref>...HEAD` scope)                        |
-| `--full` alone                            | `--base <CODEX_BASE>` where `CODEX_BASE`=`HEAD~10`, clamped to root if <=10 commits |
+| `--full` alone                            | `--base <CODEX_BASE>` where `CODEX_BASE`=`HEAD~30`, clamped to root if <=30 commits |
 | no args (working tree)                    | `--scope working-tree` (mirrors the reviewers' working-tree diff — NOT a base ref)  |
 
 Compute the `--full` bounded base safely:
 
 ```bash
-if [ "$(git rev-list --count HEAD)" -gt 10 ]; then
-  CODEX_BASE=$(git rev-parse HEAD~10)
+if [ "$(git rev-list --count HEAD)" -gt 30 ]; then
+  CODEX_BASE=$(git rev-parse HEAD~30)
 else
   CODEX_BASE=$(git rev-list --max-parents=0 HEAD | tail -1)
 fi
 ```
 
 Codex mirrors the reviewers' scope in `--base` and working-tree modes. Only under `--full` do the two
-diverge: agents review the entire codebase, Codex reviews the recent window (`HEAD~10`) to stay within
+diverge: agents review the entire codebase, Codex reviews the recent window (`HEAD~30`) to stay within
 its context limit. Note this `--full`-only mismatch in the report. (Working-tree mode must use
 `--scope working-tree`, never a root-commit base — the companion's `auto` scope would otherwise diff
 against `main` when the tree is clean, but the skill already stops on a clean tree before reaching
@@ -254,6 +269,17 @@ for each finding in (workflowResult.reviewers[*].findings + codex findings):
     if finding.refuted:
         finding.verification = "refuted"                        -> move to dropped list
         # record refute_reason in the dropped table; NEVER resurrect a refuted finding
+    elif finding.kind == "systemic":
+        # Systemic: require failure_mode + scenario + ≥2 anchors, then verify every anchor.
+        if not finding.failure_mode or not finding.scenario or len(finding.anchors or []) < 2:
+            finding.verification = "dropped_systemic_incomplete" -> move to dropped list
+        else:
+            for anchor in finding.anchors:
+                [apply same line±2/Grep-rescue logic to anchor.file/anchor.line/anchor.verbatim]
+                if anchor fails verification:
+                    finding.verification = "dropped_systemic_anchor_unverified" -> move to dropped list; break
+            if finding not yet dropped:  # all anchors pass — top-level (= anchors[0]) already covered
+                finding.verification = "ok"
     elif finding.file and finding.line and finding.verbatim:
         if len(collapse_whitespace(finding.verbatim)) < 5:
             finding.verification = "dropped_quote_too_short"   -> move to dropped list

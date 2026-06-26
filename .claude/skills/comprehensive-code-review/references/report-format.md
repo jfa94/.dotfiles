@@ -16,6 +16,7 @@
     ├── comment-accuracy-<ts>.md
     ├── simplification-<ts>.md
     ├── documentation-<ts>.md
+    ├── systemic-failure-<ts>.md
     ├── codex-adversarial.json       # Codex structured machine output (source of truth)
     └── codex-adversarial-<ts>.md    # human-readable render of codex-adversarial.json
 ```
@@ -31,7 +32,7 @@
 
 - Mode: <full | base | working-tree>
 - Agent scope: <e.g., "ENTIRE CODEBASE (current state)" | "abc123...HEAD" | "working tree vs HEAD">
-- Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~10...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
+- Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~30...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
 - Files reviewed: <N>
 - Excluded build outputs: dist, build, out, .next, .nuxt, .svelte-kit, .output, coverage, _.min.js, _.min.css, \*.map
 - Lines changed: +<M> -<K> (omit for --full)
@@ -54,6 +55,7 @@
 | comment-accuracy  | DONE                         | —                                         | <n>      |
 | simplification    | DONE                         | —                                         | <n>      |
 | documentation     | DONE                         | DOCS_OK/DOCS_DRIFT/DOCS_BLOCKED           | <n>      |
+| systemic-failure  | DONE                         | —                                         | <n>      |
 | codex-adversarial | DONE/SKIPPED/BLOCKED         | APPROVE/NEEDS-ATTENTION                   | <n>      |
 
 _(codex-adversarial Verdict gets the suffix `(degraded — narrative fallback)` when DONE via the degraded
@@ -84,6 +86,7 @@ By category:
 - Simplification: <n>
 - Silent Failures: <n>
 - Documentation: <n>
+- Systemic: <n>
 - Implementation-vs-Spec: <n>
 - Adversarial-Codex: <n>
 - Other: <n>
@@ -150,6 +153,22 @@ _(same structure)_
 
 _(same structure)_
 
+### Systemic
+
+#### [critical|important|minor] `file:line` — <one-line title>
+
+- **Reviewer**: systemic-failure
+- **Failure mode**: `<stuck-state|invariant-without-repair|unsafe-recovery|over-pinned-contract>`
+- **Scenario**: <trigger → stuck/wrong state, one or two sentences>
+- **Quote**: `<verbatim ≥5 chars — primary anchor (anchors[0])>`
+- **Chain anchors**:
+  - `file:line` — `<verbatim>` _(role)_
+  - `file:line` — `<verbatim>` _(role)_
+- **Why**: <reasoning from reviewer output>
+- **Fix sketch**: <one sentence>
+
+---
+
 ### Implementation-vs-Spec
 
 _(only present if --spec provided)_
@@ -196,6 +215,18 @@ timing-dependent concurrency races (only statically-visible async/shared-state h
 database migration & rollback safety, dead code reachable only via dynamic dispatch/reflection, and
 cross-repo/external API contract compatibility. Absence of findings here is not evidence of absence.
 
+**Emergent / systemic failure modes** _(conditional on reviewer roster)_:
+
+- _If `systemic-failure-reviewer` was in the roster:_ Emergent and design-level failure modes were
+  covered, but only where statically anchored to ≥2 verified sites reaching a concrete stuck or wrong
+  state (taxonomy: `stuck-state`, `invariant-without-repair`, `unsafe-recovery`, `over-pinned-contract`).
+  NOT covered: failures that require execution to manifest, cross-service or runtime-timing dependencies,
+  or bugs that only emerge after many iterations. Runtime/infra flakes (e.g., a subagent failing to
+  return structured output) are not statically reviewable and are out of scope.
+- _If `systemic-failure-reviewer` was NOT in the roster (e.g., quick-code-review):_ Emergent,
+  design-level, and process/temporal failure modes were **not reviewed**. Absence of such findings is
+  not evidence of their absence.
+
 ---
 
 ## Raw Outputs
@@ -223,7 +254,7 @@ the 4→3 collapse loses no signal.
 
 ```json
 {
-  "category": "Architecture|Security|Quality|Tests|Types|Comments|Simplification|Silent Failures|Documentation|Implementation-vs-Spec|Adversarial-Codex|Other",
+  "category": "Architecture|Security|Quality|Tests|Types|Comments|Simplification|Silent Failures|Documentation|Systemic|Implementation-vs-Spec|Adversarial-Codex|Other",
   "severity": "critical|important|minor",
   "reviewer": "<agent name>",
   "file": "path/to/file.ts",
@@ -238,7 +269,7 @@ the 4→3 collapse loses no signal.
     "<reviewer names; only on findings deduped across reviewers>"
   ],
   "refute_reason": "<refuter counter-evidence; only when verification is refuted>",
-  "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|codex_file_missing|codex_line_out_of_range"
+  "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|dropped_systemic_incomplete|dropped_systemic_anchor_unverified|codex_file_missing|codex_line_out_of_range"
 }
 ```
 
@@ -258,6 +289,7 @@ Assign each finding to the first matching category:
 7. **Simplification** — dead code, over-engineering, copy-paste drift, nested ternaries
 8. **Silent Failures** — empty catch blocks, swallowed errors, unjustified fallbacks
 9. **Documentation** — Scribe tree gaps, stale marker, content inaccuracies, type-purity violations
-10. **Implementation-vs-Spec** — unmet acceptance criteria, misinterpreted requirements
-11. **Adversarial-Codex** — design challenges, assumption failures, wrong approach findings
-12. **Other** — anything that doesn't fit above; preserve reviewer name
+10. **Systemic** — stuck-states, invariants without repair, unsafe/no-op recovery, over-pinned cross-stage contracts (systemic-failure-reviewer findings only)
+11. **Implementation-vs-Spec** — unmet acceptance criteria, misinterpreted requirements
+12. **Adversarial-Codex** — design challenges, assumption failures, wrong approach findings
+13. **Other** — anything that doesn't fit above; preserve reviewer name

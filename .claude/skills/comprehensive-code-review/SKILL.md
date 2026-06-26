@@ -3,9 +3,10 @@ name: comprehensive-code-review
 description: >
   Run a comprehensive code review using parallel specialist reviewers and a Codex adversarial
   review. Covers architecture, security, quality, tests, types, comments, simplification,
-  silent failures, documentation, and optionally implementation-vs-spec. Every critical and
-  important finding is adversarially verified by a fresh refuter agent before it can ship.
-  Consolidates all findings into a single deduplicated report with verified file:line citations.
+  silent failures, documentation, systemic failure modes, and optionally implementation-vs-spec.
+  Every critical and important finding is adversarially verified by a fresh refuter agent before
+  it can ship. Consolidates all findings into a single deduplicated report with verified
+  file:line citations.
   Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>]
 argument-hint: "[--base <ref>] [--full] [--spec <path>]"
 ---
@@ -90,7 +91,7 @@ Parse the skill arguments (from `$ARGUMENTS`):
 ```
 
 `--base <ref>` + `--full` together: mode = "full" for the agents (entire codebase), and `<ref>`
-replaces `HEAD~10` as the Codex window (Phase 3's `--base` branch already does this).
+replaces `HEAD~30` as the Codex window (Phase 3's `--base` branch already does this).
 
 Build `reviewInput` + `changedFiles` per mode.
 
@@ -146,8 +147,11 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 #   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
-Read the 10 reviewer agent files (`agents/<name>.md`) into the `reviewers` array as
-`{ name, role }`. Read `CLAUDE.md` path. Read the spec file if `--spec` was given.
+Read the **11** reviewer agent files (`agents/<name>.md`) into the `reviewers` array as
+`{ name, role }`. Include `systemic-failure-reviewer` in every run regardless of mode — it
+self-skips on non-stateful diffs via its Phase 0 check, so gating it off at the roster level
+would reopen the "absence reads as clean" blind spot. Read `CLAUDE.md` path. Read the spec file
+if `--spec` was given.
 
 Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`,
 `claudeMdPath`, `spec`.
@@ -168,8 +172,8 @@ Codex mirrors the reviewers' scope, except `--full` caps it to the recent window
 ```bash
 if [ -n "$BASE_REF" ]; then              # --base given (with or without --full) → mirror reviewers
   CODEX_TARGET="--base $BASE_REF"
-elif [ "$MODE" = "full" ]; then          # --full alone → bounded recent window (context limit)
-  if [ "$(git rev-list --count HEAD)" -gt 10 ]; then CODEX_BASE=$(git rev-parse HEAD~10);
+elif [ "$MODE" = "full" ]; then          # --full alone → wider recent window; systemic reviewer covers the rest
+  if [ "$(git rev-list --count HEAD)" -gt 30 ]; then CODEX_BASE=$(git rev-parse HEAD~30);
   else CODEX_BASE=$(git rev-list --max-parents=0 HEAD | tail -1); fi
   CODEX_TARGET="--base $CODEX_BASE"
 else                                     # working tree → mirror reviewers' uncommitted diff
@@ -178,7 +182,7 @@ fi
 ```
 
 In `--base` and working-tree modes Codex sees the same scope as the agents. Only under `--full` do
-they diverge (agents = whole codebase, Codex = `HEAD~10` window, to stay within Codex's context
+they diverge (agents = whole codebase, Codex = `HEAD~30` window, to stay within Codex's context
 limit) — note this `--full`-only mismatch in the report.
 
 ## Phase 4 — Implementation-Reviewer Eligibility
@@ -292,6 +296,12 @@ Then, for every surviving finding from every reviewer (per the pseudocode in `re
 0. If the finding carries `refuted: true` (the workflow's adversarial Verify stage disproved it) →
    move to Dropped Findings as `refuted`, recording `refute_reason`. Never resurrect a refuted
    finding, however right it looks.
+   0a. If the finding carries `kind: "systemic"` (systemic-failure-reviewer only) — apply the
+   systemic gate BEFORE the standard citation check: - Require `failure_mode` (non-empty, from the closed taxonomy) AND `scenario` (non-empty)
+   AND `anchors` (≥2 entries) — else drop (`dropped_systemic_incomplete`). - For every anchor: apply the same line±2 / Grep-rescue logic to `anchor.file`, `anchor.line`,
+   and `anchor.verbatim` that step 2 applies to the top-level citation. If ANY anchor fails
+   → drop the entire finding (`dropped_systemic_anchor_unverified`). - If all anchors pass, continue to step 1 (the top-level citation is `anchors[0]` repeated;
+   step 2 will confirm it again, which is fine).
 1. Require `file`, `line`, `verbatim` (>=5 chars) — else drop (`dropped_no_citation` / `dropped_quote_too_short`).
 2. Read the file at `line ±2`, collapse whitespace on both quote and content, and require the quote
    to be a substring. On miss, rescue single-line quotes before dropping: Grep the file for the
@@ -315,9 +325,11 @@ never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), ex
    `.comprehensive-code-review/raw/codex-adversarial-<UTC-iso>.md` from it (verdict, summary, findings,
    `next_steps`) for parity with the other reviewers' `.md` files.
 3. **Dedup across reviewers** (overlapping mandates guarantee duplicates): two verified findings
-   merge when they cite the same file AND (lines within ±3 OR identical collapsed verbatim). Keep
-   the primary reviewer's finding at the highest severity of the group; list the others under
-   `also_flagged_by`. All counts below are post-dedup.
+   merge when they cite the same file AND (lines within ±3 OR identical collapsed verbatim) AND
+   **the same `kind`** — never merge a `local` finding with a `systemic` finding even if they
+   cite the same file (they describe different defect classes; the Themes section is where the
+   connection is drawn instead). Keep the primary reviewer's finding at the highest severity of
+   the group; list the others under `also_flagged_by`. All counts below are post-dedup.
 4. Categorize each verified finding per `references/report-format.md`.
 5. Map severity per the table in `references/report-format.md` (Codex's `critical|high|medium|low` map
    to `critical|important|important|minor`; keep the native severity + `confidence` on each rendered
@@ -337,6 +349,11 @@ never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), ex
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    ```
+
+   Append WARNING lines when applicable (one line each, only when the condition applies):
+
+   - When `mode === "full"` AND Codex ran: `⚠ Codex reviewed only HEAD~30…HEAD; whole-codebase design review relied on the systemic reviewer [present | ABSENT — systemic failure modes NOT covered].`
+   - When Codex was SKIPPED entirely: `⚠ Codex SKIPPED — adversarial/design track did NOT run.`
 
 ## Phase 9 — STATUS line
 
