@@ -1,8 +1,8 @@
 ---
 name: quick-code-review
 description: >
-  Run a focused, quick code review with the four crucial specialist reviewers (architecture,
-  security, quality, silent failures) plus a Codex adversarial review. A lean subset of
+  Run a focused, quick code review with the five crucial specialist reviewers (architecture,
+  security, quality, silent failures, systemic failures) plus a Codex adversarial review. A lean subset of
   comprehensive-code-review: same rigor — every critical/important finding is adversarially
   verified by a fresh refuter agent, and every finding is dropped unless it has a verified
   file:line citation — but fewer dimensions, so the report is tighter and faster to triage.
@@ -15,7 +15,7 @@ argument-hint: "[--base <ref>]"
 # Quick Code Review
 
 You are the orchestrator for a focused, multi-dimensional code review — the lean sibling of
-`comprehensive-code-review`. You dispatch **four** crucial specialist reviewers through a **Workflow**
+`comprehensive-code-review`. You dispatch **five** crucial specialist reviewers through a **Workflow**
 (which forces every reviewer into one findings schema, adversarially verifies every critical/important
 finding with a fresh refuter agent, and writes the consolidated result to a file), run **Codex** as a
 concurrent backgrounded Bash job whose scope mirrors the reviewers, verify every finding has a real
@@ -33,14 +33,15 @@ schema, the Codex target-resolution table, the citation-verification pseudocode,
 `--spec` mode — only working-tree and `--base`; (2) the output directory is `.quick-code-review/`, not
 `.comprehensive-code-review/`.
 
-## The four reviewers (fixed)
+## The five reviewers (fixed)
 
-This skill always runs exactly these four, read from `comprehensive-code-review/agents/`:
+This skill always runs exactly these five, read from `comprehensive-code-review/agents/`:
 
 - `architecture-reviewer` — structural integrity, coupling, cycles, god objects, leaky abstractions
 - `security-reviewer` — injection, auth/authz, secrets, insecure defaults (source→sink traced)
 - `quality-reviewer` — logic errors, edge cases, caller breakage, and concurrency/async (it owns that dimension)
 - `silent-failure-hunter` — swallowed errors, empty catches, unjustified fallbacks masking failure
+- `systemic-failure-reviewer` — cross-file/cross-stage failure modes: stuck-states, invariants without repair, unsafe/no-op recovery, over-pinned contracts (self-skips when the diff has no stateful surface)
 
 ## Iron Laws
 
@@ -134,7 +135,7 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 #   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
-Read the four reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{architecture-reviewer,security-reviewer,quality-reviewer,silent-failure-hunter}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
+Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{architecture-reviewer,security-reviewer,quality-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
 
 Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`, `claudeMdPath`.
 
@@ -242,6 +243,13 @@ Then, for every surviving finding (per the pseudocode in
 
 0. If the finding carries `refuted: true` (the workflow's adversarial Verify stage disproved it) → move to
    Dropped Findings as `refuted`, recording `refute_reason`. Never resurrect a refuted finding.
+   0a. If the finding carries `kind: "systemic"` (systemic-failure-reviewer only) — apply the systemic
+   gate BEFORE the standard citation check: require `failure_mode` (non-empty, from the closed taxonomy)
+   AND `scenario` (non-empty) AND `anchors` (≥2 entries) — else drop (`dropped_systemic_incomplete`).
+   For every anchor, apply the same line±2 / Grep-rescue logic from step 2 to `anchor.file`,
+   `anchor.line`, and `anchor.verbatim`. If ANY anchor fails → drop the entire finding
+   (`dropped_systemic_anchor_unverified`). If all anchors pass, continue to step 1 (the top-level
+   citation is `anchors[0]` repeated; step 2 will confirm it again, which is fine).
 1. Require `file`, `line`, `verbatim` (>=5 chars) — else drop (`dropped_no_citation` / `dropped_quote_too_short`).
 2. Read the file at `line ±2`, collapse whitespace on both quote and content, and require the quote to be a
    substring. On miss, rescue single-line quotes: Grep the file for the fixed-string trimmed quote — exactly
@@ -261,18 +269,20 @@ AND `line_start`/`line_end` must fall within the file's length, else drop (`code
    `.quick-code-review/raw/codex-adversarial.json`; render a human-readable
    `.quick-code-review/raw/codex-adversarial-<UTC-iso>.md` from it (verdict, summary, findings, `next_steps`).
 3. **Dedup across reviewers:** two verified findings merge when they cite the same file AND (lines within ±3
-   OR identical collapsed verbatim). Keep the primary reviewer's finding at the highest severity of the
-   group; list the others under `also_flagged_by`. All counts below are post-dedup.
+   OR identical collapsed verbatim) AND the same `kind` — never merge a `local` finding with a `systemic`
+   finding even if they cite the same file (they describe different defect classes). Keep the primary
+   reviewer's finding at the highest severity of the group; list the others under `also_flagged_by`. All
+   counts below are post-dedup.
 4. Categorize each verified finding per `comprehensive-code-review/references/report-format.md`. With this
-   skill's four reviewers + Codex, only these categories will populate: **Architecture, Security, Quality,
-   Silent Failures, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.)
+   skill's five reviewers + Codex, only these categories will populate: **Architecture, Security, Quality,
+   Silent Failures, Systemic, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.)
 5. Map severity per the table in the reference (Codex's `critical|high|medium|low` →
    `critical|important|important|minor`; keep the native severity + `confidence` on each Codex finding).
 6. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by severity
    DESC, then `confidence` DESC, then file ASC.
 7. Write the consolidated report to `.quick-code-review/report-<UTC-iso>.md` using the skeleton in
    `comprehensive-code-review/references/report-format.md`. In the Scope section, list the excluded
-   build-output patterns and note this is a **quick review (4 reviewers + Codex)**, not the comprehensive one.
+   build-output patterns and note this is a **quick review (5 reviewers + Codex)**, not the comprehensive one.
 8. Print the summary:
 
    ```

@@ -223,7 +223,7 @@ cross-repo/external API contract compatibility. Absence of findings here is not 
   NOT covered: failures that require execution to manifest, cross-service or runtime-timing dependencies,
   or bugs that only emerge after many iterations. Runtime/infra flakes (e.g., a subagent failing to
   return structured output) are not statically reviewable and are out of scope.
-- _If `systemic-failure-reviewer` was NOT in the roster (e.g., quick-code-review):_ Emergent,
+- _If `systemic-failure-reviewer` was NOT in the roster:_ Emergent,
   design-level, and process/temporal failure modes were **not reviewed**. Absence of such findings is
   not evidence of their absence.
 
