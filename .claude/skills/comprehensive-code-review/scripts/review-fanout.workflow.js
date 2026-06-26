@@ -100,10 +100,7 @@ const VERIFY_SCHEMA = {
 const DIFFLESS_REVIEWERS = new Set(["documentation-reviewer"]);
 
 // ponytail: gates on mode=full (the existing value); no new flag or arg parsing needed.
-const TEMPORAL_REVIEWERS = new Set([
-  "quality-reviewer",
-  "test-coverage-reviewer",
-]);
+const TEMPORAL_REVIEWERS = new Set(["quality-reviewer"]);
 
 function buildPrompt(reviewer, ctx) {
   const specBlock = ctx.spec
@@ -145,7 +142,7 @@ function buildPrompt(reviewer, ctx) {
     parts.push(
       "",
       "## Temporal reasoning (--full mode)",
-      "For every retry, loop, reset, or recovery action in the code: does each iteration make measurable progress toward termination, or does it re-derive the same state from unchanged inputs? Flag any loop or reset that, given the same input that caused the failure, re-produces the same failure — that is a no-op recovery, not self-healing.",
+      "For every retry, reset, or recovery path in the diff: when it re-runs on the same input that caused the original failure, does it change the condition that failed — or just re-derive the same state and hit the same failure again? Flag any recovery that reproduces the original failure on unchanged input, whether it spins forever or gives up after a fixed number of tries. That is a no-op recovery, not self-healing.",
     );
   }
   return parts.join("\n");
