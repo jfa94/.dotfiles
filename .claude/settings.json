@@ -22,6 +22,18 @@
       "Edit(/var/folders/**)",
       "Write(/private/var/folders/**)",
       "Edit(/private/var/folders/**)",
+      "Read(//Users/Javier/**/.comprehensive-code-review/**)",
+      "Edit(//Users/Javier/**/.comprehensive-code-review/**)",
+      "Write(//Users/Javier/**/.comprehensive-code-review/**)",
+      "Read(//Users/Javier/**/.quick-code-review/**)",
+      "Edit(//Users/Javier/**/.quick-code-review/**)",
+      "Write(//Users/Javier/**/.quick-code-review/**)",
+      "Read(//Users/Javier/**/.claude-plugin-data/**)",
+      "Edit(//Users/Javier/**/.claude-plugin-data/**)",
+      "Write(//Users/Javier/**/.claude-plugin-data/**)",
+      "Read(//Users/Javier/**/.worktrees/**)",
+      "Edit(//Users/Javier/**/.worktrees/**)",
+      "Write(//Users/Javier/**/.worktrees/**)",
       "Glob",
       "Grep",
       "WebSearch",
@@ -537,9 +549,7 @@
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
-    "allow": [
-      "$defaults"
-    ],
+    "allow": ["$defaults"],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
       "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
