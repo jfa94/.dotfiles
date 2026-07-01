@@ -81,10 +81,11 @@ is_codex_runtime_rel() {
 }
 
 # --- Linux package lists (native, in-repo packages only) ---
-# Name deltas: python3<->python, golang-go<->go, openjdk-21-jdk<->jdk-openjdk.
+# Name deltas: python3<->python, golang-go<->go, default-jdk<->jdk-openjdk.
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
 # so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
-APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go openjdk-21-jdk build-essential python3-dev pipx)
+# Keep this list, PACMAN_PACKAGES below, and Brewfile in sync when adding a tool.
+APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx)
 PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx)
 
 install_gh_apt() {
@@ -101,11 +102,14 @@ install_gh_apt() {
 install_node_apt() {
   command -v node &>/dev/null && return
   info "Adding NodeSource apt repo..."
-  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo bash -
   sudo apt-get install -y nodejs
 }
 
 # --- Cross-distro installs (official scripts, identical on apt + pacman) ---
+# ponytail: these (and the gh keyring above) pull unpinned scripts/keys straight
+# from upstream with no checksum/signature check - accepted risk for a personal
+# dotfiles repo. Pin/verify if this ever runs somewhere that matters more.
 install_deno()       { command -v deno &>/dev/null       || { info "Installing deno...";       curl -fsSL https://deno.land/install.sh | sh; }; }
 install_pnpm()       { command -v pnpm &>/dev/null       || { info "Installing pnpm...";       curl -fsSL https://get.pnpm.io/install.sh | sh -; }; }
 install_trufflehog() { command -v trufflehog &>/dev/null || { info "Installing trufflehog..."; curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin; }; }
@@ -121,14 +125,23 @@ install_packages_linux() {
     install_node_apt
   else
     info "Installing packages via pacman..."
-    sudo pacman -Sy --needed --noconfirm "${PACMAN_PACKAGES[@]}"
+    sudo pacman -Syu --needed --noconfirm "${PACMAN_PACKAGES[@]}"
   fi
 
-  install_deno
-  install_pnpm
-  install_trufflehog
-  install_semgrep
-  install_supabase
+  # pipx installs land in ~/.local/bin; put it on PATH now so the presence
+  # checks below see semgrep in this same run (mirrors what .zprofile does
+  # for future login shells).
+  export PATH="$HOME/.local/bin:$PATH"
+
+  optional_status=""
+  for tool in deno pnpm trufflehog semgrep supabase; do
+    if "install_$tool"; then :; else warn "$tool install failed"; fi
+    if command -v "$tool" &>/dev/null; then
+      optional_status+=" $tool=ok"
+    else
+      optional_status+=" $tool=missing"
+    fi
+  done
 }
 
 # =============================================================================
@@ -455,6 +468,7 @@ if [[ ${#skipped[@]} -gt 0 ]]; then
 fi
 
 echo "$pkg_summary"
+[[ -n "${optional_status:-}" ]] && echo "Optional tools:$optional_status"
 echo "Claude Code: $claude_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
