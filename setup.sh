@@ -80,20 +80,90 @@ is_codex_runtime_rel() {
   return 1
 }
 
+# --- Linux package lists (native, in-repo packages only) ---
+# Name deltas: python3<->python, golang-go<->go, openjdk-21-jdk<->jdk-openjdk.
+# gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
+# so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
+APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go openjdk-21-jdk build-essential python3-dev pipx)
+PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx)
+
+install_gh_apt() {
+  command -v gh &>/dev/null && return
+  info "Adding GitHub CLI apt repo..."
+  sudo mkdir -p -m 755 /etc/apt/keyrings
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+  sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+  sudo apt-get update
+  sudo apt-get install -y gh
+}
+
+install_node_apt() {
+  command -v node &>/dev/null && return
+  info "Adding NodeSource apt repo..."
+  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+}
+
+# --- Cross-distro installs (official scripts, identical on apt + pacman) ---
+install_deno()       { command -v deno &>/dev/null       || { info "Installing deno...";       curl -fsSL https://deno.land/install.sh | sh; }; }
+install_pnpm()       { command -v pnpm &>/dev/null       || { info "Installing pnpm...";       curl -fsSL https://get.pnpm.io/install.sh | sh -; }; }
+install_trufflehog() { command -v trufflehog &>/dev/null || { info "Installing trufflehog..."; curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin; }; }
+install_semgrep()    { command -v semgrep &>/dev/null    || { info "Installing semgrep...";    pipx install semgrep; }; }
+install_supabase()   { command -v supabase &>/dev/null   || { info "Installing supabase CLI..."; curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install | bash; }; }
+
+install_packages_linux() {
+  if [[ "$PKG" == "apt" ]]; then
+    info "Installing packages via apt..."
+    sudo apt-get update
+    sudo apt-get install -y "${APT_PACKAGES[@]}"
+    install_gh_apt
+    install_node_apt
+  else
+    info "Installing packages via pacman..."
+    sudo pacman -Sy --needed --noconfirm "${PACMAN_PACKAGES[@]}"
+  fi
+
+  install_deno
+  install_pnpm
+  install_trufflehog
+  install_semgrep
+  install_supabase
+}
+
 # =============================================================================
 # Section 1: Preflight Checks
 # =============================================================================
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  error "This script is intended for macOS only."
-  exit 1
-fi
-
-if ! xcode-select -p &>/dev/null; then
-  error "Xcode Command Line Tools not found. Install them with:"
-  echo "  xcode-select --install"
-  exit 1
-fi
+case "$(uname -s)" in
+  Darwin)
+    OS="macos"
+    if ! xcode-select -p &>/dev/null; then
+      error "Xcode Command Line Tools not found. Install them with:"
+      echo "  xcode-select --install"
+      exit 1
+    fi
+    ;;
+  Linux)
+    OS="linux"
+    if command -v apt-get &>/dev/null; then
+      PKG="apt"
+    elif command -v pacman &>/dev/null; then
+      PKG="pacman"
+    else
+      error "Unsupported Linux distro (need apt or pacman)."
+      exit 1
+    fi
+    if ! command -v sudo &>/dev/null; then
+      error "sudo not found; required for native package installs."
+      exit 1
+    fi
+    ;;
+  *)
+    error "Unsupported OS: $(uname -s)"
+    exit 1
+    ;;
+esac
 
 # =============================================================================
 # Section 2: Conflict Detection
@@ -250,26 +320,32 @@ mkdir -p ~/.vim/undodir
 mkdir -p ~/.vim/plugged
 
 # =============================================================================
-# Section 6: Install Homebrew + Brewfile
+# Section 6: Install Packages
 # =============================================================================
 
-brew_status="already installed"
+if [[ "$OS" == "macos" ]]; then
+  brew_status="already installed"
 
-if ! command -v brew &>/dev/null; then
-  info "Installing Homebrew..."
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  brew_status="freshly installed"
+  if ! command -v brew &>/dev/null; then
+    info "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    brew_status="freshly installed"
 
-  # Ensure brew is on PATH for the rest of this script
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -x /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
+    # Ensure brew is on PATH for the rest of this script
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x /usr/local/bin/brew ]]; then
+      eval "$(/usr/local/bin/brew shellenv)"
+    fi
   fi
-fi
 
-info "Running brew bundle..."
-brew bundle --file="$DOTFILES_DIR/Brewfile"
+  info "Running brew bundle..."
+  brew bundle --file="$DOTFILES_DIR/Brewfile"
+  pkg_summary="Homebrew: $brew_status"
+else
+  install_packages_linux
+  pkg_summary="Packages ($PKG): installed"
+fi
 
 # =============================================================================
 # Section 7: Install Claude Code
@@ -378,7 +454,7 @@ if [[ ${#skipped[@]} -gt 0 ]]; then
   for f in "${skipped[@]}"; do echo "  - $f"; done
 fi
 
-echo "Homebrew: $brew_status"
+echo "$pkg_summary"
 echo "Claude Code: $claude_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"

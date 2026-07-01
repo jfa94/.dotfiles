@@ -32,3 +32,12 @@ The script:
 - Sets up vim plugin/undo directories.
 
 It is idempotent — re-running skips anything already linked. If conflicts are detected, you’ll be prompted to replace, skip, or decide file-by-file. New files added to the repo are only deployed on a re-run.
+
+## Linux (WSL2 / CachyOS)
+
+The script also runs on Linux (`apt` on Ubuntu/Debian, `pacman` on Arch/CachyOS)
+— no `xcode-select` step, but `sudo` and `curl` are required. Packages install
+via the native package manager instead of Homebrew; a few tools not in the
+default repos (`deno`, `pnpm`, `trufflehog`, `semgrep`, `supabase`) use their
+official install scripts on both distros. Docker is **not** managed on Linux —
+install it yourself (Docker Desktop's WSL integration, or natively on Arch).
