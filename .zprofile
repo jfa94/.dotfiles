@@ -12,3 +12,10 @@ fi
 if [[ -d "$HOME/.local/bin" ]]; then
   export PATH="$PATH:$HOME/.local/bin"
 fi
+
+# Optional-tool install dirs (Linux / WSL) - deno/pnpm/supabase land here;
+# setup.sh installs them with rc-writing disabled, so this is their only PATH.
+for _d in "$HOME/.deno/bin" "$HOME/.local/share/pnpm" "$HOME/.supabase/bin"; do
+  [[ -d "$_d" ]] && export PATH="$PATH:$_d"
+done
+unset _d

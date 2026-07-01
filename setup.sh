@@ -85,36 +85,75 @@ is_codex_runtime_rel() {
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
 # so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
 # Keep this list, PACMAN_PACKAGES below, and Brewfile in sync when adding a tool.
-APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx)
-PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx)
+APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx unzip)
+PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip)
 
 install_gh_apt() {
   command -v gh &>/dev/null && return
   info "Adding GitHub CLI apt repo..."
-  sudo mkdir -p -m 755 /etc/apt/keyrings
-  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
-  sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-  sudo apt-get update
-  sudo apt-get install -y gh
+  if sudo mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null \
+    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null \
+    && sudo apt-get update \
+    && sudo apt-get install -y gh; then
+    return 0
+  fi
+  # ponytail: repo/keyring partially written above; wipe it so a re-run
+  # re-derives cleanly instead of re-failing the same broken state forever.
+  warn "GitHub CLI apt repo setup failed; cleaning up partial state"
+  sudo rm -f /etc/apt/sources.list.d/github-cli.list /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  return 1
 }
 
 install_node_apt() {
   command -v node &>/dev/null && return
   info "Adding NodeSource apt repo..."
-  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo bash -
-  sudo apt-get install -y nodejs
+  # ponytail: paths below are NodeSource's own install locations, not ours;
+  # re-check if their setup script changes them.
+  if (curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo bash -) \
+    && sudo apt-get install -y nodejs; then
+    return 0
+  fi
+  warn "NodeSource apt repo setup failed; cleaning up partial state"
+  sudo rm -f /etc/apt/sources.list.d/nodesource.list /etc/apt/keyrings/nodesource.gpg
+  return 1
 }
 
 # --- Cross-distro installs (official scripts, identical on apt + pacman) ---
 # ponytail: these (and the gh keyring above) pull unpinned scripts/keys straight
 # from upstream with no checksum/signature check - accepted risk for a personal
 # dotfiles repo. Pin/verify if this ever runs somewhere that matters more.
-install_deno()       { command -v deno &>/dev/null       || { info "Installing deno...";       curl -fsSL https://deno.land/install.sh | sh; }; }
-install_pnpm()       { command -v pnpm &>/dev/null       || { info "Installing pnpm...";       curl -fsSL https://get.pnpm.io/install.sh | sh -; }; }
+
+# ponytail: these installers default to appending PATH blocks to the active
+# shell rc file, which by Section 3 is a symlink into this repo - the env
+# vars/flags below redirect or suppress that so a run never dirties the
+# tracked .zshrc. Re-verify on major version bumps of each tool.
+install_deno() {
+  command -v deno &>/dev/null && return
+  info "Installing deno..."
+  # CI=1 skips deno's interactive shell-rc setup entirely.
+  CI=1 DENO_INSTALL="$HOME/.deno" sh -c "$(curl -fsSL https://deno.land/install.sh)"
+}
+install_pnpm() {
+  command -v pnpm &>/dev/null && return
+  info "Installing pnpm..."
+  # No official skip flag; pnpm's sh/dash path writes its PATH block to $ENV
+  # instead of ~/.zshrc when SHELL=/bin/sh, so point $ENV at a throwaway file.
+  local rc_sink
+  rc_sink="$(mktemp)"
+  SHELL=/bin/sh ENV="$rc_sink" PNPM_HOME="$HOME/.local/share/pnpm" sh -c "$(curl -fsSL https://get.pnpm.io/install.sh)"
+  rm -f "$rc_sink"
+}
 install_trufflehog() { command -v trufflehog &>/dev/null || { info "Installing trufflehog..."; curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin; }; }
 install_semgrep()    { command -v semgrep &>/dev/null    || { info "Installing semgrep...";    pipx install semgrep; }; }
-install_supabase()   { command -v supabase &>/dev/null   || { info "Installing supabase CLI..."; curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install | bash; }; }
+install_supabase() {
+  command -v supabase &>/dev/null && return
+  info "Installing supabase CLI..."
+  # SUPABASE_INSTALL_DIR is script-internal (not read for the skip decision);
+  # --no-modify-path is the flag that actually suppresses the rc write.
+  SUPABASE_INSTALL_DIR="$HOME/.supabase/bin" bash -c "$(curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install)" -- --no-modify-path
+}
 
 install_packages_linux() {
   if [[ "$PKG" == "apt" ]]; then
@@ -128,13 +167,16 @@ install_packages_linux() {
     sudo pacman -Syu --needed --noconfirm "${PACMAN_PACKAGES[@]}"
   fi
 
-  # pipx installs land in ~/.local/bin; put it on PATH now so the presence
-  # checks below see semgrep in this same run (mirrors what .zprofile does
-  # for future login shells).
-  export PATH="$HOME/.local/bin:$PATH"
+  # Each optional tool's install dir, put on PATH now so the presence checks
+  # below see it in this same run (mirrors what .zprofile does for future
+  # login shells: pipx->~/.local/bin, deno->~/.deno/bin,
+  # pnpm->~/.local/share/pnpm, supabase->~/.supabase/bin; trufflehog installs
+  # straight to /usr/local/bin, already on PATH).
+  export PATH="$HOME/.local/bin:$HOME/.deno/bin:$HOME/.local/share/pnpm:$HOME/.supabase/bin:$PATH"
 
   optional_status=""
   for tool in deno pnpm trufflehog semgrep supabase; do
+    declare -F "install_$tool" >/dev/null || { error "internal: install_$tool undefined"; exit 1; }
     if "install_$tool"; then :; else warn "$tool install failed"; fi
     if command -v "$tool" &>/dev/null; then
       optional_status+=" $tool=ok"
@@ -169,6 +211,10 @@ case "$(uname -s)" in
     fi
     if ! command -v sudo &>/dev/null; then
       error "sudo not found; required for native package installs."
+      exit 1
+    fi
+    if ! command -v curl &>/dev/null; then
+      error "curl not found; required for package and tool installs."
       exit 1
     fi
     ;;
