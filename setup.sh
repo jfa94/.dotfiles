@@ -85,8 +85,8 @@ is_codex_runtime_rel() {
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
 # so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
 # Keep this list, PACMAN_PACKAGES below, and Brewfile in sync when adding a tool.
-APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx unzip)
-PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip)
+APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx unzip jq)
+PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq)
 
 install_gh_apt() {
   command -v gh &>/dev/null && return
