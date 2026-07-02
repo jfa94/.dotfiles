@@ -166,41 +166,41 @@ Output the entire list as a single JSON array in ONE file called `tasks.json` in
 
 ```json
 [
-    {
-        "task_id": "auth-001",
-        "title": "Auth domain types and password hashing",
-        "description": "Create auth type definitions and bcrypt-based password hashing utilities",
-        "files": ["src/domain/auth/types.ts", "src/domain/auth/password.ts"],
-        "acceptance_criteria": [
-            "Password hash uses bcrypt with min 12 rounds",
-            "Hash and verify functions are pure — no side effects",
-            "Types cover User, Session, AuthError"
-        ],
-        "tests_to_write": [
-            "password.test.ts: hash produces valid bcrypt string",
-            "password.test.ts: verify returns true for correct password",
-            "password.test.ts: verify returns false for wrong password",
-            "password.test.ts: hash with <12 rounds throws"
-        ],
-        "depends_on": []
-    },
-    {
-        "task_id": "auth-002",
-        "title": "Email validation and registration logic",
-        "description": "Create email validation in domain layer and registration service",
-        "files": ["src/domain/auth/validation.ts", "src/services/auth.service.ts"],
-        "acceptance_criteria": [
-            "Email validation rejects malformed addresses",
-            "Registration creates user with hashed password",
-            "Duplicate email returns typed AuthError"
-        ],
-        "tests_to_write": [
-            "validation.test.ts: valid emails pass",
-            "validation.test.ts: malformed emails fail",
-            "auth.service.test.ts: register creates user",
-            "auth.service.test.ts: duplicate email returns error tuple"
-        ],
-        "depends_on": ["auth-001"]
-    }
+  {
+    "task_id": "auth-001",
+    "title": "Auth domain types and password hashing",
+    "description": "Create auth type definitions and bcrypt-based password hashing utilities",
+    "files": ["src/domain/auth/types.ts", "src/domain/auth/password.ts"],
+    "acceptance_criteria": [
+      "Password hash uses bcrypt with min 12 rounds",
+      "Hash and verify functions are pure — no side effects",
+      "Types cover User, Session, AuthError"
+    ],
+    "tests_to_write": [
+      "password.test.ts: hash produces valid bcrypt string",
+      "password.test.ts: verify returns true for correct password",
+      "password.test.ts: verify returns false for wrong password",
+      "password.test.ts: hash with <12 rounds throws"
+    ],
+    "depends_on": []
+  },
+  {
+    "task_id": "auth-002",
+    "title": "Email validation and registration logic",
+    "description": "Create email validation in domain layer and registration service",
+    "files": ["src/domain/auth/validation.ts", "src/services/auth.service.ts"],
+    "acceptance_criteria": [
+      "Email validation rejects malformed addresses",
+      "Registration creates user with hashed password",
+      "Duplicate email returns typed AuthError"
+    ],
+    "tests_to_write": [
+      "validation.test.ts: valid emails pass",
+      "validation.test.ts: malformed emails fail",
+      "auth.service.test.ts: register creates user",
+      "auth.service.test.ts: duplicate email returns error tuple"
+    ],
+    "depends_on": ["auth-001"]
+  }
 ]
 ```
