@@ -94,3 +94,7 @@ For each finding, include:
 - `APPROVE` — every criterion is genuinely implemented and behaviorally matches the spec.
 - `REQUEST_CHANGES` — at least one criterion is missing, misinterpreted, or shallowly tested.
 - `NEEDS_DISCUSSION` — the code meets the spec but you have material concerns that need orchestrator or user input.
+
+### Schema severity mapping
+
+Every emitted finding carries one of the three schema values: BLOCKING with the criterion entirely unmet or misinterpreted → `critical`; BLOCKING with the criterion partially met or only shallowly tested → `important`; NON-BLOCKING notes → `minor`.

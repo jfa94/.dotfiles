@@ -61,6 +61,9 @@
 _(codex-adversarial Verdict gets the suffix `(degraded — narrative fallback)` when DONE via the degraded
 path — see the Adversarial-Codex note below.)_
 
+_(a reviewer's Findings cell gets the suffix `(+<m> capped)` when it reported `dropped_by_cap` = m > 0 —
+it discarded m candidate findings to respect its findings cap, so coverage below its cap is not implied.)_
+
 ## Summary
 
 **Overall: SHIP | NEEDS-CHANGES | INCOMPLETE**
@@ -100,7 +103,9 @@ finding titles it explains. Omit the section when no shared root cause exists.)_
 
 ## Findings by Category
 
-_(sorted severity DESC, then file ASC within each category)_
+_(sorted severity DESC, then file ASC within each category. Findings tagged `outside_diff` — verified
+but citing a file not in the changed-files list (diff modes only) — get the title suffix
+"(outside diff)" so pre-existing issues are distinguishable from findings on the change.)_
 
 ### Architecture
 
@@ -210,10 +215,13 @@ refuted findings are never resurrected into the report body.)_
 
 ## Not Covered
 
-This review is static analysis by LLM reviewers. It does NOT cover: runtime performance/profiling,
-timing-dependent concurrency races (only statically-visible async/shared-state hazards are checked),
-database migration & rollback safety, dead code reachable only via dynamic dispatch/reflection, and
-cross-repo/external API contract compatibility. Absence of findings here is not evidence of absence.
+This review is static analysis by LLM reviewers. It does NOT cover: runtime profiling (only
+statically-visible performance defects — N+1, super-linear loops, blocking IO, unbounded growth — are
+checked), timing-dependent concurrency races (only statically-visible async/shared-state hazards are
+checked), dead code reachable only via dynamic dispatch/reflection, and cross-repo callers of a changed
+public API (the contract change itself is flagged; its external blast radius is not traced). Migration
+safety is checked statically (destructive ops, rollback paths, lock-heavy operations), not against
+production data shapes or volumes. Absence of findings here is not evidence of absence.
 
 **Emergent / systemic failure modes** _(conditional on reviewer roster)_:
 
@@ -268,6 +276,7 @@ the 4→3 collapse loses no signal.
   "also_flagged_by": [
     "<reviewer names; only on findings deduped across reviewers>"
   ],
+  "outside_diff": "<true; only on non-systemic findings citing a file outside changedFiles (diff modes)>",
   "refute_reason": "<refuter counter-evidence; only when verification is refuted>",
   "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|dropped_systemic_incomplete|dropped_systemic_anchor_unverified|codex_file_missing|codex_line_out_of_range"
 }

@@ -60,19 +60,22 @@ target-resolution table, and the output format.
 | "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.          |
 | "Same issue from 3 reviewers = 3 findings"   | Dedup first (Phase 8). Merge, keep highest severity, annotate "Also flagged by".   |
 
-## Additional review dimensions (cross-cutting)
+## Dimension ownership map (cross-cutting)
 
-When reading findings, also look for evidence of these higher-order issues (flag under "Other" if a
-reviewer surfaces them):
+Every cross-cutting dimension has an owning reviewer whose prompt explicitly hunts for it — do not
+assume a dimension is covered unless its owner ran:
 
-- **Dead code**: unused exports, unreachable branches, stale feature flags with no owner/expiry
-- **Dependency hygiene**: new deps without necessity justification, SBOM gaps, devDeps in prod
-- **Observability gaps**: new code paths with no logging, metrics, or tracing
-- **Migration/release safety**: feature flags lacking owner annotation or expiry date
-- **Contract compatibility**: public API changes that break existing callers
-- **Semantic duplication**: near-identical logic blocks that differ by one token (AST clones)
+- **Dead code / semantic duplication / over-engineering** → simplification-reviewer
+- **Dependency & supply-chain hygiene** (new-dep necessity, typosquatting, devDeps in prod) → security-reviewer
+- **PII-in-logs / data leakage** → security-reviewer
+- **Observability gaps** (failure paths with zero telemetry) → silent-failure-hunter
+- **Statically-visible performance** (N+1, super-linear loops, blocking IO, unbounded growth) → quality-reviewer
+- **Contract compatibility** (public API breaking changes) & **migration safety** → quality-reviewer
+- **Test pyramid health / over-pinned tests** → test-coverage-reviewer
+
+Orchestrator-level (yours, not a reviewer's):
+
 - **Hotspot/churn risk**: high-churn files with diffuse ownership (flag if CODEOWNERS absent)
-- **Test pyramid health**: too many unit tests on implementation details, too few integration tests
 - **Diff reviewability**: detection degrades past ~400 lines; at 2000 lines the skill switches from
   inline diff to manifest mode (full diff on disk + risk-ordered read-all, never truncated — Phase 1) —
   note the switch in Scope, and disclose any pathological partial coverage
@@ -309,6 +312,12 @@ Then, for every surviving finding from every reviewer (per the pseudocode in `re
    (line-number drift is the canonical LLM citation failure); 0 or >1 matches, or a multi-line
    quote → drop (`dropped_no_match`).
 
+3. **Outside-diff tagging** (base / working-tree modes only): after a `kind != "systemic"` finding
+   passes the citation check, if its `file` is not in `changedFiles`, keep it but tag
+   `outside_diff: true` — rendered as "(outside diff)" on the finding. Pre-existing issues in
+   untouched files are still worth surfacing, but must be distinguishable from findings on the change.
+   (Systemic findings legitimately anchor across unchanged files; never tag them.)
+
 Collect dropped findings into the "Dropped Findings" list. Codex's structured findings carry no
 `verbatim` (the review schema has no quote field), so they are existence-checked, not quote-verified:
 the cited `file` must exist AND `line_start`/`line_end` must fall within the file's length. A finding
@@ -348,6 +357,7 @@ never silently discarded. (On the degraded fallback path (Phase 6 Outcome 2), ex
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
+   Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
    ```
 
    Append WARNING lines when applicable (one line each, only when the condition applies):

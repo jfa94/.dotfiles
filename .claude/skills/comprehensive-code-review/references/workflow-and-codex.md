@@ -1,6 +1,6 @@
 # Workflow & Codex Reference
 
-This skill dispatches the 10 specialist reviewers through a `Workflow` and runs Codex as a
+This skill dispatches the 11 specialist reviewers through a `Workflow` and runs Codex as a
 separate background Bash job. Citation verification and report assembly stay in the main
 session. This file is the contract for all three.
 
@@ -41,14 +41,19 @@ Workflow({
 });
 ```
 
-The workflow's final stage writes `{ reviewers: [ { name, status, verdict?, blocked_reason?, findings: [...] }, ... ] }`
+The workflow's final stage writes `{ reviewers: [ { name, status, verdict?, blocked_reason?, dropped_by_cap?, findings: [...] }, ... ] }`
 to `<repoRoot>/.comprehensive-code-review/raw/workflow-result.json`. **Read that file to harvest the
 result — the workflow's JS `return` value is NOT retrievable by the caller** (`TaskOutput` is
 deprecated; the completion notification carries only prose). Each `findings[]` entry matches the
 canonical schema below. Every reviewer named in `args.reviewers` appears in the result (BLOCKED with a
 reason if its agent failed or was skipped).
 
-Two behaviors live inside the workflow, not the skill:
+The persist stage is transcription-checked: the script computes the payload's UTF-8 byte count and
+the persist agent must confirm `wc -c` on the written file matches before returning `written=true`
+(a mismatch means the agent altered content while copying — the canonical way findings get silently
+corrupted and then dropped at citation verification).
+
+Three behaviors live inside the workflow, not the skill:
 
 - **Adversarial Verify stage**: each critical/important finding is handed to a fresh refuter agent
   that sees only the claim + location (title, severity, file:line, verbatim quote — NOT the
@@ -57,6 +62,8 @@ Two behaviors live inside the workflow, not the skill:
   Findings (never silently deleted, never resurrected). A verifier that dies/skips keeps the finding.
 - **Diffless reviewers**: `documentation-reviewer` audits current state, not the change; the workflow
   withholds the diff from it (it gets the changed-files list only) to avoid context dilution.
+- **Spec scoping**: `args.spec` (when provided) is included ONLY in implementation-reviewer's prompt —
+  broadcasting it to every reviewer would cost spec × N tokens and duplicate the acceptance-criteria pass.
 
 ## 2. Canonical FINDINGS_SCHEMA (defined in the workflow script)
 
@@ -65,6 +72,7 @@ Two behaviors live inside the workflow, not the skill:
   "status": "DONE | BLOCKED",
   "blocked_reason": "<string, only when BLOCKED>",
   "verdict": "<reviewer-specific verdict string, optional>",
+  "dropped_by_cap": "<integer ≥0, optional — candidates the reviewer discarded to respect its findings cap; surfaces silent cap truncation in the report>",
   "findings": [
     {
       "severity": "critical | important | minor",

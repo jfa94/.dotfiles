@@ -1,8 +1,8 @@
 ---
 name: quick-code-review
 description: >
-  Run a focused, quick code review with the five crucial specialist reviewers (architecture,
-  security, quality, silent failures, systemic failures) plus a Codex adversarial review. A lean subset of
+  Run a focused, quick code review with the five crucial specialist reviewers (security,
+  quality, test coverage, silent failures, systemic failures) plus a Codex adversarial review. A lean subset of
   comprehensive-code-review: same rigor — every critical/important finding is adversarially
   verified by a fresh refuter agent, and every finding is dropped unless it has a verified
   file:line citation — but fewer dimensions, so the report is tighter and faster to triage.
@@ -37,10 +37,10 @@ schema, the Codex target-resolution table, the citation-verification pseudocode,
 
 This skill always runs exactly these five, read from `comprehensive-code-review/agents/`:
 
-- `architecture-reviewer` — structural integrity, coupling, cycles, god objects, leaky abstractions
-- `security-reviewer` — injection, auth/authz, secrets, insecure defaults (source→sink traced)
-- `quality-reviewer` — logic errors, edge cases, caller breakage, and concurrency/async (it owns that dimension)
-- `silent-failure-hunter` — swallowed errors, empty catches, unjustified fallbacks masking failure
+- `security-reviewer` — injection, auth/authz, secrets, PII-in-logs, insecure defaults (source→sink traced)
+- `quality-reviewer` — logic errors, edge cases, caller breakage, concurrency/async and statically-visible performance (it owns both dimensions)
+- `test-coverage-reviewer` — missing behavioral coverage for the change, over-pinned/brittle tests
+- `silent-failure-hunter` — swallowed errors, empty catches, unjustified fallbacks masking failure, observability gaps
 - `systemic-failure-reviewer` — cross-file/cross-stage failure modes: stuck-states, invariants without repair, unsafe/no-op recovery, over-pinned contracts (self-skips when the diff has no stateful surface)
 
 ## Iron Laws
@@ -135,7 +135,7 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 #   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
-Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{architecture-reviewer,security-reviewer,quality-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
+Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{security-reviewer,quality-reviewer,test-coverage-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
 
 Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`, `claudeMdPath`.
 
@@ -256,6 +256,10 @@ Then, for every surviving finding (per the pseudocode in
    1 match → correct `line` and keep as `relocated_ok`; 0 or >1 matches, or a multi-line quote → drop
    (`dropped_no_match`).
 
+3. **Outside-diff tagging**: after a `kind != "systemic"` finding passes the citation check, if its
+   `file` is not in `changedFiles`, keep it but tag `outside_diff: true` — rendered as "(outside diff)"
+   on the finding. (Systemic findings legitimately anchor across unchanged files; never tag them.)
+
 Codex's structured findings carry no `verbatim`, so they are existence-checked: the cited `file` must exist
 AND `line_start`/`line_end` must fall within the file's length, else drop (`codex_file_missing` /
 `codex_line_out_of_range`). On the degraded fallback path, existence-check the refs parsed from
@@ -274,7 +278,7 @@ AND `line_start`/`line_end` must fall within the file's length, else drop (`code
    reviewer's finding at the highest severity of the group; list the others under `also_flagged_by`. All
    counts below are post-dedup.
 4. Categorize each verified finding per `comprehensive-code-review/references/report-format.md`. With this
-   skill's five reviewers + Codex, only these categories will populate: **Architecture, Security, Quality,
+   skill's five reviewers + Codex, only these categories will populate: **Security, Quality, Tests,
    Silent Failures, Systemic, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.)
 5. Map severity per the table in the reference (Codex's `critical|high|medium|low` →
    `critical|important|important|minor`; keep the native severity + `confidence` on each Codex finding).
@@ -292,6 +296,7 @@ AND `line_start`/`line_end` must fall within the file's length, else drop (`code
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
+   Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
    ```
 
 ## Phase 8 — STATUS line

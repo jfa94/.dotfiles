@@ -51,11 +51,11 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 ### Phase 2: Automated fitness checks
 
-Run these checks and capture output:
+Run these checks and capture output. Only run tools the project already has installed (listed in devDependencies/lockfile or wired into a package.json script) — NEVER `npx`-install a tool as a side effect of the review; if it isn't installed, skip the check:
 
-5. **Dependency validation**: run the project's dependency validation command if one exists (e.g., `madge`, `dependency-cruiser`, or a language-native equivalent such as `go mod verify`). Check `package.json` scripts for a `deps:validate` or similar target. If no tooling is present, skip.
-6. **Circular dependency check**: run the project's circular-dependency detection if available (e.g., for Node/TS projects: `npx madge --circular --extensions ts,tsx src/ 2>&1`; for other stacks, use the equivalent). If absent, perform a manual import-graph scan on the changed files.
-7. **Orphan detection**: run the project's unreachable-module detection if available (e.g., `npx madge --orphans --extensions ts,tsx src/ 2>&1`). Skip if no tooling is configured.
+5. **Dependency validation**: run the project's dependency validation command if one exists (e.g., a `deps:validate` script, `dependency-cruiser`, or a language-native equivalent such as `go mod verify`). If no tooling is present, skip.
+6. **Circular dependency check**: run the project's circular-dependency detection if installed (e.g., madge via `./node_modules/.bin/madge --circular --extensions ts,tsx src/ 2>&1`; for other stacks, the equivalent). If absent, perform a manual import-graph scan on the changed files.
+7. **Orphan detection**: run the project's unreachable-module detection if installed (e.g., `./node_modules/.bin/madge --orphans --extensions ts,tsx src/ 2>&1`). Skip if no tooling is configured.
 
 ### Phase 3: Manual structural review
 
@@ -84,35 +84,25 @@ For each changed file, check:
     - Database types leak into API response shapes — quote the type reference
     - Implementation details (e.g., cache keys, query syntax) appear in public interfaces — quote the offending symbol
 
-12. **AI-specific anti-patterns** -- watch for:
-    - Over-engineering: unnecessary abstractions, speculative generality, premature optimization
-    - Duplicated logic that should use existing utilities (search codebase for similar patterns)
-    - `any` type usage (warn per occurrence, error if >3 per file)
-    - Barrel file abuse (re-exporting everything, creating implicit coupling)
-    - Empty or no-op error handlers (catch blocks that swallow errors silently)
+12. **Barrel file abuse** -- re-exporting everything, creating implicit coupling between otherwise-independent modules. (Over-engineering and duplicated logic belong to simplification-reviewer; `any` usage to lint; swallowed errors to silent-failure-hunter; dependency/supply-chain hygiene to security-reviewer. Do NOT duplicate their passes.)
 
-### Phase 4: Dependency hygiene
+13. **Runtime-boundary violations** -- Node.js built-in modules (fs, path, crypto) imported in frontend/browser code — quote the import line
 
-13. Check for:
-    - devDependencies imported in production code
-    - Node.js built-in modules (fs, path, crypto) imported in frontend/browser code
-    - New external dependencies -- verify they are necessary and not duplicating existing deps
-    - Hallucinated packages -- if a new dependency is added, verify it exists: `npm view <package> version 2>&1` (or the language-equivalent registry check)
-
-### Phase 5: Severity classification
+### Phase 4: Severity classification
 
 Rate each category:
 
 - **Boundary compliance**: PASS / VIOLATION (with file:line + verbatim import)
 - **Coupling health**: PASS / WARNING / VIOLATION
 - **Structural integrity**: PASS / WARNING / VIOLATION
-- **Dependency hygiene**: PASS / WARNING / VIOLATION
 
 Set `verdict` to exactly one of:
 
 - **APPROVE** — all categories PASS
 - **WARNING** — at least one WARNING, no VIOLATION
 - **VIOLATION** — at least one VIOLATION
+
+Each finding carries the standard schema severity (`critical | important | minor`): a VIOLATION-backed finding → `critical` when the boundary break has production impact (e.g., a cycle in a deploy path, domain importing infra), else `important`; a WARNING-backed finding → `minor` (or `important` if the fragility is likely to bite soon).
 
 **Findings cap: ≤5.** Score candidates by likelihood × impact; report only the top 5, drop the tail.
 

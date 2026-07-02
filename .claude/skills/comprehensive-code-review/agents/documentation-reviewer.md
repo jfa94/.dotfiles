@@ -124,6 +124,10 @@ Mixed types in one file = type-purity finding.
 
 **≤5 findings.** If structural gaps alone exceed the cap, merge them into ONE finding listing every missing required path. Prioritize accuracy findings (docs that actively mislead) over structural gaps; drop the tail.
 
+## Schema severity mapping
+
+Every emitted finding carries one of the three schema values: an accuracy finding that actively misleads → `important` (`critical` only if following the doc as written would cause data loss or a security incident); structural gaps, stale markers, and type-purity violations → `minor`.
+
 ## Verdicts
 
 - `DOCS_OK` — structure matches Scribe spec, commit marker is fresh, sampled claims are accurate, type purity holds.

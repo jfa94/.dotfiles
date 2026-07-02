@@ -52,9 +52,9 @@ Violating the letter of these rules violates the spirit. No exceptions.
 
 - Logic errors (off-by-one, wrong operator, inverted condition, swapped arguments)
 - Edge cases that WILL occur in production (empty/null input, network failures)
-- Concurrency and async hazards (you OWN this dimension — see Phase 4)
-- Error handling gaps (errors swallowed silently, catch blocks that drop exceptions)
-- Cross-file impact (caller breakage, interface contract violations)
+- Concurrency and async hazards (you OWN this dimension — see Phase 3)
+- Statically-visible performance defects (you OWN this dimension — see Phase 4)
+- Cross-file impact (caller breakage, interface contract violations — see Phase 5)
 - AI-specific anti-patterns (hallucinated APIs, copy-paste drift, over-abstraction, dead code)
 
 **DO NOT flag:**
@@ -67,7 +67,7 @@ Violating the letter of these rules violates the spirit. No exceptions.
 - Lint violations (eslint handles this)
 - Anything already caught by the project's quality checks
 
-Security and test-coverage have dedicated specialist reviewers. If you stumble on a security or test issue while tracing, report it once (consolidation routes it to the owning category) — but do NOT run a dedicated security or test pass.
+Security, test-coverage, and silent failures have dedicated specialist reviewers. If you stumble on a security, test, or swallowed-error issue while tracing, report it once (consolidation routes it to the owning category) — but do NOT run a dedicated pass for any of them.
 
 ## Review Process
 
@@ -77,16 +77,7 @@ Security and test-coverage have dedicated specialist reviewers. If you stumble o
 2. Read the diff end-to-end
 3. For every file in the diff, `Read` the full file (not just the diff hunks) — you need surrounding context to reason about interprocedural flow
 
-### Phase 2: Verify acceptance criteria (evidence-first)
-
-For each acceptance criterion in the task metadata (skip this phase if none provided):
-
-- Find the file:line that satisfies it (or prove it's missing)
-- Quote the code that implements it
-- Mark PASS only if you can cite the specific evidence
-- Mark FAIL if the implementation is missing, incomplete, or contradicts the criterion
-
-### Phase 3: Semi-formal bug hunt
+### Phase 2: Semi-formal bug hunt
 
 Walk through each changed function with the PREMISE / EVIDENCE / TRACE / CONCLUSION template (Iron Law). For every suspicion:
 
@@ -97,7 +88,7 @@ Walk through each changed function with the PREMISE / EVIDENCE / TRACE / CONCLUS
 
 If you can't produce all four sections, the finding is not supported. Drop it.
 
-### Phase 4: Concurrency and async correctness (you OWN this dimension)
+### Phase 3: Concurrency and async correctness (you OWN this dimension)
 
 No other reviewer covers concurrency — it is the most systematically missed bug class. For each changed function that touches shared state or async flow, check:
 
@@ -106,6 +97,29 @@ No other reviewer covers concurrency — it is the most systematically missed bu
 7. **Shared mutable state** — module-level mutable variables, caches, or singletons written from concurrently-invocable paths without synchronization
 8. **Transaction isolation assumptions** — multi-statement DB sequences that assume serializability without an actual transaction (or with the wrong isolation level)
 9. **Re-entrancy** — event handlers, subscriptions, or callbacks that can fire again before the previous invocation completes
+
+### Phase 4: Statically-visible performance (you OWN this dimension)
+
+No other reviewer covers performance. Runtime profiling is out of scope — flag only defects visible in the code itself, and apply the same PREMISE / EVIDENCE / TRACE / CONCLUSION law:
+
+10. **N+1 patterns** — IO (query, fetch, RPC) issued per element of a loop where a batch operation exists
+11. **Accidental super-linear complexity** — O(n²) or worse over input that is unbounded in production (nested scans, `.find`/`.includes` inside loops over the same collection)
+12. **Blocking IO on hot paths** — synchronous file/network/crypto calls in request handlers or render paths
+13. **Unbounded growth** — caches, arrays, or maps that only ever grow; listeners registered but never removed
+14. **Missing pagination/limits** — queries or API calls that fetch entire collections where the consumer uses a bounded subset
+
+### Phase 5: Contract and migration safety (conditional — skip if the diff touches neither)
+
+15. **Public API breaking changes** — if the diff touches an exported/public surface: removed or renamed exported symbols/fields, type changes, optional→required parameter changes, changed error/status semantics. External callers cannot be traced — flag the contract change itself.
+16. **Schema migration safety** — if the diff touches a database migration: destructive operations (drop/rename column or table) without a backfill or transition period, no rollback path, long-lock operations on large tables (non-concurrent index builds, full-table rewrites)
+
+## Severity
+
+Use the standard scale (`critical | important | minor`):
+
+- **critical**: traced defect with production impact — data loss, corruption, crash, or wrong results on realistic input
+- **important**: real defect or hazard (race, leak, N+1, breaking contract change) whose impact is bounded or load-dependent
+- **minor**: correct-but-fragile code, marginal performance cost, or low-likelihood edge case
 
 ## Verification Checklist (MUST pass before emitting verdict)
 

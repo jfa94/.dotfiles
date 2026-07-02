@@ -35,6 +35,9 @@ const FINDINGS_SCHEMA = {
     status: { enum: ["DONE", "BLOCKED"] },
     blocked_reason: { type: "string" },
     verdict: { type: "string" },
+    // Count of candidate findings the reviewer discarded to respect its findings
+    // cap — makes caps visible in the report instead of silently truncating.
+    dropped_by_cap: { type: "integer", minimum: 0 },
     findings: {
       type: "array",
       items: {
@@ -99,15 +102,16 @@ const VERIFY_SCHEMA = {
 // non-relevant context grows).
 const DIFFLESS_REVIEWERS = new Set(["documentation-reviewer"]);
 
-// ponytail: gates on mode=full (the existing value); no new flag or arg parsing needed.
-const TEMPORAL_REVIEWERS = new Set(["quality-reviewer"]);
-
 function buildPrompt(reviewer, ctx) {
-  const specBlock = ctx.spec
-    ? ["", "## Spec file: " + ctx.spec.path, "", ctx.spec.content, ""].join(
-        "\n",
-      )
-    : "";
+  // Spec goes ONLY to implementation-reviewer — broadcasting it to every
+  // reviewer costs spec × N tokens and makes quality-reviewer duplicate the
+  // implementation-reviewer's acceptance-criteria pass.
+  const specBlock =
+    ctx.spec && reviewer.name === "implementation-reviewer"
+      ? ["", "## Spec file: " + ctx.spec.path, "", ctx.spec.content, ""].join(
+          "\n",
+        )
+      : "";
   const reviewInput = DIFFLESS_REVIEWERS.has(reviewer.name)
     ? "No diff provided for this role — audit the current state against the changed-files list above; Read files as needed."
     : ctx.reviewInput;
@@ -135,16 +139,9 @@ function buildPrompt(reviewer, ctx) {
     "Return structured output matching the provided schema — do NOT emit a STATUS line or a prose verdict block.",
     "Every finding MUST include file + line + a verbatim quote (>=5 characters copied exactly from the code at that line). Drop any finding you cannot quote.",
     'If you genuinely cannot perform the review, return status "BLOCKED" with a one-line blocked_reason and an empty findings array. Otherwise return status "DONE".',
-    "Respect your role's findings cap; drop the low-signal tail by likelihood x impact.",
+    "Respect your role's findings cap; drop the low-signal tail by likelihood x impact. If the cap forced you to discard candidate findings, set dropped_by_cap to the count discarded; omit it (or set 0) otherwise.",
     'Systemic findings (systemic-failure-reviewer only) additionally set kind="systemic", failure_mode, scenario, and anchors[] (≥2 entries, each with file+line+verbatim); all other reviewers leave these fields unset.',
   ];
-  if (ctx.mode === "full" && TEMPORAL_REVIEWERS.has(reviewer.name)) {
-    parts.push(
-      "",
-      "## Temporal reasoning (--full mode)",
-      "For every retry, reset, or recovery path in the diff: when it re-runs on the same input that caused the original failure, does it change the condition that failed — or just re-derive the same state and hit the same failure again? Flag any recovery that reproduces the original failure on unchanged input, whether it spins forever or gives up after a fixed number of tries. That is a no-op recovery, not self-healing.",
-    );
-  }
   return parts.join("\n");
 }
 
@@ -312,6 +309,12 @@ let marker = "WORKFLOW_RESULT_PAYLOAD";
 while (payload.includes(marker)) marker += "_X";
 const openTag = "<" + marker + ">";
 const closeTag = "</" + marker + ">";
+// UTF-8 byte length via pure JS (no Node crypto/Buffer in the workflow sandbox):
+// each %XX escape is one encoded byte, every other char is one ASCII byte.
+const expectedBytes = encodeURIComponent(payload).replace(
+  /%[0-9A-F]{2}/gi,
+  "_",
+).length;
 await agent(
   [
     "You persist a code-review result to disk. Do NOT modify, summarize, reformat, or add commentary to the content.",
@@ -329,8 +332,15 @@ await agent(
       closeTag +
       " markers below (exclude the markers themselves).",
     "3. Read the file back; confirm it parses as JSON and the top-level object has a `reviewers` array.",
+    "4. Run `wc -c < " +
+      outPath +
+      "` and confirm it prints exactly " +
+      expectedBytes +
+      " (the payload's UTF-8 byte count, excluding any trailing newline — write the file WITHOUT a trailing newline). A mismatch means you altered the content; rewrite verbatim and re-check.",
     "",
-    "Return written=true only if the read-back parsed successfully; set reviewer_count to the length of the reviewers array.",
+    "Return written=true ONLY if the read-back parsed successfully AND the byte count matches " +
+      expectedBytes +
+      "; set byte_count to the wc -c result and reviewer_count to the length of the reviewers array.",
     "",
     openTag,
     payload,
@@ -342,10 +352,11 @@ await agent(
     schema: {
       type: "object",
       additionalProperties: false,
-      required: ["written", "path"],
+      required: ["written", "path", "byte_count"],
       properties: {
         written: { type: "boolean" },
         path: { type: "string" },
+        byte_count: { type: "integer" },
         reviewer_count: { type: "integer" },
       },
     },
