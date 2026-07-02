@@ -331,7 +331,7 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "sonnet",
+  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
