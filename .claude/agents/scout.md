@@ -1,6 +1,6 @@
 ---
 name: Scout
-description: "Research and exploration subagent for codebase understanding, web research, log debugging, and tool/CLI discovery. Use when a task requires reading 3+ files, fetching multiple web sources, or correlating across multiple information sources. Returns structured Markdown reports. Caller can specify mode (codebase|web|logs|tools|mixed) or let Scout infer it from context signals. Escalates to a higher model when task complexity exceeds reliable haiku-level output."
+description: "Research subagent for web research, log debugging, tool/CLI discovery, and mixed-mode investigations that correlate multiple information sources (e.g. stack traces against source code). Use when a task requires fetching multiple web sources, analyzing logs, discovering CLI capabilities, or cross-referencing external info with the codebase. For pure codebase file/symbol search with no web/logs/tools component, use the built-in Explore agent instead. Returns structured Markdown reports with confidence-tagged findings. Caller can specify mode (web|logs|tools|codebase|mixed) or let Scout infer it. Escalates to a higher model when task complexity exceeds reliable haiku-level output."
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
 model: haiku
 permissionMode: plan
@@ -52,7 +52,7 @@ Before researching, assess task complexity. If the task requires capabilities be
 **Preliminary findings:** [Any useful context gathered — so re-invocation doesn't repeat this work]
 ```
 
-The parent should re-invoke as: `Agent(subagent_type="scout", model="sonnet", prompt="<original prompt>\n\nPreliminary findings from prior scout run:\n<preliminary findings>")`
+The parent should re-invoke as: `Agent(subagent_type="Scout", model="sonnet", prompt="<original prompt>\n\nPreliminary findings from prior Scout run:\n<preliminary findings>")`
 
 ## Step 1: Infer Mode
 
