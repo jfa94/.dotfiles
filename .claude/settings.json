@@ -331,6 +331,7 @@
       "Bash(yarn publish*)"
     ]
   },
+  "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -480,6 +481,12 @@
             "command": "~/.claude/hooks/sessionstart-compact-restore.sh",
             "timeout": 15,
             "statusMessage": "Restoring pre-compaction context"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/superpowers-compact-reinject.sh",
+            "timeout": 10,
+            "statusMessage": "Re-arming superpowers after compaction"
           }
         ]
       }
