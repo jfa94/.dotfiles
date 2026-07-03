@@ -1,8 +1,11 @@
 ---
 name: prd-to-spec
-description: Turn a PRD into a list of feature specs plus a risk-tiered task list by creating a multi-phase implementation plan using tracer-bullet vertical slices.
-The output is a list of Markdown and JSON files in `specs/features/`.
-Use when user wants to break down a PRD, create an implementation plan, plan phases from a PRD, or mentions "tracer bullets".
+description: >-
+  Turn a PRD into a list of feature specs plus a risk-tiered task list by creating a multi-phase implementation plan using tracer-bullet vertical slices.
+  The output is a list of Markdown and JSON files in `specs/features/`.
+  Use when user wants to break down a PRD, create an implementation plan, plan phases from a PRD, or mentions "tracer bullets".
+  Usage: /prd-to-spec [--autonomous]
+argument-hint: "[--autonomous]"
 ---
 
 # PRD to Spec
@@ -11,6 +14,19 @@ Turn a PRD into a list of feature specs by first creating a multi-phase implemen
 The output is a list of Markdown files in `specs/features/`.
 
 ## Process
+
+### 0. Detect mode
+
+Parse the skill arguments (from `$ARGUMENTS`):
+
+```
+(no args)      → mode = "interactive"  (default — quiz the user, gate task generation)
+--autonomous   → mode = "autonomous"   (skip the human gates, run the review loop in step 10)
+```
+
+Any other flag → tell the user this skill only supports `--autonomous`, then proceed in interactive
+mode (ignore the unknown flag). The steps below are the interactive flow; each step notes what
+changes **In autonomous mode**.
 
 ### 1. Find the PRD
 
@@ -23,6 +39,10 @@ gh issue list --search "[PRD] in:title" --state open
 - **Multiple issues found:** present the list and ask the user which one to implement
 - **One issue found:** use it directly — fetch the full body with `gh issue view <number>`
 - **No issues found:** ask the user to paste the PRD or point you to the file/issue
+
+**In autonomous mode** you need an unambiguous target and cannot quiz. If an issue number was passed
+in the args, use it. Otherwise: exactly one open `[PRD]` issue → use it; zero or multiple → do NOT
+guess — stop and ask the user to specify which PRD (surface the ambiguity, never fabricate a target).
 
 ### 2. Explore the codebase
 
@@ -68,6 +88,11 @@ Ask the user:
 - Should any phases be merged or split further?
 
 Iterate until the user approves the breakdown.
+
+**In autonomous mode** skip this step — do not quiz. Choose the granularity yourself per the
+`<vertical-slice-rules>`, and record the slicing rationale plus any assumptions you made resolving
+PRD ambiguity in `specs/features/<feature>/decisions.md`. That file is the autonomous stand-in for
+the quiz: it makes your judgment calls auditable instead of silent.
 
 ### 6. Write the spec files
 
@@ -149,7 +174,9 @@ For example: `specs/features/user-onboarding/metadata.json`. Skip this file if t
 
 ### 8. Create tasks
 
-Ask the user if they would like to decompose the specs into agent-friendly tasks. If yes, decompose ALL specs into a single flat list of implementation tasks where each task:
+Ask the user if they would like to decompose the specs into agent-friendly tasks. **In autonomous
+mode** skip the question — always decompose. Either way, decompose ALL specs into a single flat list
+of implementation tasks where each task:
 
 1. is completable in under (approximately) 45 min
 2. has clear acceptance criteria that map to specific test assertions
@@ -250,3 +277,32 @@ Before writing `tasks.json` (or presenting it), re-verify, backfill, then finali
 - **Vertical slices** — the first tasks deliver a tracer bullet, not a bare layer; nothing is a horizontal all-of-one-layer task.
 - **Traceability** — every PRD requirement is covered by a task (forward), and every task cites a PRD line (reverse); no orphans.
 - **Risk tiers** — each `risk_tier` is individually judged with a real `risk_rationale`; not a blanket tier across the board.
+
+### 10. Autonomous review loop
+
+**Autonomous mode only** — skip this step entirely in interactive mode (the user is the reviewer).
+
+Your own self-review (step 9) is not enough: the context that wrote the spec is biased toward "what's
+there". So hand the written specs to an independent reviewer on a fresh context and iterate until it
+approves.
+
+1. **Dispatch the reviewer.** Read `agents/spec-reviewer.md` (in this skill's directory) and dispatch
+   a `general-purpose` subagent with that file's body as its prompt, appended with:
+   - the PRD (paste the issue body, or give the file path), and
+   - the paths of the spec files + `tasks.json` you just wrote.
+
+   The subagent runs read-only in a fresh context and ends with a `STATUS:` line.
+
+2. **Branch on the verdict:**
+   - `STATUS: APPROVE` → done. Report the `specs/features/<feature>/` path to the user.
+   - `STATUS: REQUEST_CHANGES — <n> blockers` → each blocking finding names a rule, a file, the
+     offending item, and a fix direction.
+
+3. **Revise minimally.** Apply the smallest patches that clear every blocker. **Preserve all
+   already-satisfied tasks and criteria verbatim — do NOT re-derive the specs from the PRD** (that
+   regresses requirements the reviewer already accepted). Then re-dispatch the reviewer, appending
+   the prior findings to its prompt so it can verify each fix landed.
+
+4. **Cap at 3 review iterations.** If it still isn't `APPROVE` after the third, stop — present the
+   specs and the outstanding blockers to the user for a human call. Never loop unbounded, and never
+   report success while blockers remain.
