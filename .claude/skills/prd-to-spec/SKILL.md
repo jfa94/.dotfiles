@@ -1,8 +1,11 @@
 ---
 name: prd-to-spec
-description: Turn a PRD into a list of feature specs by creating a multi-phase implementation plan using tracer-bullet vertical slices.
-The output is a list of Markdown and JSON files in `specs/features/`.
-Use when user wants to break down a PRD, create an implementation plan, plan phases from a PRD, or mentions "tracer bullets".
+description: >-
+  Turn a PRD into a list of feature specs plus a risk-tiered task list by creating a multi-phase implementation plan using tracer-bullet vertical slices.
+  The output is a list of Markdown and JSON files in `specs/features/`.
+  Use when user wants to break down a PRD, create an implementation plan, plan phases from a PRD, or mentions "tracer bullets".
+  Usage: /prd-to-spec [--autonomous]
+argument-hint: "[--autonomous]"
 ---
 
 # PRD to Spec
@@ -11,6 +14,19 @@ Turn a PRD into a list of feature specs by first creating a multi-phase implemen
 The output is a list of Markdown files in `specs/features/`.
 
 ## Process
+
+### 0. Detect mode
+
+Parse the skill arguments (from `$ARGUMENTS`):
+
+```
+(no args)      → mode = "interactive"  (default — quiz the user, gate task generation)
+--autonomous   → mode = "autonomous"   (skip the human gates, run the review loop in step 10)
+```
+
+Any other flag → tell the user this skill only supports `--autonomous`, then proceed in interactive
+mode (ignore the unknown flag). The steps below are the interactive flow; each step notes what
+changes **In autonomous mode**.
 
 ### 1. Find the PRD
 
@@ -23,6 +39,10 @@ gh issue list --search "[PRD] in:title" --state open
 - **Multiple issues found:** present the list and ask the user which one to implement
 - **One issue found:** use it directly — fetch the full body with `gh issue view <number>`
 - **No issues found:** ask the user to paste the PRD or point you to the file/issue
+
+**In autonomous mode** you need an unambiguous target and cannot quiz. If an issue number was passed
+in the args, use it. Otherwise: exactly one open `[PRD]` issue → use it; zero or multiple → do NOT
+guess — stop and ask the user to specify which PRD (surface the ambiguity, never fabricate a target).
 
 ### 2. Explore the codebase
 
@@ -49,6 +69,8 @@ layers end-to-end, NOT a horizontal slice of one layer.
 - Each slice delivers a narrow but COMPLETE path through every layer (schema, API, UI, tests)
 - A completed slice is demoable or verifiable on its own
 - Prefer many thin slices over few thick ones
+- The FIRST slices (and first tasks in dependency order) must deliver a tracer bullet — a thin end-to-end path — NOT "all the types up front" or one whole layer
+- Red flag: if every phase/task title is just a layer name (schema, backend, frontend, api, types, tests), the decomposition is horizontal — re-slice it vertically
 - Do NOT include specific file names, function names, or implementation details that are likely to change as later phases are built
 - DO include durable decisions: route paths, schema shapes, data model names
 </vertical-slice-rules>
@@ -66,6 +88,11 @@ Ask the user:
 - Should any phases be merged or split further?
 
 Iterate until the user approves the breakdown.
+
+**In autonomous mode** skip this step — do not quiz. Choose the granularity yourself per the
+`<vertical-slice-rules>`, and record the slicing rationale plus any assumptions you made resolving
+PRD ambiguity in `specs/features/<feature>/decisions.md`. That file is the autonomous stand-in for
+the quiz: it makes your judgment calls auditable instead of silent.
 
 ### 6. Write the spec files
 
@@ -132,7 +159,8 @@ Key principles for good specs:
 
 - **Be explicit about what's out of scope.** Expanding out of scope can be tempting. If you don't say "no OAuth," you might get OAuth.
 - **State technical constraints as hard rules.** "No third-party auth libraries" is clearer than "prefer building from primitives."
-- **Keep acceptance criteria testable.** Each criterion should map directly to one or more test cases. Vague criteria like "good user experience" give nothing to verify against.
+- **Keep acceptance criteria testable.** Each criterion must be a pass/fail predicate a test can assert. Reject vague phrasing — "works well", "as expected", "user-friendly", "performant", "robust", "handle errors gracefully", "looks good", "etc." — and restate it as a concrete assertion or drop it. "Rejects emails without @, without domain, with spaces" beats "validates email"; "good user experience" gives nothing to verify against.
+- **Cover every PRD requirement.** Each requirement in the PRD must be addressed by at least one acceptance criterion across the specs. An uncovered requirement is a gap, not a choice — either cover it or move it to Out of Scope with a reason.
 
 ### 7. Write metadata
 
@@ -146,12 +174,24 @@ For example: `specs/features/user-onboarding/metadata.json`. Skip this file if t
 
 ### 8. Create tasks
 
-Ask the user if they would like to decompose the specs into agent-friendly tasks. If yes, decompose ALL specs into a single flat list of implementation tasks where each task:
+Ask the user if they would like to decompose the specs into agent-friendly tasks. **In autonomous
+mode** skip the question — always decompose. Either way, decompose ALL specs into a single flat list
+of implementation tasks where each task:
 
 1. is completable in under (approximately) 45 min
 2. has clear acceptance criteria that map to specific test assertions
 3. lists exact files to create or modify (max 3 files per task)
 4. specifies which tests to write.
+
+<iron-laws>
+Non-negotiable invariants for every task. Violating one is a defect, not a style choice:
+
+1. **1–3 files.** Never `files: []`, never "the executor will figure it out", never > 3. Three is the ceiling, not the target.
+2. **`depends_on` is an acyclic DAG.** Every referenced id exists in this same task list. No cycles, no dangling references.
+3. **Every acceptance criterion is testable** — a pass/fail predicate a test can assert. "Clear" ≠ testable; restate or drop it.
+4. **No orphan tasks.** Every task ladders to a PRD-stated outcome (see `<traceability-rules>`). If you can't cite the PRD line it serves, it's scope creep — drop it.
+5. **Every task carries a judged `risk_tier` + `risk_rationale`** (see risk-tiering below). A blanket "everything is medium" is not a judgment.
+</iron-laws>
 
 <test-coverage-rules>
 - **Minimum ratio**: Every acceptance criterion MUST have at least one corresponding entry in `tests_to_write`. A task with N acceptance criteria must have >= N entries in `tests_to_write`.
@@ -162,7 +202,24 @@ Ask the user if they would like to decompose the specs into agent-friendly tasks
 
 Tasks from later phases MUST list tasks from earlier phases in their `depends_on` array so the factory can execute them in the correct order.
 
-Output the entire list as a single JSON array in ONE file called `tasks.json` in the feature directory (e.g., `specs/features/user-onboarding/tasks.json`). Do NOT create separate task files per spec — all tasks go in this one file. Fields: task_id, title, description, files, acceptance_criteria, tests_to_write, depends_on (array of task_ids).
+<traceability-rules>
+The PRD is the axiom. Task coverage must map both ways:
+
+- **Forward**: every PRD requirement maps to ≥ 1 task. An uncovered requirement is a gap — cover it or record it in the spec's Out of Scope.
+- **Reverse**: every task traces to a PRD line. If you can't cite the requirement it serves, it's scope creep — drop it (or note it as an explicit follow-up in Out of Scope; do NOT emit a task for it).
+</traceability-rules>
+
+<risk-tiering>
+Each task carries a `risk_tier` (`low | medium | high`) and a one-line `risk_rationale`. Tier = difficulty × stakes = P(error) × impact:
+
+- **high** — security-sensitive, data-loss-prone, cross-cutting, or hard to reverse
+- **medium** — non-trivial logic with a contained blast radius
+- **low** — mechanical, isolated, low-stakes
+
+The rationale must justify the choice; "everything is medium" is a non-judgment, not a tier. Higher-tier tasks warrant more implementation care and review scrutiny downstream.
+</risk-tiering>
+
+Output the entire list as a single JSON array in ONE file called `tasks.json` in the feature directory (e.g., `specs/features/user-onboarding/tasks.json`). Do NOT create separate task files per spec — all tasks go in this one file. Fields: task_id, title, description, files, acceptance_criteria, tests_to_write, depends_on (array of task_ids), risk_tier, risk_rationale.
 
 ```json
 [
@@ -182,7 +239,9 @@ Output the entire list as a single JSON array in ONE file called `tasks.json` in
       "password.test.ts: verify returns false for wrong password",
       "password.test.ts: hash with <12 rounds throws"
     ],
-    "depends_on": []
+    "depends_on": [],
+    "risk_tier": "high",
+    "risk_rationale": "Password hashing is security-critical — a weak or wrong implementation is hard to reverse once users exist"
   },
   {
     "task_id": "auth-002",
@@ -200,7 +259,50 @@ Output the entire list as a single JSON array in ONE file called `tasks.json` in
       "auth.service.test.ts: register creates user",
       "auth.service.test.ts: duplicate email returns error tuple"
     ],
-    "depends_on": ["auth-001"]
+    "depends_on": ["auth-001"],
+    "risk_tier": "medium",
+    "risk_rationale": "Non-trivial validation and registration logic, but blast radius is contained to the auth service"
   }
 ]
 ```
+
+### 9. Self-review before finalizing
+
+Before writing `tasks.json` (or presenting it), re-verify, backfill, then finalize. Walk the whole list against these checks — fix in place, don't rationalize:
+
+- **Granularity** — each task ≤ 3 files and ~45 min; split anything larger.
+- **Dependencies** — `depends_on` is acyclic, every referenced id exists, no dangling refs; tasks that touch overlapping files have an edge between them.
+- **Acceptance criteria** — all testable pass/fail predicates, none vague (see the blocklist in step 6).
+- **Test coverage** — ≥ 1 test per criterion, plus an error/boundary test wherever validation, storage, permissions, or error handling is involved (re-check the last few tasks — coverage degrades toward the end).
+- **Vertical slices** — the first tasks deliver a tracer bullet, not a bare layer; nothing is a horizontal all-of-one-layer task.
+- **Traceability** — every PRD requirement is covered by a task (forward), and every task cites a PRD line (reverse); no orphans.
+- **Risk tiers** — each `risk_tier` is individually judged with a real `risk_rationale`; not a blanket tier across the board.
+
+### 10. Autonomous review loop
+
+**Autonomous mode only** — skip this step entirely in interactive mode (the user is the reviewer).
+
+Your own self-review (step 9) is not enough: the context that wrote the spec is biased toward "what's
+there". So hand the written specs to an independent reviewer on a fresh context and iterate until it
+approves.
+
+1. **Dispatch the reviewer.** Read `agents/spec-reviewer.md` (in this skill's directory) and dispatch
+   a `general-purpose` subagent with that file's body as its prompt, appended with:
+   - the PRD (paste the issue body, or give the file path), and
+   - the paths of the spec files + `tasks.json` you just wrote.
+
+   The subagent runs read-only in a fresh context and ends with a `STATUS:` line.
+
+2. **Branch on the verdict:**
+   - `STATUS: APPROVE` → done. Report the `specs/features/<feature>/` path to the user.
+   - `STATUS: REQUEST_CHANGES — <n> blockers` → each blocking finding names a rule, a file, the
+     offending item, and a fix direction.
+
+3. **Revise minimally.** Apply the smallest patches that clear every blocker. **Preserve all
+   already-satisfied tasks and criteria verbatim — do NOT re-derive the specs from the PRD** (that
+   regresses requirements the reviewer already accepted). Then re-dispatch the reviewer, appending
+   the prior findings to its prompt so it can verify each fix landed.
+
+4. **Cap at 3 review iterations.** If it still isn't `APPROVE` after the third, stop — present the
+   specs and the outstanding blockers to the user for a human call. Never loop unbounded, and never
+   report success while blockers remain.
