@@ -66,6 +66,16 @@ When the user uses vague or overloaded terms, propose a precise canonical term. 
 
 When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
 
+### Close the open decisions
+
+Before wrapping up, sweep the decision categories that most often stay silently open:
+
+- Edge cases and error behavior — what exactly happens on each failure?
+- Non-goals — name the tempting adjacent features that are explicitly excluded
+- Data contracts — schema shapes, request/response formats, validation rules
+- Thresholds and limits — timeouts, sizes, rates, pagination
+- Auth/permission rules per action
+
 ### Cross-reference with code
 
 When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
