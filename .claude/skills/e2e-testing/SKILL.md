@@ -41,7 +41,7 @@ The default deliverable is a **gap report**. Writing tests, running them, and sc
 
 ## Phase 1 — Understand the repo
 
-Dispatch `Scout` (or an Explore agent if Scout is unavailable) to map: docs (`docs/glossary.md`, context map, PRDs), routes/pages, the auth model, existing test infrastructure (framework, configs, CI workflows), and every existing e2e spec.
+Dispatch an `Explore` agent to map: docs (`docs/glossary.md`, context map, PRDs), routes/pages, the auth model, existing test infrastructure (framework, configs, CI workflows), and every existing e2e spec.
 
 Framework stance — Playwright-opinionated, incumbent-respecting:
 

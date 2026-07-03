@@ -7,7 +7,7 @@
 
 ## When Working
 
-- Use a subagent (`Scout` if available) for any exploration or research spanning 3+ files or pages.
+- Use a subagent for any exploration or research spanning 3+ files or pages: built-in `Explore` for pure codebase search; `Scout` (if available) for web research, log debugging, tool/CLI discovery, or mixed-source investigations.
 - After meaningful code changes (new features, changed APIs/architecture/config), run the `Scribe` agent to update `/docs`.
 - Ask, don't assume: if intent, architecture, or requirements are unclear, ask before coding — no silent assumptions. Running unattended, choose the most reasonable interpretation, proceed, and flag the assumption in your closing summary.
 - Flag uncertainty; don't fake confidence. When useful, run a small, low-risk experiment and bring the hypothesis and result back to discuss.
