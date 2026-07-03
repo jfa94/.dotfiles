@@ -473,6 +473,15 @@
     ],
     "SessionStart": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionstart-model-lock.sh",
+            "statusMessage": "Locking default model to opusplan"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {
@@ -535,10 +544,10 @@
       }
     }
   },
-  "theme": "dark",
-  "tui": "fullscreen",
   "awaySummaryEnabled": false,
+  "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
+  "theme": "dark",
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
