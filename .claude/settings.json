@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "skillListingBudgetFraction": 0.01,
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"
@@ -331,7 +330,7 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
@@ -536,11 +535,10 @@
       }
     }
   },
-  "effortLevel": "high",
-  "awaySummaryEnabled": false,
-  "tui": "fullscreen",
-  "skipWorkflowUsageWarning": true,
   "theme": "dark",
+  "tui": "fullscreen",
+  "awaySummaryEnabled": false,
+  "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
