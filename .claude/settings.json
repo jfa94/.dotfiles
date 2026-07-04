@@ -552,7 +552,9 @@
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "autoMode": {
-    "allow": ["$defaults"],
+    "allow": [
+      "$defaults"
+    ],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
       "Never disable, downgrade, or skip lint/typecheck/test/quality gates to silence errors.",
@@ -576,5 +578,6 @@
       "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
       "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
     ]
-  }
+  },
+  "effortLevel": "high"
 }
