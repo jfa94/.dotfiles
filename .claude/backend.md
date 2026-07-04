@@ -9,5 +9,5 @@
 
 - Manage dependencies via `package.json` (pnpm); avoid ad-hoc global installs
 - Use ESM: set `"type": "module"` and explicit `.js` extensions on relative imports
-- Bootstrap linting/formatting/testing with `ts/configure.sh node <project-dir>`
+- Bootstrap linting/formatting/testing with `ts/configure.sh node <project-dir>` — installs the latest dev-dep versions via `pnpm add -D` (no manual `pnpm install` needed)
 - Commands (from the scaffold): `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format`

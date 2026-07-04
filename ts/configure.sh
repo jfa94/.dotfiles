@@ -37,7 +37,8 @@ What gets copied:
   tsconfig.json                TypeScript config
   vitest.config.ts             Vitest config
   .gitignore                   Git ignore rules
-  + Merges scripts and devDependencies from package.scaffold.json into package.json
+  + Merges scripts from package.scaffold.json into package.json
+  + Installs the latest dev dependencies via `pnpm add -D` (needs network)
 
 Conflict handling:
   If files already exist in the target, you'll be prompted to choose:
@@ -46,7 +47,8 @@ Conflict handling:
     3) Prompt — decide file-by-file
 
 Prerequisites:
-  node      Required for package.json scripts merge
+  node      Required to merge scripts into package.json
+  pnpm      Required to install dev dependencies (needs network)
 HELP
 }
 
@@ -187,17 +189,26 @@ if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
   copy_file "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" ".gitignore"
 fi
 
-# --- Merge package.scaffold.json ---
+# --- Merge scripts + install latest dev dependencies ---
+# Merge the scaffold's scripts into package.json and print its dev-dependency
+# names on stdout, then let pnpm resolve+install the latest versions (so new
+# projects never inherit stale pins). pnpm add also writes the lockfile.
 if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
-  TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" node -e "
+  DEV_DEPS="$(TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" node -e "
     const fs = require('fs');
-    const pkg = JSON.parse(fs.readFileSync(process.env.TARGET_PATH + '/package.json', 'utf8'));
+    const target = process.env.TARGET_PATH + '/package.json';
+    const pkg = JSON.parse(fs.readFileSync(target, 'utf8'));
     const scaffold = JSON.parse(fs.readFileSync(process.env.SCAFFOLD_PATH + '/package.scaffold.json', 'utf8'));
     pkg.scripts = Object.assign({}, pkg.scripts || {}, scaffold.scripts);
-    pkg.devDependencies = Object.assign({}, pkg.devDependencies || {}, scaffold.devDependencies);
-    fs.writeFileSync(process.env.TARGET_PATH + '/package.json', JSON.stringify(pkg, null, 2) + '\n');
-  "
-  echo "Merged scripts and devDependencies into package.json"
+    fs.writeFileSync(target, JSON.stringify(pkg, null, 2) + '\n');
+    process.stdout.write((scaffold.scaffoldDevDependencies || []).join(' '));
+  ")"
+  echo "Merged scripts into package.json"
+  if [[ -n "$DEV_DEPS" ]]; then
+    echo "Installing latest dev dependencies with pnpm..."
+    # shellcheck disable=SC2086 # intentional word-splitting: one arg per package
+    pnpm --dir "$TARGET" add -D $DEV_DEPS
+  fi
 else
   echo "Warning: package.scaffold.json not found, skipping scripts merge"
 fi

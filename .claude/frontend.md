@@ -11,7 +11,7 @@
 
 ## Commands
 
-- Bootstrap linting/formatting/testing with `ts/configure.sh frontend <project-dir>`
+- Bootstrap linting/formatting/testing with `ts/configure.sh frontend <project-dir>` — installs the latest dev-dep versions via `pnpm add -D` (no manual `pnpm install` needed)
 - Quality gate (all checks): `pnpm quality`
 - Build: `pnpm build`
 - Test: `pnpm test`
