@@ -19,12 +19,13 @@ CONFIG_FILES=(
 # --- Help ---
 show_help() {
   cat <<'HELP'
-Usage: ./configure.sh <target-project-directory>
+Usage: ./configure.sh <frontend|node> <target-project-directory>
 
 Bootstraps a JS/TS project with linting, formatting, and quality tooling
 from the dotfiles repo.
 
 Arguments:
+  <frontend|node>               Which config bucket to install
   <target-project-directory>   Path to the project to configure (must contain package.json)
 
 What gets copied:
@@ -55,13 +56,21 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 # --- Validate ---
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <target-project-directory>"
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <frontend|node> <target-project-directory>"
   echo "Run with --help for more information."
   exit 1
 fi
 
-TARGET="$1"
+STACK="$1"
+
+if [[ "$STACK" != "frontend" && "$STACK" != "node" ]]; then
+  echo "Error: Unknown stack '$STACK' (expected 'frontend' or 'node')"
+  exit 1
+fi
+
+SRC_DIR="$SCRIPT_DIR/$STACK"
+TARGET="$2"
 
 if [[ ! -d "$TARGET" ]]; then
   echo "Error: Target directory does not exist: $TARGET"
@@ -79,7 +88,7 @@ fi
 conflicts=()
 
 for file in "${CONFIG_FILES[@]}"; do
-  src="$SCRIPT_DIR/$file"
+  src="$SRC_DIR/$file"
   dest="$TARGET/$file"
   if [[ -e "$dest" && ! -L "$dest" ]] && diff -q "$src" "$dest" &>/dev/null; then
     continue
@@ -166,8 +175,8 @@ copy_file() {
 
 # --- Copy config files ---
 for file in "${CONFIG_FILES[@]}"; do
-  if [[ -e "$SCRIPT_DIR/$file" ]]; then
-    copy_file "$SCRIPT_DIR/$file" "$TARGET/$file" "$file"
+  if [[ -e "$SRC_DIR/$file" ]]; then
+    copy_file "$SRC_DIR/$file" "$TARGET/$file" "$file"
   else
     echo "Warning: Source config file not found: $file"
   fi
@@ -179,8 +188,8 @@ if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
 fi
 
 # --- Merge package.scaffold.json ---
-if [[ -f "$SCRIPT_DIR/package.scaffold.json" ]]; then
-  TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SCRIPT_DIR" node -e "
+if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
+  TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" node -e "
     const fs = require('fs');
     const pkg = JSON.parse(fs.readFileSync(process.env.TARGET_PATH + '/package.json', 'utf8'));
     const scaffold = JSON.parse(fs.readFileSync(process.env.SCAFFOLD_PATH + '/package.scaffold.json', 'utf8'));

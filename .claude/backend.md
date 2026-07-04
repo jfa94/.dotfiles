@@ -3,10 +3,11 @@
 ## Preferred stack
 
 - **Language:** TypeScript
-- **Runtime:** Deno
+- **Runtime:** Node
 
 ## Conventions
 
-- Manage imports/dependencies via the `deno.json` import map (prefer JSR); avoid ad-hoc remote URL imports
-- Run with explicit, least-privilege permission flags (`--allow-net`, `--allow-env`, etc.); never `-A`/`--allow-all`
-- Commands: `deno task`, `deno test`, `deno fmt`, `deno lint`
+- Manage dependencies via `package.json` (pnpm); avoid ad-hoc global installs
+- Use ESM: set `"type": "module"` and explicit `.js` extensions on relative imports
+- Bootstrap linting/formatting/testing with `ts/configure.sh node <project-dir>`
+- Commands (from the scaffold): `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format`
