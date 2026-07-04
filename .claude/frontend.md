@@ -11,6 +11,7 @@
 
 ## Commands
 
+- Bootstrap linting/formatting/testing with `ts/configure.sh frontend <project-dir>`
 - Quality gate (all checks): `pnpm quality`
 - Build: `pnpm build`
 - Test: `pnpm test`
