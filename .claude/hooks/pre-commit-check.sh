@@ -1,8 +1,12 @@
 #!/bin/bash
 set -uo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
-printf '%s' "$CMD" | grep -qE '^git commit' || exit 0
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
+# Match git commit at start or after a chain operator (&&, ;, ||, &, |) — Claude
+# routinely writes `git add -A && git commit`, which a ^-anchored trigger skipped.
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?commit' || exit 0
+# Honor git -C <dir>: scan the repo the commit targets, not just the session project.
+DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
+cd "${DIR:-${CLAUDE_PROJECT_DIR:-.}}" || exit 0
 
 # --- 1. Block sensitive file paths ---
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
@@ -35,7 +39,9 @@ if command -v trufflehog >/dev/null 2>&1 && [ -n "$STAGED" ]; then
 fi
 
 # --- 3. Regex sweep (catches unverified/offline secrets trufflehog skips) ---
+# Added lines only: a commit that REMOVES a secret must not be blocked.
 SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null \
+  | grep -E '^\+' \
   | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|secret_?key\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' \
   || true)
 if [ -n "$SECRETS" ]; then

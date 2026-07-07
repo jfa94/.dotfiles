@@ -6,11 +6,12 @@ set -uo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
 
-# Match: gh [-R owner/repo] pr create|ready
-printf '%s' "$CMD" | grep -qE '^[[:space:]]*gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)*[[:space:]]+pr[[:space:]]+(create|ready)([[:space:]]|$)' || exit 0
+# Match: gh [-R owner/repo] pr create|ready — at start or after a chain operator
+# (`git push && gh pr create` skipped a ^-anchored trigger).
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)*[[:space:]]+pr[[:space:]]+(create|ready)([[:space:]]|$)' || exit 0
 
 # Drafts are not merge-ready; mutation fires on gh pr ready instead
-if printf '%s' "$CMD" | grep -qE 'pr[[:space:]]+create' && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])--draft([[:space:]]|$)'; then
+if printf '%s' "$CMD" | grep -qE 'pr[[:space:]]+create' && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])(--draft|-d)([[:space:]]|$)'; then
   exit 0
 fi
 

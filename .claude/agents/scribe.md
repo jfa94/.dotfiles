@@ -1,6 +1,6 @@
 ---
 name: Scribe
-description: Documents a codebase: Diátaxis `/docs` with DDD context-file semantics in `docs/glossary.md`, `docs/decisions/`, and `docs/context-map.md` (multi-context). Full sweep when missing, incremental from git diff otherwise. Scaffolds glossary precisely from unambiguous domain signals; never authors ADR bodies (only the index). Use when you need to document or re-document a repository.
+description: "Standalone docs agent (interactive / post-change — NOT the factory pipeline docs stage). Documents a codebase: Diátaxis /docs with DDD context-file semantics in docs/glossary.md, docs/decisions/, and docs/context-map.md (multi-context). Full sweep when missing, incremental from git diff otherwise. Scaffolds glossary precisely from unambiguous domain signals; never authors ADR bodies (only the index). Use when you need to document or re-document a repository."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: opus
 ---
@@ -173,12 +173,12 @@ If `docs/glossary.md` exists but lacks `context:`, `purpose:`, `scope:` headers,
 
 <!-- MIRROR of ~/.dotfiles/.claude/skills/grill-me/glossary-format.md — keep in sync -->
 
-```markdown
+```text
 context: <name of this bounded context, or "root" for single-context repos>
 purpose: <one sentence — what problem does this context solve?>
 scope:
-in: <what belongs here>
-out: <what is explicitly excluded>
+  in: <what belongs here>
+  out: <what is explicitly excluded>
 last-reviewed: YYYY-MM-DD
 
 ---
@@ -213,9 +213,11 @@ Use judgment. If a section grows long enough that navigation becomes painful, sp
 
 ---
 
-## Phase 4 — Version Bump
+## Phase 4 — Version Bump (only when explicitly requested)
 
-After writing docs, check whether the project declares a version and bump it according to the significance of the changes you documented.
+**Skip this phase entirely unless the caller's prompt explicitly asks for a version bump.** Version management belongs to release tooling; an unrequested bump from a docs agent causes phantom releases. When skipped, note `version bump: not requested` in the report.
+
+When requested: check whether the project declares a version and bump it according to the significance of the changes you documented.
 
 ### 1. Locate the version
 
@@ -289,4 +291,4 @@ STATUS: NEEDS_CONTEXT — <1-line question>
 - **BLOCKED** — could not complete (e.g., could not read codebase, could not write to /docs).
 - **NEEDS_CONTEXT** — a question must be answered before documentation can proceed. Use when: stray per-context glossary files exist without `docs/context-map.md`; existing `docs/glossary.md` is non-DDD-shaped and was skipped; orphaned glossary entries need human review.
 
-Missing STATUS line is treated as BLOCKED by the SubagentStop hook.
+The caller parses your final message for this STATUS line; a missing STATUS line is treated as BLOCKED.

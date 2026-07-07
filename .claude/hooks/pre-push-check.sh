@@ -1,9 +1,15 @@
 #!/bin/bash
 set -uo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
-printf '%s' "$CMD" | grep -qE '^git ((-C [^ ]+ )?push)' || exit 0
-[ -f "${CLAUDE_PROJECT_DIR:-.}/package.json" ] || exit 0
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
+# Match git push at start or after a chain operator — `git commit && git push`
+# skipped a ^-anchored trigger entirely.
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push' || exit 0
+# Honor git -C <dir>: gate the repo being pushed, not just the session project.
+DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
+TARGET="${DIR:-${CLAUDE_PROJECT_DIR:-.}}"
+[ -f "$TARGET/package.json" ] || exit 0
+cd "$TARGET" || exit 0
+command -v pnpm >/dev/null 2>&1 || { echo "pnpm not found; skipping pre-push quality gate" >&2; exit 0; }
 
 QUAL=0
 if grep -q '"quality"' package.json; then

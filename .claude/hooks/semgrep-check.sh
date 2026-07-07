@@ -1,7 +1,9 @@
 #!/bin/bash
 set -uo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
-printf '%s' "$CMD" | grep -qE '^git ((-C [^ ]+ )?push)' || exit 0
+# Match git push at start or after a chain operator — `git commit && git push`
+# skipped a ^-anchored trigger entirely.
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push' || exit 0
 
 # --- Graceful degradation: skip if semgrep not installed ---
 # NOTE: --config auto requires network access on first use to fetch rules.
@@ -10,7 +12,9 @@ if ! command -v semgrep >/dev/null 2>&1; then
   exit 0
 fi
 
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
+# Honor git -C <dir>: scan the repo being pushed, not just the session project.
+DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
+cd "${DIR:-${CLAUDE_PROJECT_DIR:-.}}" || exit 0
 
 # --- Detect default branch ---
 DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)

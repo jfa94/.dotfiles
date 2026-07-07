@@ -9,30 +9,6 @@
       "Read",
       "Edit",
       "Write",
-      "Write(/tmp/**)",
-      "Edit(/tmp/**)",
-      "Write(/private/tmp/**)",
-      "Edit(/private/tmp/**)",
-      "Write(/var/tmp/**)",
-      "Edit(/var/tmp/**)",
-      "Write(/private/var/tmp/**)",
-      "Edit(/private/var/tmp/**)",
-      "Write(/var/folders/**)",
-      "Edit(/var/folders/**)",
-      "Write(/private/var/folders/**)",
-      "Edit(/private/var/folders/**)",
-      "Read(//Users/Javier/**/.comprehensive-code-review/**)",
-      "Edit(//Users/Javier/**/.comprehensive-code-review/**)",
-      "Write(//Users/Javier/**/.comprehensive-code-review/**)",
-      "Read(//Users/Javier/**/.quick-code-review/**)",
-      "Edit(//Users/Javier/**/.quick-code-review/**)",
-      "Write(//Users/Javier/**/.quick-code-review/**)",
-      "Read(//Users/Javier/**/.claude-plugin-data/**)",
-      "Edit(//Users/Javier/**/.claude-plugin-data/**)",
-      "Write(//Users/Javier/**/.claude-plugin-data/**)",
-      "Read(//Users/Javier/**/.worktrees/**)",
-      "Edit(//Users/Javier/**/.worktrees/**)",
-      "Write(//Users/Javier/**/.worktrees/**)",
       "Glob",
       "Grep",
       "WebSearch",
@@ -95,7 +71,6 @@
       "Bash(pnpm why *)",
       "Bash(pnpm outdated *)",
       "Bash(pnpm audit *)",
-      "Bash(pnpm exec *)",
       "Bash(pnpm tsc *)",
       "Bash(pnpm vitest *)",
       "Bash(pnpm typecheck *)",
@@ -201,7 +176,6 @@
       "Bash(gh run view *)",
       "Bash(gh release list *)",
       "Bash(gh release view *)",
-      "Bash(gh api *)",
       "Bash(aws help *)",
       "Bash(aws logs describe-* *)",
       "Bash(aws logs filter-log-events *)",
@@ -280,6 +254,24 @@
       "mcp__plugin_supabase_supabase__get_edge_function",
       "mcp__plugin_supabase_supabase__list_storage_buckets",
       "mcp__plugin_supabase_supabase__get_storage_config",
+      "mcp__claude_ai_Supabase__get_logs",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__get_project",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__list_extensions",
+      "mcp__claude_ai_Supabase__list_organizations",
+      "mcp__claude_ai_Supabase__get_organization",
+      "mcp__claude_ai_Supabase__get_cost",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "mcp__claude_ai_Supabase__search_docs",
+      "mcp__claude_ai_Supabase__get_advisors",
+      "mcp__claude_ai_Supabase__get_project_url",
+      "mcp__claude_ai_Supabase__get_publishable_keys",
+      "mcp__claude_ai_Supabase__generate_typescript_types",
+      "mcp__claude_ai_Supabase__list_migrations",
+      "mcp__claude_ai_Supabase__list_edge_functions",
+      "mcp__claude_ai_Supabase__get_edge_function",
+      "mcp__claude_ai_Supabase__list_branches",
       "mcp__plugin_posthog_posthog__logs-query",
       "mcp__plugin_posthog_posthog__logs-list-attributes",
       "mcp__plugin_posthog_posthog__logs-list-attribute-values",
@@ -315,6 +307,8 @@
       "Bash(git -C * push -f *)",
       "Bash(git -C * push --force-with-lease*)",
       "Bash(git -C * push --force-if-includes*)",
+      "Bash(git push* +*)",
+      "Bash(git -C * push* +*)",
       "Bash(git commit --no-verify*)",
       "Bash(git commit -n *)",
       "Bash(git commit --no-gpg-sign*)",
@@ -333,7 +327,7 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opusplan",
+  "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -357,7 +351,7 @@
         ]
       },
       {
-        "matcher": "mcp__plugin_supabase_supabase__execute_sql",
+        "matcher": "mcp__.*[Ss]upabase.*__execute_sql",
         "hooks": [
           {
             "type": "command",
@@ -383,16 +377,6 @@
             "type": "command",
             "command": "~/.claude/hooks/dangerous-patterns-check.sh",
             "statusMessage": "Checking for dangerous patterns"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/native-tool-nudge.sh",
-            "statusMessage": "Checking for native tool alternatives"
           }
         ]
       },
@@ -449,16 +433,6 @@
             "statusMessage": "Running mutation gate before PR"
           }
         ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/read-once/hook.sh",
-            "statusMessage": "Tracking read-once files"
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -467,7 +441,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path'); npx --yes prettier@3 --write \"$FILE\" 2>/dev/null; echo '{\"suppressOutput\": true}'",
+            "command": "~/.claude/hooks/prettier-format.sh",
             "timeout": 15,
             "statusMessage": "Auto-formatting with prettier"
           }
@@ -476,6 +450,7 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",
@@ -547,6 +522,7 @@
       }
     }
   },
+  "effortLevel": "high",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
@@ -581,6 +557,5 @@
       "PostHog project 'Outsidey' (id 107700) is the user's own project; reads are safe, writes require explicit ask.",
       "Supabase: list/read tools are safe; execute_sql is gated by the sql-readonly-check hook; apply_migration is production-impacting and must always confirm with the user first."
     ]
-  },
-  "effortLevel": "high"
+  }
 }

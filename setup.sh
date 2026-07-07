@@ -329,6 +329,16 @@ done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
 # Ensure hook scripts are executable (git may not preserve +x on all systems)
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
+# Prune symlinks whose repo target no longer exists (file deleted/renamed in
+# dotfiles) — otherwise dead agents/hooks linger in ~/.claude forever.
+while IFS= read -r link; do
+  target=$(readlink "$link")
+  if [[ "$target" == "$DOTFILES_DIR/.claude/"* && ! -e "$target" ]]; then
+    rm "$link"
+    info "Pruned dangling symlink: ${link/#$HOME/~}"
+  fi
+done < <(find "$HOME/.claude" -maxdepth 3 -type l -not -path "*/plugins/*" 2>/dev/null)
+
 # =============================================================================
 # Section 4a: Codex Symlinks
 # =============================================================================
@@ -452,8 +462,9 @@ plugins_status="skipped (claude CLI not found)"
 
 if command -v claude &>/dev/null; then
   info "Registering third-party marketplaces..."
-  claude plugin marketplace add github:JuliusBrussee/caveman 2>/dev/null || true
   claude plugin marketplace add github:openai/codex-plugin-cc 2>/dev/null || true
+  claude plugin marketplace add github:jfa94/factory 2>/dev/null || true
+  claude plugin marketplace add github:DietrichGebert/ponytail 2>/dev/null || true
 
   info "Installing Claude Code plugins..."
   plugins_status="installed"

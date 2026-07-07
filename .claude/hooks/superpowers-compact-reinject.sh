@@ -13,10 +13,11 @@ TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/nul
 [ -z "$TRANSCRIPT" ] && exit 0
 [ -r "$TRANSCRIPT" ] || exit 0
 
-# Recall-biased gate: any superpowers skill/slash-command invocation leaves "superpowers:"
-# in the transcript. A prose false-positive costs one ~1K injection on a compaction; a
-# false-negative would reopen the gap this hook exists to close — so bias to recall.
-grep -q 'superpowers:' "$TRANSCRIPT" 2>/dev/null || exit 0
+# Invocation-shaped gate: match actual skill invocations (slash command or Skill tool
+# call), not the mere presence of "superpowers:" — the available-skills system-reminder
+# embeds that substring in virtually every transcript, which made a bare grep always
+# true (~1K injected tokens on every compaction, superpowers in use or not).
+grep -qE '<command-name>superpowers:|"skill"[[:space:]]*:[[:space:]]*"superpowers:|Skill\(superpowers:' "$TRANSCRIPT" 2>/dev/null || exit 0
 
 # Resolve the active plugin install path from the registry so this tracks version bumps
 # (no hardcoded version dir). Missing entry/file → no-op (e.g. superpowers uninstalled).
