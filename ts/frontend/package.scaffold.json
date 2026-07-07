@@ -34,9 +34,9 @@
         "test:mutation:full": "stryker run --force",
 
         "deps:validate": "depcruise src --output-type err",
-        "deps:graph": "depcruise src --include-only '^src' --output-type dot | dot -T svg > docs/dependency-graph.svg",
+        "deps:graph": "mkdir -p docs && depcruise src --include-only '^src' --output-type dot | dot -T svg > docs/dependency-graph.svg",
 
-        "audit": "npm audit --audit-level=high --omit=dev",
+        "audit": "pnpm audit --prod --audit-level=high",
 
         "quality": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm deps:validate && pnpm audit && pnpm test:mutation"
     }
