@@ -396,7 +396,7 @@ highest severity wins, others under `also_flagged_by`).
 Read `verified-findings.json`: `findings` (verified, post-dedup), `dropped` (with per-finding
 `verification` reasons), `reviewers` (status pass-through for the report table), and
 `stats` (`perReviewer` refuted/citation-dropped counts + `duplicatesMerged` — feeds Phase 8's
-Calibration line).
+Calibration line — + `unmatchedCodexRefutations`, which feeds a Phase 8 WARNING line).
 
 ## Phase 8 — Group, Sort, Emit
 
@@ -427,6 +427,7 @@ Calibration line).
    Append WARNING lines when applicable (one line each, only when the condition applies):
 
    - When `mode === "full"` AND Codex ran: `⚠ Codex reviewed only HEAD~30…HEAD; whole-codebase design review relied on the systemic reviewer [present | ABSENT — systemic failure modes NOT covered].`
+   - When `stats.unmatchedCodexRefutations > 0`: `⚠ <n> Codex refutation(s) matched no finding (stats.unmatchedCodexRefutations) — a finding the verify pass flagged for drop may have shipped as verified; reconcile codex-adversarial.json against the verify output.`
    - When Codex was SKIPPED entirely: `⚠ Codex SKIPPED — adversarial/design track did NOT run.`
 
 ## Phase 9 — STATUS line

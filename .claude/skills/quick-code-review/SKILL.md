@@ -311,7 +311,8 @@ tagging, Codex existence checks + native→standard severity mapping, and cross-
 
 Read `verified-findings.json`: `findings` (verified, post-dedup), `dropped` (with per-finding
 `verification` reasons), `reviewers` (status pass-through), and `stats` (`perReviewer` +
-`duplicatesMerged` — feeds Phase 7's Calibration line).
+`duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations`, which feeds a
+Phase 7 warning line).
 
 ## Phase 7 — Group, Sort, Emit
 
@@ -338,6 +339,7 @@ Read `verified-findings.json`: `findings` (verified, post-dedup), `dropped` (wit
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
    Calibration: <reviewer> <n> refuted, <n> citation-dropped; …        # from stats.perReviewer; only reviewers with non-zero counts; omit line if all zero
+   ⚠ Codex verify mismatch: <n> refutation(s) matched no finding — possible false-positive in report   # only when stats.unmatchedCodexRefutations > 0
    ```
 
 ## Phase 8 — STATUS line
