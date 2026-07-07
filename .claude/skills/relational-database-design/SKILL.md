@@ -17,7 +17,7 @@ Two tiers of discipline. **Iron Laws** are categorical — breaking one corrupts
 
 Designing or changing a schema: creating/altering tables, choosing keys or types, adding constraints, modelling relationships, writing migrations, reviewing a schema.
 
-**Not for** query/EXPLAIN performance tuning — use `supabase-postgres-best-practices`. Runtime concurrency, multi-tenancy, sharding, backups, and security-ops are out of scope.
+**Not for** query/EXPLAIN performance tuning — use a query-tuning skill if installed (e.g. `supabase-postgres-best-practices`). Runtime concurrency, sharding, backups, and security-ops are out of scope.
 
 **First, is it even relational?** If the dominant access shape is document, graph, key-value, or time-series, model that part in the fitting store rather than forcing the whole schema flexible (polyglot persistence). Analytical/reporting modelling (star/snowflake) _is_ in scope — see `modelling-and-normalisation.md`.
 
@@ -52,7 +52,7 @@ Before writing `CREATE TABLE`, `ALTER TABLE`, or a migration, pass every step. S
 
 **Stage 1 — before any DDL**
 
-1. Conceptual model: entities, relationships, cardinality, optionality named?
+1. Conceptual model: entities, relationships, cardinality, optionality named? Sketch it (Mermaid `erDiagram` or a plain entity list).
 2. Grain of each table stated explicitly?
 3. Normalised to 3NF/BCNF — or a denormalisation deliberately chosen and recorded (G3)?
 4. Keys chosen deliberately (G1, G2): surrogate PK + UNIQUE natural key where one exists?
@@ -61,23 +61,24 @@ Before writing `CREATE TABLE`, `ALTER TABLE`, or a migration, pass every step. S
 **Stage 2 — physical**
 
 6. Types correct (L2, L3, G7): money, time, lookup-vs-enum, JSONB only for dynamic/sparse?
-7. Cross-cutting decisions where relevant: delete strategy (G4), created/updated/audit baseline, optimistic-lock version column where needed?
+7. Cross-cutting decisions where relevant: delete strategy (G4), tenancy model in a multi-tenant app (G9), created/updated/audit baseline, optimistic-lock version column where needed (see constraints-types-and-null)?
 8. Naming consistent (snake_case; FK named after referenced table; reserved words avoided)?
 
 ## Decision Gates
 
 Choose consciously; state the reason. Defaults shown; read the reference for the trade-off.
 
-| Gate                            | Default                                    | Switch when…                                                                                                                                                  | Read                          |
-| ------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| G1 Key strategy                 | Surrogate PK + UNIQUE natural key          | pure junction/lookup table → natural composite key, no `id`                                                                                                   | keys-and-identifiers          |
-| G2 Key type                     | BIGINT (single DB)                         | distributed/public/merged IDs → UUIDv7; unpredictability > ordering → UUIDv4; store UUIDs as 16-byte binary                                                   | keys-and-identifiers          |
-| G3 Normalise/denormalise        | 3NF/BCNF                                   | measured read bottleneck → denormalise (mat. view > generated col > trigger > app); analytical workload → dimensional star/snowflake, kept separate from OLTP | modelling-and-normalisation   |
-| G4 Delete strategy (per entity) | Hard delete + archive, or lifecycle status | legal/undo need → soft delete + partial unique index on live rows                                                                                             | constraints-types-and-null    |
-| G5 Tree model                   | Adjacency list + recursive CTE             | both-way + frequent change → closure table; read-only stable → nested sets; breadcrumbs → materialised path                                                   | relationships-and-hierarchies |
-| G6 Inheritance                  | (decide per hierarchy)                     | shallow/shared → STI; deep/type-specific → CTI; independent → concrete; may mix                                                                               | relationships-and-hierarchies |
-| G7 Dynamic attributes           | Real columns                               | evolvable set → lookup table; sparse tail → JSONB+GIN; EAV only extreme sparse + high write concurrency                                                       | constraints-types-and-null    |
-| G8 Where a rule lives           | Invariant → DB constraint                  | changeable/workflow → app; UX validation → app + DB backstop                                                                                                  | constraints-types-and-null    |
+| Gate                            | Default                                       | Switch when…                                                                                                                                                  | Read                          |
+| ------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| G1 Key strategy                 | Surrogate PK + UNIQUE natural key             | pure junction/lookup table → natural composite key, no `id`                                                                                                   | keys-and-identifiers          |
+| G2 Key type                     | BIGINT (single DB)                            | distributed/public/merged IDs → UUIDv7; unpredictability > ordering → UUIDv4; store UUIDs as 16-byte binary                                                   | keys-and-identifiers          |
+| G3 Normalise/denormalise        | 3NF/BCNF                                      | measured read bottleneck → denormalise (mat. view > generated col > trigger > app); analytical workload → dimensional star/snowflake, kept separate from OLTP | modelling-and-normalisation   |
+| G4 Delete strategy (per entity) | Hard delete + archive, or lifecycle status    | legal/undo need → soft delete + partial unique index on live rows                                                                                             | constraints-types-and-null    |
+| G5 Tree model                   | Adjacency list + recursive CTE                | both-way + frequent change → closure table; read-only stable → nested sets; breadcrumbs → materialised path                                                   | relationships-and-hierarchies |
+| G6 Inheritance                  | (decide per hierarchy)                        | shallow/shared → STI; deep/type-specific → CTI; independent → concrete; may mix                                                                               | relationships-and-hierarchies |
+| G7 Dynamic attributes           | Real columns                                  | evolvable set → lookup table; sparse tail → JSONB+GIN; EAV only extreme sparse + high write concurrency                                                       | constraints-types-and-null    |
+| G8 Where a rule lives           | Invariant → DB constraint                     | changeable/workflow → app; UX validation → app + DB backstop                                                                                                  | constraints-types-and-null    |
+| G9 Tenancy                      | Shared schema + mandatory `tenant_id` (+ RLS) | compliance/residency/isolation contracts → schema- or DB-per-tenant                                                                                           | modelling-and-normalisation   |
 
 ## Red flags — STOP
 
@@ -87,16 +88,17 @@ Choose consciously; state the reason. Defaults shown; read the reference for the
 - A column holding a list, or `LIKE '%term%'` as the search plan → 1NF / Poor Man's Search Engine.
 - `FLOAT`/`DOUBLE`/`REAL`/`MONEY` near a price → Rounding Errors (L2).
 - `deleted_at` added to every table by reflex → soft-delete-everything anti-pattern (G4).
-- Tuning a slow query with `EXPLAIN` → wrong skill; use `supabase-postgres-best-practices`.
+- Multi-tenant app, tables without `tenant_id` and no tenancy decision recorded → G9.
+- Tuning a slow query with `EXPLAIN` → wrong skill; query tuning is out of scope.
 
 ## Reference map
 
-| Topic                                                                                    | File                                        |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------- |
-| Conceptual/logical/physical, ER, grain, normal forms, denormalisation                    | references/modelling-and-normalisation.md   |
-| Natural vs surrogate, key types, FK actions                                              | references/keys-and-identifiers.md          |
-| Constraints, NULL/3VL, money, time, strings, enums/lookup, JSONB, delete strategy, audit | references/constraints-types-and-null.md    |
-| M:N, self-ref, trees, polymorphism, inheritance                                          | references/relationships-and-hierarchies.md |
-| Anti-pattern catalogue + fixes                                                           | references/anti-patterns.md                 |
-| Design-level indexing principles                                                         | references/indexing-for-design.md           |
-| Migrations, expand–contract, naming                                                      | references/schema-evolution-and-naming.md   |
+| Topic                                                                                                        | File                                        |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| Conceptual/logical/physical, ER, grain, normal forms, denormalisation, multi-tenancy                         | references/modelling-and-normalisation.md   |
+| Natural vs surrogate, key types, FK actions                                                                  | references/keys-and-identifiers.md          |
+| Constraints, NULL/3VL, money, time, strings, enums/lookup, JSONB, delete strategy, audit, optimistic locking | references/constraints-types-and-null.md    |
+| M:N, self-ref, trees, polymorphism, inheritance                                                              | references/relationships-and-hierarchies.md |
+| Anti-pattern catalogue + fixes                                                                               | references/anti-patterns.md                 |
+| Design-level indexing principles                                                                             | references/indexing-for-design.md           |
+| Migrations, expand–contract, naming                                                                          | references/schema-evolution-and-naming.md   |

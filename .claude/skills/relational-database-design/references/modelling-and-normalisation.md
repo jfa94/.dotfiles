@@ -30,6 +30,17 @@ Most schema mistakes are conceptual errors expressed in DDL. Do the first two mo
 3. Resolve **every** M:N to a junction table.
 4. Ask whether the relationship itself has attributes (e.g. _enrolled_on_, _grade_ on a student↔course link) — if so, the junction is a first-class entity.
 
+The artefact of this stage is a sketch you can review before any DDL — a compact Mermaid `erDiagram` (or a plain entity list) naming cardinality and optionality:
+
+```mermaid
+erDiagram
+    CUSTOMER ||--o{ ORDERS : places
+    ORDERS   ||--|{ ORDER_ITEM : contains
+    PRODUCT  ||--o{ ORDER_ITEM : appears_in
+```
+
+(`||--o{` = one mandatory to many optional; `||--|{` = one to at-least-one.)
+
 ## Grain
 
 **The grain is what one row means.** State it in one sentence before creating the table ("one row = one order line"). Rules:
@@ -79,7 +90,24 @@ Normalisation targets **transactional** workloads — many small reads/writes, i
 - **Star schema** — a central **fact** table at a declared grain (one row = one measured event, e.g. one sale line) holding FKs + numeric measures, surrounded by denormalised **dimension** tables (date, product, customer).
 - **Snowflake schema** — the same, but dimensions are themselves normalised into sub-tables: fewer copies, more joins.
 
-Keep the two models **separate**: don't force a star shape onto a write-heavy transactional backend, and don't run heavy OLAP scans on your normalised OLTP tables. The anti-pattern is one giant denormalised "reporting" table acting as the operational source of truth. Feed an analytical store (materialised views, or a warehouse) from the OLTP system unless the workload is genuinely hybrid and small. Deep query/EXPLAIN tuning of either is out of scope — see `supabase-postgres-best-practices`.
+Keep the two models **separate**: don't force a star shape onto a write-heavy transactional backend, and don't run heavy OLAP scans on your normalised OLTP tables. The anti-pattern is one giant denormalised "reporting" table acting as the operational source of truth. Feed an analytical store (materialised views, or a warehouse) from the OLTP system unless the workload is genuinely hybrid and small. Deep query/EXPLAIN tuning of either is out of scope.
+
+## Multi-tenancy (Gate G9)
+
+Decide the tenancy model **before** the first `CREATE TABLE` — retrofitting `tenant_id` is a full-schema migration.
+
+| Model                                        | Isolation       | Cost / migrations                                                        |
+| -------------------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| **Shared schema** (`tenant_id` on every row) | Logical only    | Cheapest; one migration covers all tenants                               |
+| **Schema-per-tenant**                        | Namespace-level | Moderate; migrations run per schema                                      |
+| **Database-per-tenant**                      | Physical        | Highest; per-tenant backup/restore and residency; migrations run N times |
+
+Default: **shared schema** — `tenant_id NOT NULL REFERENCES tenant (id)` on every tenant-owned table.
+
+- Per-tenant uniqueness is composite: `UNIQUE (tenant_id, email)`, not `UNIQUE (email)`.
+- One forgotten `WHERE tenant_id = ?` leaks another tenant's data — the catastrophic failure mode. Where the engine supports it (Postgres RLS), declare row-level security as the DB-enforced backstop instead of trusting every query.
+- Use globally unique tenant IDs from day one so a tenant can graduate to a dedicated schema/DB without key collisions.
+- Switch to schema-/database-per-tenant when compliance, data residency, or isolation contracts demand it — a hybrid (shared for small tenants, dedicated for regulated ones) is a common end-state.
 
 ## Example — splitting mixed grain
 

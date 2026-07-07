@@ -73,6 +73,8 @@ CREATE TABLE comment (
 );
 ```
 
+(`num_nonnulls` is Postgres-only; portable form: `CHECK ((post_id IS NOT NULL)::int + (video_id IS NOT NULL)::int = 1)` — MySQL 8.0.16+: drop the casts.)
+
 **2. Per-type junction tables** — `post_comment(post_id, comment_id)`, `video_comment(...)`. Each FK is real; scales to more types without widening `comment`.
 
 **3. Shared supertype** — a `commentable` parent table that `post` and `video` both reference; `comment` FKs to `commentable`. Cleanest when many types share the behaviour (see inheritance below).

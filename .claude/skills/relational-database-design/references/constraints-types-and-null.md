@@ -36,7 +36,7 @@ NULL means a value is **unknown / not-yet-known** — never a sentinel.
 - `NULL` propagates: `5 + NULL` → NULL, `WHERE x = NULL` → matches nothing.
 - Aggregates skip NULLs (`COUNT(col)` ignores them; `COUNT(*)` doesn't).
 - **Fear of the Unknown anti-pattern:** using `-1`, `0`, `''`, `'N/A'`, or `9999-12-31` instead of NULL. These corrupt aggregates and comparisons and hide missing data. If a value is unknown, store NULL (L8).
-- **UNIQUE + NULL:** most engines treat NULLs as distinct, so a nullable UNIQUE column admits many NULL rows. For _at most one_ empty value use a partial index / `CHECK`, or Postgres 15+ `UNIQUE NULLS NOT DISTINCT`. Outer joins also manufacture NULLs — account for them in predicates.
+- **UNIQUE + NULL:** most engines treat NULLs as distinct (SQL Server is the exception — it allows only one NULL per unique index), so a nullable UNIQUE column admits many NULL rows. For _at most one_ empty value use a partial index / `CHECK`, or Postgres 15+ `UNIQUE NULLS NOT DISTINCT`. Outer joins also manufacture NULLs — account for them in predicates.
 - **Inapplicable ≠ unknown:** a column that is _inapplicable_ to a whole class of rows (especially several such columns) is a modelling smell — a missing subtype table, not a reason for more NULL columns. Model the subtype (Gate G6); don't widen the table.
 
 ## Numbers & precision
@@ -157,3 +157,8 @@ ALTER TABLE customer
 - **History / shadow table** when you need _who changed what when_ — append-only row versions.
 - **Effective-dated / valid-time rows** (`valid_from` / `valid_to`, often with a partial unique index enforcing one _current_ row) when the business meaning is temporal — price/rate history, address-as-of-date. This is application-modelled **valid time**, distinct from **transaction time** below. In a dimensional model it is **SCD Type 2**: a new row per version keyed by a surrogate distinct from the business key, so facts reference a specific version. Postgres has no native system-versioning, so effective-dating is the portable choice there.
 - **System-versioned temporal tables** (SQL Server, MariaDB, DB2; not native in Postgres) automate full row history if the engine supports it.
+
+## Concurrency: optimistic vs pessimistic
+
+- **Optimistic locking** is the default for request/response backends: add a `version` column and update with `UPDATE … SET version = version + 1, … WHERE id = ? AND version = ?`. Zero rows updated → someone else changed the row; reject or retry. No locks held across user think-time, and the column doubles as cheap change detection.
+- **Pessimistic locking** (`SELECT … FOR UPDATE`) only for hot, short critical sections — inventory decrements, balance transfers — where a conflict-and-retry loop would thrash.

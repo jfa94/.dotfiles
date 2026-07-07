@@ -42,7 +42,7 @@ A quick-reference of common relational-design mistakes (largely Karwin's _SQL An
 | **SQL Injection**            | String-concatenated queries                           | Parameterised queries / prepared statements always | (security)          |
 | **Diplomatic Immunity**      | Schema/DDL exempt from version control, review, tests | Migrations are code: versioned, reviewed, tested   | L6                  |
 
-Pure query-execution anti-patterns — **Spaghetti Query** (one query doing too much), **Ambiguous Groups** (selecting non-grouped columns), **Random Selection** (`ORDER BY RANDOM()` at scale) — are out of scope here; see `supabase-postgres-best-practices`.
+Pure query-execution anti-patterns — **Spaghetti Query** (one query doing too much), **Ambiguous Groups** (selecting non-grouped columns), **Random Selection** (`ORDER BY RANDOM()` at scale) — are out of scope here (query tuning).
 
 ## Scale
 

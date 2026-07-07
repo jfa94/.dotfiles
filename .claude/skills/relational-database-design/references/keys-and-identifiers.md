@@ -46,7 +46,7 @@ Default to **BIGINT identity** for a single database. Switch deliberately.
 | **UUIDv7 / ULID (time-ordered)** | 16 B | Good (time prefix appends in order)                                                   | Distributed-safe _and_ index-friendly, sortable by creation | Slightly leaks creation time, newer tooling support          |
 | **Snowflake-style**              | 8 B  | Good (time-ordered)                                                                   | Compact + distributed, sortable                             | Needs a generator/coordination scheme                        |
 
-Reasoning that drives the table: a primary/clustered index is a B-tree. **Sequential** keys append to the right edge — one hot page, minimal splits. **Random** v4 keys scatter inserts across the whole tree, causing page splits and poor cache locality. That's why v7/ULID exist: keep UUID's distributability without v4's write penalty.
+Reasoning that drives the table: a primary/clustered index is a B-tree. **Sequential** keys append to the right edge — one hot page, minimal splits. **Random** v4 keys scatter inserts across the whole tree, causing page splits and poor cache locality. That's why v7/ULID exist: keep UUID's distributability without v4's write penalty. Measured effects are directional but large: InnoDB page fill drops from ~94% (sequential) to ~50% (random v4), and Postgres benchmarks show ~8× the WAL volume once the index outgrows RAM.
 
 Rules of thumb:
 
@@ -55,6 +55,7 @@ Rules of thumb:
 - **Unpredictability matters more than ordering** (don't even leak creation time) → UUIDv4.
 - **Store UUIDs as 16-byte binary**, never as 36-char text — text triples the size and wrecks index performance.
 - **Hybrid:** BIGINT internal PK for joins + an external UUID (`uuid UNIQUE`) for public URLs. Best of both when you can afford the extra column.
+- **Migrating off v4:** point new inserts at v7 and let existing v4 rows coexist — never backfill/rewrite keys other rows reference.
 
 Figures here are directional, not universal — measure on your workload.
 
@@ -89,7 +90,7 @@ CREATE TABLE customer (
 
 -- public-facing entity using a time-ordered UUID as PK
 CREATE TABLE invoice (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),   -- swap for uuidv7() on PG 18+
+    id         uuid PRIMARY KEY DEFAULT uuidv7(),   -- PG 18+; pre-18, or when unpredictability trumps ordering: gen_random_uuid() (v4)
     customer_id bigint NOT NULL REFERENCES customer (id),
     issued_at  timestamptz NOT NULL DEFAULT now()
 );

@@ -2,7 +2,7 @@
 
 **Design-time indexing only** — the indexes that fall out of how the schema will be queried and the constraints it must enforce.
 
-> **For EXPLAIN-driven query tuning, statistics, bloat, and engine-specific index families (GIN/GiST/BRIN, partial-vs-expression tuning), use the `supabase-postgres-best-practices` skill. This file is design-time only.**
+> **For EXPLAIN-driven query tuning, statistics, bloat, and engine-specific index families (GIN/GiST/BRIN, partial-vs-expression tuning), use a query-tuning skill (`supabase-postgres-best-practices` if installed). This file is design-time only.**
 
 ## Indexing is query-driven
 
@@ -33,7 +33,7 @@ A predicate that wraps the indexed column in a function or arithmetic can't use 
 - Build the index to match the predicate — an **expression index** on `lower(email)` for case-insensitive lookup.
 - Or store the value already normalised (e.g. keep `email` lower-cased) so queries can filter the bare column.
 
-(Deeper sargability/EXPLAIN analysis → `supabase-postgres-best-practices`.)
+(Deeper sargability/EXPLAIN analysis → query tuning, out of scope.)
 
 ## Covering / index-only scans
 
@@ -47,7 +47,7 @@ CREATE INDEX order_lookup
 
 `INCLUDE`d columns are payload, not key: they ride along at the leaf level for covering reads but take no part in ordering or uniqueness. A `UNIQUE INDEX foo (a) INCLUDE (b)` still constrains only `a` — moving a column into `INCLUDE` never makes it part of the enforced key.
 
-**Postgres caveat:** index-only scans still consult the visibility map; on a table with many dead/un-vacuumed rows the heap is visited anyway, so keep autovacuum healthy. (Details → `supabase-postgres-best-practices`.)
+**Postgres caveat:** index-only scans still consult the visibility map; on a table with many dead/un-vacuumed rows the heap is visited anyway, so keep autovacuum healthy. (Details → query tuning, out of scope.)
 
 ## Selectivity & cardinality
 

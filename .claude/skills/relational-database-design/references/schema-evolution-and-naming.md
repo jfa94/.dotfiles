@@ -39,6 +39,7 @@ The online/concurrent techniques below exist to avoid long locks on **large, liv
 - **Enumerations as data** — a lookup table grows with a normal `INSERT`; a native enum needs a migration (31 Flavors).
 - **Avoid premature denormalisation** — every denormalised copy is one more thing a future migration must keep consistent.
 - Leave key headroom (BIGINT) so you never have to migrate a key type under load.
+- **Partition early if a table will be huge** — for time- or tenant-keyed access at scale, declare native partitioning up front: retrofitting is a full-table migration, and in Postgres the partition key must be part of the PK and every unique constraint, so it shapes key design. Partition before you shard; hand-rolled splits (`orders_2024`, `orders_2025`) are Metadata Tribbles.
 
 ## Naming conventions
 
