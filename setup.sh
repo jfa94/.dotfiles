@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # "~/..." in labels/messages is display text, not a path
 set -euo pipefail
 
 # --- Resolve paths ---
@@ -58,8 +59,14 @@ link_file() {
         return
       fi
     fi
-    rm -f "$dest"
-    replaced+=("$label")
+    if [[ -L "$dest" ]]; then
+      rm -f "$dest"
+      replaced+=("$label")
+    else
+      rm -rf "${dest}.bak"
+      mv "$dest" "${dest}.bak"
+      replaced+=("$label (prior saved to $label.bak)")
+    fi
   fi
 
   ln -s "$src" "$dest"
@@ -67,26 +74,13 @@ link_file() {
   success "$label linked"
 }
 
-is_codex_runtime_rel() {
-  local rel="$1"
-  case "$rel" in
-    auth.json|history.jsonl|installation_id|models_cache.json|version.json|.personality_migration)
-      return 0
-      ;;
-    cache/*|.tmp/*|tmp/*|log/*|logs_*|state_*|goals_*|memories_*|memories/*|session_index.jsonl|shell_snapshots/*|app-server-control/*|app-server-daemon/*)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
 # --- Linux package lists (native, in-repo packages only) ---
 # Name deltas: python3<->python, golang-go<->go, default-jdk<->jdk-openjdk.
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
 # so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
 # Keep this list, PACMAN_PACKAGES below, and Brewfile in sync when adding a tool.
-APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx unzip jq)
-PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq)
+APT_PACKAGES=(zsh git vim python3 cmake tmux golang-go default-jdk build-essential python3-dev pipx unzip jq graphviz)
+PACMAN_PACKAGES=(zsh git vim python cmake tmux go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq graphviz)
 
 install_gh_apt() {
   command -v gh &>/dev/null && return
@@ -121,9 +115,10 @@ install_node_apt() {
 }
 
 # --- Cross-distro installs (official scripts, identical on apt + pacman) ---
-# ponytail: these (and the gh keyring above) pull unpinned scripts/keys straight
-# from upstream with no checksum/signature check - accepted risk for a personal
-# dotfiles repo. Pin/verify if this ever runs somewhere that matters more.
+# ponytail: these, the gh keyring above, and the Homebrew/claude installers in
+# Sections 6-7 pull unpinned scripts/keys straight from upstream with no
+# checksum/signature check - accepted risk for a personal dotfiles repo.
+# Pin/verify if this ever runs somewhere that matters more.
 
 # ponytail: these installers default to appending PATH blocks to the active
 # shell rc file, which by Section 3 is a symlink into this repo - the env
@@ -166,13 +161,6 @@ install_packages_linux() {
     info "Installing packages via pacman..."
     sudo pacman -Syu --needed --noconfirm "${PACMAN_PACKAGES[@]}"
   fi
-
-  # Each optional tool's install dir, put on PATH now so the presence checks
-  # below see it in this same run (mirrors what .zprofile does for future
-  # login shells: pipx->~/.local/bin, deno->~/.deno/bin,
-  # pnpm->~/.local/share/pnpm, supabase->~/.supabase/bin; trufflehog installs
-  # straight to /usr/local/bin, already on PATH).
-  export PATH="$HOME/.local/bin:$HOME/.deno/bin:$HOME/.local/share/pnpm:$HOME/.supabase/bin:$PATH"
 
   optional_status=""
   for tool in deno pnpm trufflehog semgrep supabase; do
@@ -224,6 +212,11 @@ case "$(uname -s)" in
     ;;
 esac
 
+if ! command -v git &>/dev/null; then
+  error "git not found; required to enumerate the repo's tracked config files."
+  exit 1
+fi
+
 # =============================================================================
 # Section 2: Conflict Detection
 # =============================================================================
@@ -241,44 +234,30 @@ for file in "${DOTFILES[@]}"; do
   fi
 done
 
-while IFS= read -r -d '' file; do
-  rel="${file#"$DOTFILES_DIR"/.claude/}"
-  dest="$HOME/.claude/$rel"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
-    continue
-  fi
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    conflicts+=("~/.claude/$rel")
-  fi
-done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
-
-if [[ -d "$DOTFILES_DIR/.codex" ]]; then
-  while IFS= read -r -d '' file; do
-    rel="${file#"$DOTFILES_DIR"/.codex/}"
-    is_codex_runtime_rel "$rel" && continue
-    dest="$HOME/.codex/$rel"
-    if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
+# Tracked files only (git ls-files): runtime junk that Claude Code/Codex drop
+# inside these dirs (worktrees/, auth.json, ...) is gitignored, so git already
+# knows what belongs to the repo — no hand-maintained exclusion lists.
+for prefix in .claude .codex .config; do
+  while IFS= read -r -d '' path; do
+    rel="${path#"$prefix"/}"
+    dest="$HOME/$prefix/$rel"
+    if [[ -L "$dest" && "$(readlink "$dest")" == "$DOTFILES_DIR/$path" ]]; then
       continue
     fi
     if [[ -e "$dest" || -L "$dest" ]]; then
-      conflicts+=("~/.codex/$rel")
+      conflicts+=("~/$prefix/$rel")
     fi
-  done < <(find "$DOTFILES_DIR/.codex" -type f -not -name "*.local.*" -print0)
+  done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
+done
+
+# DOTFILES_MODE=replace|skip|prompt skips the interactive conflict prompt
+# (headless/CI runs have no /dev/tty).
+MODE="${DOTFILES_MODE:-replace}"
+if [[ ! "$MODE" =~ ^(replace|skip|prompt)$ ]]; then
+  error "Invalid DOTFILES_MODE '$MODE' (expected replace, skip, or prompt)."
+  exit 1
 fi
-
-while IFS= read -r -d '' file; do
-  rel="${file#"$DOTFILES_DIR"/.config/}"
-  dest="$HOME/.config/$rel"
-  if [[ -L "$dest" && "$(readlink "$dest")" == "$file" ]]; then
-    continue
-  fi
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    conflicts+=("~/.config/$rel")
-  fi
-done < <(find "$DOTFILES_DIR/.config" -type f -print0)
-
-MODE="replace"
-if [[ ${#conflicts[@]} -gt 0 ]]; then
+if [[ ${#conflicts[@]} -gt 0 && -z "${DOTFILES_MODE:-}" ]]; then
   echo "The following files already exist and will need replacement:"
   for c in "${conflicts[@]}"; do
     echo "  - $c"
@@ -313,39 +292,22 @@ for file in "${DOTFILES[@]}"; do
 done
 
 # =============================================================================
-# Section 4: Claude Code Symlinks
+# Section 4: Claude Code / Codex / XDG Config Symlinks
 # =============================================================================
 
-info "Creating Claude Code symlinks..."
-mkdir -p ~/.claude
-
-while IFS= read -r -d '' file; do
-  rel="${file#"$DOTFILES_DIR"/.claude/}"
-  dest="$HOME/.claude/$rel"
-  mkdir -p "$(dirname "$dest")"
-  link_file "$file" "$dest" "~/.claude/$rel"
-done < <(find "$DOTFILES_DIR/.claude" -type f -not -name "*.local.*" -print0)
+# Tracked files only — see the Section 2 comment.
+for prefix in .claude .codex .config; do
+  info "Creating ~/$prefix symlinks..."
+  while IFS= read -r -d '' path; do
+    rel="${path#"$prefix"/}"
+    dest="$HOME/$prefix/$rel"
+    mkdir -p "$(dirname "$dest")"
+    link_file "$DOTFILES_DIR/$path" "$dest" "~/$prefix/$rel"
+  done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
+done
 
 # Ensure hook scripts are executable (git may not preserve +x on all systems)
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-
-# =============================================================================
-# Section 4a: Codex Symlinks
-# =============================================================================
-
-info "Creating Codex symlinks..."
-mkdir -p "$HOME/.codex"
-
-if [[ -d "$DOTFILES_DIR/.codex" ]]; then
-  while IFS= read -r -d '' file; do
-    rel="${file#"$DOTFILES_DIR"/.codex/}"
-    is_codex_runtime_rel "$rel" && continue
-    dest="$HOME/.codex/$rel"
-    mkdir -p "$(dirname "$dest")"
-    link_file "$file" "$dest" "~/.codex/$rel"
-  done < <(find "$DOTFILES_DIR/.codex" -type f -not -name "*.local.*" -print0)
-fi
-
 find "$HOME/.codex/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # Register the git clean filter that strips Codex-managed [hooks.state] from
@@ -359,19 +321,6 @@ if command -v git >/dev/null 2>&1 && [[ -d "$DOTFILES_DIR/.git" ]]; then
 fi
 
 # =============================================================================
-# Section 4b: XDG Config Symlinks
-# =============================================================================
-
-info "Creating ~/.config symlinks..."
-
-while IFS= read -r -d '' file; do
-  rel="${file#"$DOTFILES_DIR"/.config/}"
-  dest="$HOME/.config/$rel"
-  mkdir -p "$(dirname "$dest")"
-  link_file "$file" "$dest" "~/.config/$rel"
-done < <(find "$DOTFILES_DIR/.config" -type f -print0)
-
-# =============================================================================
 # Section 5: Create Required Directories
 # =============================================================================
 
@@ -381,6 +330,13 @@ mkdir -p ~/.vim/plugged
 # =============================================================================
 # Section 6: Install Packages
 # =============================================================================
+
+# Each tool's install dir, put on PATH now so presence checks later in this
+# run see it (mirrors what .zprofile does for future login shells:
+# pipx/claude->~/.local/bin, deno->~/.deno/bin, pnpm->~/.local/share/pnpm,
+# supabase->~/.supabase/bin; trufflehog installs straight to /usr/local/bin,
+# already on PATH).
+export PATH="$HOME/.local/bin:$HOME/.deno/bin:$HOME/.local/share/pnpm:$HOME/.supabase/bin:$PATH"
 
 if [[ "$OS" == "macos" ]]; then
   brew_status="already installed"
@@ -399,8 +355,12 @@ if [[ "$OS" == "macos" ]]; then
   fi
 
   info "Running brew bundle..."
-  brew bundle --file="$DOTFILES_DIR/Brewfile"
-  pkg_summary="Homebrew: $brew_status"
+  if brew bundle --file="$DOTFILES_DIR/Brewfile"; then
+    pkg_summary="Homebrew: $brew_status"
+  else
+    warn "brew bundle failed; continuing with remaining sections"
+    pkg_summary="Homebrew: $brew_status (bundle FAILED — re-run 'brew bundle' manually)"
+  fi
 else
   install_packages_linux
   pkg_summary="Packages ($PKG): installed"
