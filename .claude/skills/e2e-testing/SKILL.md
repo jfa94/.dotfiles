@@ -66,6 +66,8 @@ For each journey, read the specs that claim to cover it and issue one verdict:
 | **covered**           | spec exists and passes the rubric in [conventions.md](./conventions.md)                                                                                                      |
 | **nominally covered** | spec exists but is untrustworthy — hollow assertions that would still pass if the feature broke, hard waits, brittle deep-CSS/XPath selectors, or skipped/quarantined status |
 
+When a journey is uncovered because it _can't_ be covered without app changes (no test-credential path for OAuth-only login, no seed/reset hooks, no test mode for the payment provider), say so and name the missing hook — testability gaps are top-line findings, not footnotes.
+
 Add one **CI status** line: does anything actually run these tests on PRs?
 
 Deliver the report in chat and copy it to the session scratchpad. Never persist it to the repo — verdicts go stale the moment specs change; only the journey list is durable.
@@ -75,22 +77,33 @@ Deliver the report in chat and copy it to the session scratchpad. Never persist 
 ### Write missing tests
 
 1. **Plan gate first.** Per journey, present steps plus the exact outcome assertions ("order appears in /orders with status 'paid'", never "checkout works"). One approval round. No spec code before approval.
-2. **Ground it.** Launch the app (`webServer` config or dev server), verify selectors against the live DOM via Playwright MCP, and execute each spec before delivering it.
+2. **Ground it.** Launch the app (`webServer` config or dev server), verify selectors against the live DOM via Playwright MCP, and execute each spec before delivering it. Then prove it can fail: sabotage one key assertion (wrong expected value, or stub the API to a failure response), confirm red, revert, confirm green. A spec never seen red is unverified.
 3. **Can't launch?** Fall back to source-grounded drafts — real roles, labels, and `data-testid`s read from the actual components — and mark each one `test.fixme` with a header naming why it's unverified and what blocks the launch. Never deliver an unexecuted spec as done.
 4. Every spec follows [conventions.md](./conventions.md).
 
 ### Run the suite
 
-Execute and report honestly: failures with traces, flaky-on-retry flagged as defects to investigate — never counted as passes.
+Execute and report honestly: failures with traces, flaky-on-retry flagged as defects to investigate — never counted as passes. A red spec is either a product bug or an intended behavior change — diagnose which before touching the spec. Never make it green by loosening the assertion.
 
 ### Scaffold CI
 
-GitHub Actions workflow: install browsers, run the smoke subset on `pull_request`, full suite nightly, upload traces/HTML report on failure. Tell the user to mark the job as a required status check in branch protection — never change repo settings yourself.
+GitHub Actions workflow:
+
+- PR gate: smoke subset only (`--grep @smoke`), Chromium-only for speed.
+- Nightly: full suite, all three engines — WebKit matters for consumer apps (Linux WebKit ≠ Safari for media playback; macOS runner if that matters).
+- Config: `trace: 'on-first-retry'`, reporter `process.env.CI ? 'github' : 'list'` for inline PR annotations.
+- `npx playwright install --with-deps`; don't cache browser binaries — restore time ≈ download time per Playwright docs.
+- State: ephemeral seeded DB per run (service container) or documented equivalent — CI must own its data.
+- Don't shard under ~50 tests; PR gate over ~10–15 min → shard or demote journeys to nightly.
+- Upload traces/HTML report on failure.
+
+Tell the user to mark the smoke job as a required status check in branch protection — never change repo settings yourself.
 
 ## Red flags
 
 - Marking a journey covered because a spec file _mentions_ it — read the assertions.
 - Delivering a spec that has never executed without a `fixme` marker.
+- Delivering a spec that has only ever been seen green — no demonstrated failure.
 - Writing an e2e test for an edge case a unit/integration test could catch — push it down and say so.
 - Writing tests when the user only asked for gaps.
 - A hollow plan entry ("verify page loads") surviving the plan gate.
