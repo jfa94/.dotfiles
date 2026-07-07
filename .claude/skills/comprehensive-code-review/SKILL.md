@@ -291,7 +291,11 @@ structured return as `{"type":"result", ..., "result": <object>}` lines. Reviewe
 `name`, refuter verdicts echo `file`/`line` — rebuild `{ scopeLabel, mode, reviewers: [...] }` by
 taking each reviewer's result record and applying refuter verdicts as `refuted`/`refute_reason`
 (criticals are dropped-as-refuted only when BOTH of their two verdicts refute; importants on one).
-Write the reconstruction to `workflow-result.json` and continue. Only if the journal is also
+This pairing is **best-effort, not deterministic** — the journal has no record of an agent's `label`,
+only the schema-optional `file`/`line` echo, so if a verdict omits it or matches more than one
+finding (two reviewers flagging the same site), leave that finding unrefuted rather than guess; a
+mis-paired refutation can then at worst let a refuted finding survive, never drop a real one. Write
+the reconstruction to `workflow-result.json` and continue. Only if the journal is also
 missing/unusable: mark every dispatched reviewer BLOCKED("workflow-result.json missing/stale and
 journal unavailable") and continue.
 
@@ -365,7 +369,7 @@ Do NOT hand-execute citation checks — run the script (its spec lives in
 `references/workflow-and-codex.md` §6). Write the changed-files list to a file first:
 
 ```bash
-printf '%s\n' $CHANGED_FILES > .comprehensive-code-review/raw/changed-files.txt
+printf '%s\n' "$CHANGED_FILES" > .comprehensive-code-review/raw/changed-files.txt
 node "<this skill's base directory>/scripts/verify-citations.mjs" \
   --workflow-result .comprehensive-code-review/raw/workflow-result.json \
   --codex .comprehensive-code-review/raw/codex-adversarial.json \

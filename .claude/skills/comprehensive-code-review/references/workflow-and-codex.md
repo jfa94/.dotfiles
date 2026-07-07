@@ -55,7 +55,13 @@ corrupted and then dropped at citation verification). A failed persist (no outpu
 or byte mismatch) is retried once with a fresh agent before the workflow gives up — persistence is
 the run's single point of failure. If both attempts fail, the skill's journal fallback (Phase 6)
 reconstructs the result from the run's `journal.jsonl`; reviewer results echo `name` and refuter
-verdicts echo `file`/`line` precisely to make that reconstruction deterministic.
+verdicts echo `file`/`line` to help that reconstruction. This is **best-effort, not deterministic**:
+the journal has no record of an agent's `label`, so pairing a refuter verdict back to its finding
+relies entirely on these schema-optional echoes — if a verdict omits the echo, or two reviewers
+flagged the same file:line (the case the dedup stage exists for), the match is ambiguous. Pair by
+`file`/`line`; on a missing echo or an ambiguous (>1 candidate) match, leave the finding unrefuted
+rather than guess — a mis-paired refutation can then at worst let a refuted finding survive
+(findings are deduped only _after_ refuted ones are dropped), never drop a real one.
 
 Three behaviors live inside the workflow, not the skill:
 

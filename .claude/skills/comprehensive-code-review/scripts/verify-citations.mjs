@@ -132,17 +132,36 @@ function main() {
 
   const verified = [];
   const dropped = [];
+  let unmatchedCodexRefutations = 0;
   const perReviewer = {};
   const bump = (name, key) => {
-    perReviewer[name] ||= { verified: 0, refuted: 0, droppedCitation: 0 };
+    perReviewer[name] ||= {
+      verified: 0,
+      refuted: 0,
+      droppedCitation: 0,
+      droppedOther: 0,
+    };
     perReviewer[name][key]++;
   };
+  // Genuine citation-verification failures vs. everything else (excluded
+  // build output, Codex existence checks) — keeps the Calibration line honest
+  // about what actually failed quote/line verification.
+  const CITATION_VERIFICATIONS = new Set([
+    "dropped_no_citation",
+    "dropped_no_match",
+    "dropped_quote_too_short",
+    "dropped_systemic_incomplete",
+    "dropped_systemic_anchor_unverified",
+  ]);
   const drop = (finding, verification, extra) => {
     dropped.push(Object.assign({}, finding, { verification }, extra || {}));
-    bump(
-      finding.reviewer,
-      verification === "refuted" ? "refuted" : "droppedCitation",
-    );
+    const bucket =
+      verification === "refuted"
+        ? "refuted"
+        : CITATION_VERIFICATIONS.has(verification)
+          ? "droppedCitation"
+          : "droppedOther";
+    bump(finding.reviewer, bucket);
   };
   const keep = (finding, verification) => {
     finding.verification = verification;
@@ -212,19 +231,47 @@ function main() {
     const verify = JSON.parse(readFileSync(opts["codex-verify"], "utf8"));
     for (const v of verify.codexFindings || []) {
       if (!v.refuted) continue;
-      const match = codexFindings.find(
+      // Content (this loop's target) comes from the trusted codex-adversarial
+      // payload; only the refute bit is trusted from the LLM-transcribed
+      // codex-verify-result. Mark every match (not just the first) so a
+      // duplicate (file,line_start,title) triple can't leave a sibling
+      // unrefuted, and never let an unmatched refutation vanish silently.
+      const matches = codexFindings.filter(
         (c) =>
           c.file === v.file &&
           c.line_start === v.line_start &&
           c.title === v.title,
       );
-      if (match) {
+      if (matches.length === 0) {
+        unmatchedCodexRefutations++;
+        console.error(
+          "verify-citations: codex-verify refutation matched no finding — " +
+            JSON.stringify({
+              file: v.file,
+              line_start: v.line_start,
+              title: v.title,
+            }),
+        );
+        continue;
+      }
+      for (const match of matches) {
         match.refuted = true;
         match.refute_reason = v.refute_reason;
       }
     }
   }
   for (const c of codexFindings) {
+    if (!(c.severity in CODEX_SEVERITY_MAP)) {
+      console.error(
+        "verify-citations: unrecognized Codex severity " +
+          JSON.stringify(c.severity) +
+          " for " +
+          c.file +
+          ":" +
+          c.line_start +
+          " — demoted to minor",
+      );
+    }
     const f = {
       reviewer: "codex-adversarial",
       severity: CODEX_SEVERITY_MAP[c.severity] || "minor",
@@ -299,7 +346,7 @@ function main() {
     })),
     findings: deduped,
     dropped,
-    stats: { perReviewer, duplicatesMerged },
+    stats: { perReviewer, duplicatesMerged, unmatchedCodexRefutations },
   };
   mkdirSync(path.dirname(path.resolve(opts.out)), { recursive: true });
   writeFileSync(opts.out, JSON.stringify(output, null, 2));

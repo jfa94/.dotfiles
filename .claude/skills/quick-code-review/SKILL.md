@@ -230,8 +230,12 @@ reconstruct from the run's journal first. The Workflow tool result named the run
 directory; `<transcript dir>/journal.jsonl` records every agent's structured return as
 `{"type":"result", ..., "result": <object>}` lines. Reviewer results echo `name`, refuter verdicts echo
 `file`/`line` — rebuild `{ scopeLabel, mode, reviewers: [...] }` (criticals count as refuted only when
-BOTH of their two verdicts refute; importants on one), write it to `workflow-result.json`, and continue.
-Only if the journal is also missing/unusable: mark every dispatched reviewer
+BOTH of their two verdicts refute; importants on one). This pairing is **best-effort, not
+deterministic** — the journal has no record of an agent's `label`, only the schema-optional
+`file`/`line` echo, so if a verdict omits it or matches more than one finding, leave that finding
+unrefuted rather than guess (mis-pairing can then at worst let a refuted finding survive, never drop
+a real one). Write it to `workflow-result.json`, and continue. Only if the journal is also
+missing/unusable: mark every dispatched reviewer
 BLOCKED("workflow-result.json missing/stale and journal unavailable") and continue.
 
 Then harvest Codex if `CODEX_AVAILABLE=true`: it ran as a backgrounded **Bash** task that wrote its
@@ -285,7 +289,7 @@ Do NOT hand-execute citation checks — run the sibling skill's script (spec:
 `comprehensive-code-review/references/workflow-and-codex.md` §6). Write the changed-files list first:
 
 ```bash
-printf '%s\n' $CHANGED_FILES > .quick-code-review/raw/changed-files.txt
+printf '%s\n' "$CHANGED_FILES" > .quick-code-review/raw/changed-files.txt
 node "<comprehensive-code-review skill dir>/scripts/verify-citations.mjs" \
   --workflow-result .quick-code-review/raw/workflow-result.json \
   --codex .quick-code-review/raw/codex-adversarial.json \

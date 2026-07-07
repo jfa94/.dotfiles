@@ -344,3 +344,123 @@ test("outside_diff tagged in base mode, absent in full mode", (t) => {
   const full = run(t, { ...fixture, mode: "full" });
   assert.equal(full.findings[0].outside_diff, undefined);
 });
+
+test("dedup never merges a local finding with a systemic finding at the same site", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [finding({ line: 2, verbatim: "return a + b;" })]),
+      reviewer("systemic", [
+        finding({
+          kind: "systemic",
+          line: 2,
+          verbatim: "return a + b;",
+          failure_mode: "stuck-state",
+          scenario: "s",
+          anchors: [
+            { file: "src/a.js", line: 2, verbatim: "return a + b;" },
+            {
+              file: "src/a.js",
+              line: 6,
+              verbatim: "console.log('big total');",
+            },
+          ],
+        }),
+      ]),
+    ],
+  });
+  assert.equal(out.findings.length, 2);
+  assert.equal(out.stats.duplicatesMerged, 0);
+  assert.ok(out.findings.every((f) => !f.also_flagged_by));
+});
+
+test("codex excludes backstop: build-output path dropped, missing file field dropped", (t) => {
+  const cf = (over) => ({
+    severity: "high",
+    title: "T",
+    body: "B",
+    file: "src/a.js",
+    line_start: 2,
+    line_end: 3,
+    confidence: 0.9,
+    ...over,
+  });
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [],
+    codex: {
+      target: { mode: "working-tree", explicit: true },
+      result: {
+        verdict: "needs-attention",
+        summary: "s",
+        findings: [
+          cf({ title: "DIST", file: "dist/bundle.js" }),
+          cf({ title: "NOFILE", file: undefined }),
+        ],
+        next_steps: [],
+      },
+    },
+  });
+  assert.equal(out.findings.length, 0);
+  const byTitle = (title) => out.dropped.find((d) => d.title === title);
+  assert.equal(byTitle("DIST").verification, "dropped_excluded_build_output");
+  assert.equal(byTitle("NOFILE").verification, "codex_file_missing");
+});
+
+test("unmatched codex refutation is surfaced in stats, not silently discarded", (t) => {
+  const cf = (over) => ({
+    severity: "high",
+    title: "T",
+    body: "B",
+    file: "src/a.js",
+    line_start: 2,
+    line_end: 3,
+    confidence: 0.9,
+    ...over,
+  });
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [],
+    codex: {
+      target: { mode: "working-tree", explicit: true },
+      result: {
+        verdict: "needs-attention",
+        summary: "s",
+        findings: [cf({})],
+        next_steps: [],
+      },
+    },
+    codexVerify: {
+      codexFindings: [
+        {
+          // title drifted from "T" to "T2" — no finding matches this refutation
+          file: "src/a.js",
+          line_start: 2,
+          title: "T2",
+          refuted: true,
+          refute_reason: "drifted",
+        },
+      ],
+    },
+  });
+  // The unmatched refutation must not silently drop; the original finding
+  // still ships as verified.
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.stats.unmatchedCodexRefutations, 1);
+});
+
+test("Calibration buckets: exclusion/existence drops land in droppedOther, not droppedCitation", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [finding({ file: "dist/a.js" })]),
+      reviewer("security", [
+        finding({ verbatim: "too short" }), // < 10 chars collapsed -> citation failure
+      ]),
+    ],
+  });
+  assert.equal(out.stats.perReviewer.quality.droppedOther, 1);
+  assert.equal(out.stats.perReviewer.quality.droppedCitation, 0);
+  assert.equal(out.stats.perReviewer.security.droppedCitation, 1);
+  assert.equal(out.stats.perReviewer.security.droppedOther, 0);
+});
