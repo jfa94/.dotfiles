@@ -45,6 +45,14 @@ Conflict handling:
     1) Replace — overwrite conflicts and add new files
     2) Skip — add new files only, leave existing files untouched
     3) Prompt — decide file-by-file
+  Replaced files are backed up to <file>.bak first.
+  The mode also applies to the package.json scripts merge: Skip keeps your
+  existing script entries; Replace/Prompt overwrite them (overwritten keys
+  are reported).
+  Set CONFIGURE_MODE=replace|skip|prompt to skip the prompt (non-interactive).
+
+After installing, a smoke test (typecheck + lint) runs if the target has a
+src/ directory, to catch configs incompatible with freshly resolved deps.
 
 Prerequisites:
   node      Required to merge scripts into package.json
@@ -86,6 +94,13 @@ if [[ ! -f "$TARGET/package.json" ]]; then
   exit 1
 fi
 
+for cmd in node pnpm; do
+  if ! command -v "$cmd" &>/dev/null; then
+    echo "Error: $cmd not found; required (see --help prerequisites)"
+    exit 1
+  fi
+done
+
 # --- Detect conflicts ---
 conflicts=()
 
@@ -110,9 +125,15 @@ if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
 fi
 
 # --- Prompt (only if conflicts detected) ---
-MODE="replace"
+# CONFIGURE_MODE=replace|skip|prompt skips the interactive prompt.
+MODE="${CONFIGURE_MODE:-replace}"
 
-if [[ ${#conflicts[@]} -gt 0 ]]; then
+if [[ ! "$MODE" =~ ^(replace|skip|prompt)$ ]]; then
+  echo "Error: invalid CONFIGURE_MODE '$MODE' (expected replace, skip, or prompt)"
+  exit 1
+fi
+
+if [[ ${#conflicts[@]} -gt 0 && -z "${CONFIGURE_MODE:-}" ]]; then
   echo "The following files already exist in the target:"
   for c in "${conflicts[@]}"; do
     echo "  - $c"
@@ -166,7 +187,12 @@ copy_file() {
     else
       replaced+=("$label")
     fi
-    rm -f "$dest"
+    if [[ -L "$dest" ]]; then
+      rm -f "$dest"
+    else
+      rm -rf "${dest}.bak"
+      mv "$dest" "${dest}.bak"
+    fi
   else
     copied+=("$label")
   fi
@@ -193,13 +219,26 @@ fi
 # Merge the scaffold's scripts into package.json and print its dev-dependency
 # names on stdout, then let pnpm resolve+install the latest versions (so new
 # projects never inherit stale pins). pnpm add also writes the lockfile.
+# The merge honors MODE: skip keeps existing script entries; replace/prompt
+# let the scaffold win and report which keys were overwritten.
+smoke_status="not run"
 if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
-  DEV_DEPS="$(TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" node -e "
+  DEV_DEPS="$(TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" MERGE_MODE="$MODE" node -e "
     const fs = require('fs');
     const target = process.env.TARGET_PATH + '/package.json';
     const pkg = JSON.parse(fs.readFileSync(target, 'utf8'));
     const scaffold = JSON.parse(fs.readFileSync(process.env.SCAFFOLD_PATH + '/package.scaffold.json', 'utf8'));
-    pkg.scripts = Object.assign({}, pkg.scripts || {}, scaffold.scripts);
+    const existing = pkg.scripts || {};
+    if (process.env.MERGE_MODE === 'skip') {
+      pkg.scripts = Object.assign({}, scaffold.scripts, existing);
+    } else {
+      const overwritten = Object.keys(scaffold.scripts)
+        .filter(k => k in existing && existing[k] !== scaffold.scripts[k]);
+      if (overwritten.length) {
+        process.stderr.write('Overwrote existing scripts: ' + overwritten.join(', ') + '\n');
+      }
+      pkg.scripts = Object.assign({}, existing, scaffold.scripts);
+    }
     fs.writeFileSync(target, JSON.stringify(pkg, null, 2) + '\n');
     process.stdout.write((scaffold.scaffoldDevDependencies || []).join(' '));
   ")"
@@ -208,6 +247,19 @@ if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
     echo "Installing latest dev dependencies with pnpm..."
     # shellcheck disable=SC2086 # intentional word-splitting: one arg per package
     pnpm --dir "$TARGET" add -D $DEV_DEPS
+  fi
+
+  # Smoke test: deps were just resolved to latest, so prove the copied configs
+  # still work. Needs source files — tsc/eslint error on an empty project.
+  if [[ -d "$TARGET/src" ]]; then
+    echo "Running smoke test (typecheck + lint)..."
+    if pnpm --dir "$TARGET" run typecheck && pnpm --dir "$TARGET" run lint; then
+      smoke_status="ok"
+    else
+      smoke_status="FAILED (configs may be incompatible with latest deps)"
+    fi
+  else
+    smoke_status="skipped (no src/)"
   fi
 else
   echo "Warning: package.scaffold.json not found, skipping scripts merge"
@@ -236,5 +288,6 @@ if [[ ${#copied[@]} -eq 0 && ${#replaced[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; t
   echo "No files were processed."
 fi
 
+echo "Smoke test: $smoke_status"
 echo ""
 echo "Done."
