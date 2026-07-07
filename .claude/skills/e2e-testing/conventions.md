@@ -14,12 +14,14 @@ Hollow patterns that answer "no" — reject or flag as untrustworthy:
 
 A real outcome assertion names the state change: the order row exists with status "paid", the email lands in the outbox, the redirect hits `/dashboard` with the user's name rendered.
 
+The operational check for new specs: sabotage the assertion, watch it fail, revert (see SKILL.md).
+
 ## Scope — what earns an e2e test
 
 - Only critical journeys (the confirmed `docs/critical-journeys.md` list). Heuristic: catastrophic-if-broken → e2e; cosmetic → lower layer.
 - Edge cases, field validation, business-rule combinations → unit/integration. If a boundary integration test can catch it, don't write the browser test.
 - No redundancy across layers; each layer tests what the others can't.
-- Keep the e2e suite a small fraction of total tests (~10% heuristic). Tag or folder a **smoke subset** (login + core action) for the PR gate; the rest runs nightly.
+- Keep the e2e suite a small fraction of total tests (~10% heuristic). Tag a **smoke subset** (login + core action) with `@smoke` (`{ tag: '@smoke' }`), run via `--grep @smoke` for the PR gate — tags survive file moves; the rest runs nightly.
 
 ## Locators
 
@@ -39,6 +41,12 @@ Deep CSS chains and XPath tied to DOM structure are defects. If no semantic hook
 - Fresh browser context per test (Playwright default — don't defeat it).
 - Auth via `storageState`: capture the session once in a setup project, reuse everywhere. Interactive login never belongs in CI.
 - Deterministic environment: disable animations, freeze or avoid asserting wall-clock time.
+
+## Third-party boundaries
+
+- Real backend and first-party services by default. Mock only third parties not under test (analytics, email delivery) via route interception — assert the outbound request or a test outbox, and keep ≥1 real-backend smoke journey.
+- Payments: provider test mode (e.g. Stripe test cards). Never fully mock the payment step on a money path; never real charges.
+- Third-party OAuth (Google/Apple login) is not automatable in CI: `storageState` presumes a headless-capable login. Needs a test-credential path or test-only session-injection hook — absence is a testability finding for the gap report.
 
 ## Retries & flakiness
 
