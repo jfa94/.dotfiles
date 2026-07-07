@@ -4,21 +4,13 @@
 
 ```
 .comprehensive-code-review/
-├── report-<UTC-iso>.md          # final consolidated report (this format)
-└── raw/
-    ├── architecture-<ts>.md
-    ├── quality-<ts>.md
-    ├── security-<ts>.md
-    ├── implementation-<ts>.md   # omitted if --spec not provided
-    ├── silent-failures-<ts>.md
-    ├── test-coverage-<ts>.md
-    ├── type-design-<ts>.md
-    ├── comment-accuracy-<ts>.md
-    ├── simplification-<ts>.md
-    ├── documentation-<ts>.md
-    ├── systemic-failure-<ts>.md
+├── report-<UTC-iso>.md              # final consolidated report (this format) — the only human render
+└── raw/                             # machine record; no per-reviewer or Codex .md renders
+    ├── workflow-result.json         # reviewer fan-out output (persisted by the workflow)
     ├── codex-adversarial.json       # Codex structured machine output (source of truth)
-    └── codex-adversarial-<ts>.md    # human-readable render of codex-adversarial.json
+    ├── codex-verify-result.json     # Codex refutation pass output (when Phase 6.5 ran)
+    ├── changed-files.txt            # input to verify-citations.mjs
+    └── verified-findings.json       # verify-citations.mjs output (findings/dropped/stats)
 ```
 
 ## Report skeleton
@@ -112,7 +104,7 @@ but citing a file not in the changed-files list (diff modes only) — get the ti
 #### [critical|important|minor] `file:line` — <one-line title>
 
 - **Reviewer**: architecture
-- **Quote**: `<verbatim ≥5 chars>`
+- **Quote**: `<verbatim ≥10 chars>`
 - **Why**: <reasoning from reviewer output>
 - **Fix sketch**: <one sentence>
 - **Also flagged by**: <other reviewers, only when the finding was deduped across reviewers — omit otherwise>
@@ -124,7 +116,7 @@ but citing a file not in the changed-files list (diff modes only) — get the ti
 #### [critical|important|minor] `file:line` — <one-line title>
 
 - **Reviewer**: security
-- **Quote**: `<verbatim ≥5 chars>`
+- **Quote**: `<verbatim ≥10 chars>`
 - **Why**: <reasoning>
 - **Fix sketch**: <one sentence>
 
@@ -165,7 +157,7 @@ _(same structure)_
 - **Reviewer**: systemic-failure
 - **Failure mode**: `<stuck-state|invariant-without-repair|unsafe-recovery|over-pinned-contract>`
 - **Scenario**: <trigger → stuck/wrong state, one or two sentences>
-- **Quote**: `<verbatim ≥5 chars — primary anchor (anchors[0])>`
+- **Quote**: `<verbatim ≥10 chars — primary anchor (anchors[0])>`
 - **Chain anchors**:
   - `file:line` — `<verbatim>` _(role)_
   - `file:line` — `<verbatim>` _(role)_
@@ -180,11 +172,14 @@ _(only present if --spec provided)_
 
 ### Adversarial-Codex
 
-_(only present if Codex ran. Codex findings are existence-checked, not quote-verified — the review
-schema has no `verbatim` field — and carry their native severity + confidence. When Codex is DONE via
-the degraded narrative fallback (structured output unavailable), the Reviewers-table Verdict cell is
-suffixed `(degraded — narrative fallback)` and this section opens with a line stating the findings were
-recovered from raw model text and are **not schema-validated**.)_
+_(only present if Codex ran. Codex findings are existence-checked and — for native
+critical/high/medium — refuter-verified via the verify-only Workflow pass (Phase 6.5), but not
+quote-verified: the review schema has no `verbatim` field. They carry their native severity +
+confidence. Refuted Codex findings appear in Dropped Findings like any refuted reviewer finding.
+When Codex is DONE via the degraded narrative fallback (structured output unavailable), the
+Reviewers-table Verdict cell is suffixed `(degraded — narrative fallback)`, this section opens with
+a line stating the findings were recovered from raw model text and are **not schema-validated**,
+and no refutation pass runs.)_
 
 #### [critical|important|minor] `file:line_start[-line_end]` — <one-line title>
 
@@ -204,7 +199,8 @@ _(findings that don't fit above categories — reviewer name preserved)_
 
 _(findings that failed citation verification or were adversarially refuted — listed for
 transparency. `refuted` rows include the refuter's counter-evidence so they can be audited, but
-refuted findings are never resurrected into the report body.)_
+refuted findings are never resurrected into the report body. Refuted Codex findings (Phase 6.5)
+appear here too, with reviewer `codex-adversarial`.)_
 
 | Reviewer | Claimed file:line | Verbatim   | Drop reason                             |
 | -------- | ----------------- | ---------- | --------------------------------------- |
@@ -267,7 +263,7 @@ the 4→3 collapse loses no signal.
   "reviewer": "<agent name>",
   "file": "path/to/file.ts",
   "line": 42,
-  "verbatim": "<quote ≥5 chars; omitted for Codex — its review schema has no verbatim field>",
+  "verbatim": "<quote ≥10 chars; omitted for Codex — its review schema has no verbatim field>",
   "title": "<one-line title>",
   "why": "<reasoning>",
   "fix_sketch": "<one sentence>",

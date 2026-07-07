@@ -1,8 +1,8 @@
 # Workflow & Codex Reference
 
 This skill dispatches the 11 specialist reviewers through a `Workflow` and runs Codex as a
-separate background Bash job. Citation verification and report assembly stay in the main
-session. This file is the contract for all three.
+separate background Bash job. Citation verification runs via `scripts/verify-citations.mjs`;
+report assembly stays in the main session. This file is the contract for all of them.
 
 ## 1. Reviewer fan-out via Workflow
 
@@ -51,13 +51,25 @@ reason if its agent failed or was skipped).
 The persist stage is transcription-checked: the script computes the payload's UTF-8 byte count and
 the persist agent must confirm `wc -c` on the written file matches before returning `written=true`
 (a mismatch means the agent altered content while copying — the canonical way findings get silently
-corrupted and then dropped at citation verification).
+corrupted and then dropped at citation verification). A failed persist (no output, `written` false,
+or byte mismatch) is retried once with a fresh agent before the workflow gives up — persistence is
+the run's single point of failure. If both attempts fail, the skill's journal fallback (Phase 6)
+reconstructs the result from the run's `journal.jsonl`; reviewer results echo `name` and refuter
+verdicts echo `file`/`line` to help that reconstruction. This is **best-effort, not deterministic**:
+the journal has no record of an agent's `label`, so pairing a refuter verdict back to its finding
+relies entirely on these schema-optional echoes — if a verdict omits the echo, or two reviewers
+flagged the same file:line (the case the dedup stage exists for), the match is ambiguous. Pair by
+`file`/`line`; on a missing echo or an ambiguous (>1 candidate) match, leave the finding unrefuted
+rather than guess — a mis-paired refutation can then at worst let a refuted finding survive
+(findings are deduped only _after_ refuted ones are dropped), never drop a real one.
 
 Three behaviors live inside the workflow, not the skill:
 
 - **Adversarial Verify stage**: each critical/important finding is handed to a fresh refuter agent
   that sees only the claim + location (title, severity, file:line, verbatim quote — NOT the
-  reviewer's `why` reasoning chain) and must hunt for concrete counter-evidence. Refuted findings
+  reviewer's `why` reasoning chain) and must hunt for concrete counter-evidence. **Criticals get 2
+  independent refuters and are refuted only unanimously** (a single same-model verifier is the
+  weakest link for the highest-stakes drops); importants get 1. Refuted findings
   stay in the payload annotated `refuted: true` + `refute_reason` — the skill moves them to Dropped
   Findings (never silently deleted, never resurrected). A verifier that dies/skips keeps the finding.
 - **Diffless reviewers**: `documentation-reviewer` audits current state, not the change; the workflow
@@ -65,11 +77,33 @@ Three behaviors live inside the workflow, not the skill:
 - **Spec scoping**: `args.spec` (when provided) is included ONLY in implementation-reviewer's prompt —
   broadcasting it to every reviewer would cost spec × N tokens and duplicate the acceptance-criteria pass.
 
+### Verify-only mode (Codex refutation)
+
+Passing `verifyOnly` (a non-empty array of Codex structured findings — the `payload.result.findings`
+entries, shape in §6) skips the reviewer fan-out entirely. The workflow refutes each finding with
+native severity `critical`/`high`/`medium` using a fresh agent (Codex findings carry no `verbatim`,
+so the refuter Reads `file` around `line_start..line_end` instead of starting from a quote; same
+keep-on-uncertainty bias), annotates `refuted`/`refute_reason`, and persists
+
+```json
+{ "scopeLabel": "...", "mode": "...", "codexFindings": [ ...all input findings, annotated... ] }
+```
+
+to `<repoRoot>/<outDir>/raw/codex-verify-result.json` (same persist agent + retry). Invocation:
+
+```js
+Workflow({
+  scriptPath: "<this skill's base directory>/scripts/review-fanout.workflow.js",
+  args: { scopeLabel, mode, repoRoot, verifyOnly: [ ...codex findings... ] },
+});
+```
+
 ## 2. Canonical FINDINGS_SCHEMA (defined in the workflow script)
 
 ```json
 {
   "status": "DONE | BLOCKED",
+  "name": "<reviewer name echo, optional — attributes journal.jsonl records; the script's own name assignment stays authoritative>",
   "blocked_reason": "<string, only when BLOCKED>",
   "verdict": "<reviewer-specific verdict string, optional>",
   "dropped_by_cap": "<integer ≥0, optional — candidates the reviewer discarded to respect its findings cap; surfaces silent cap truncation in the report>",
@@ -78,7 +112,7 @@ Three behaviors live inside the workflow, not the skill:
       "severity": "critical | important | minor",
       "file": "path/to/file.ts",
       "line": 42,
-      "verbatim": "<exact quote, >= 5 chars>",
+      "verbatim": "<exact quote, >= 10 chars>",
       "title": "<one-line title>",
       "why": "<reasoning>",
       "fix_sketch": "<one sentence, optional>",
@@ -98,7 +132,7 @@ Three behaviors live inside the workflow, not the skill:
 }
 ```
 
-`verbatim` min length (5) and the `severity` enum are enforced by the schema validator, not by a
+`verbatim` min length (10) and the `severity` enum are enforced by the schema validator, not by a
 downstream parser. There is no STATUS line and no prose verdict block any more.
 
 After validation, the workflow's Verify stage may annotate a finding with two extra fields the
@@ -110,6 +144,9 @@ schema does not declare (they are workflow annotations, not reviewer output):
   "refute_reason": "<refuter's counter-evidence, with file:line>"
 }
 ```
+
+Refuter verdicts themselves (`VERIFY_SCHEMA`) are `{ refuted, reason }` plus optional `file`/`line`
+echoes of the finding's location — journal-reconstruction aids, ignored by the in-memory pairing.
 
 ## 3. Codex invocation pattern
 
@@ -259,13 +296,18 @@ The workflow script forwards `reviewInput` verbatim into each reviewer prompt (`
 manifest needs no script change; `DIFFLESS_REVIEWERS` (documentation-reviewer) still get the
 changed-files list only.
 
-## 6. Citation verification pseudocode (main session, deterministic)
+## 6. Citation verification spec (implemented by `scripts/verify-citations.mjs`)
+
+This section is the SPEC for `scripts/verify-citations.mjs` — the skill runs the script (Phase 7)
+and never hand-executes this procedure. The pseudocode below documents what the script does;
+change the script and this spec together.
 
 Source the reviewer findings from `.comprehensive-code-review/raw/workflow-result.json` (the file the
 workflow wrote), not from the Workflow return value.
 
 `is_excluded_build_output(path)` matches the Phase 1 `EXCLUDES` set: a `dist/`, `build/`, `out/`,
-`.next/`, `.nuxt/`, `.svelte-kit/`, `.output/`, or `coverage/` path segment, or a name ending in
+`.next/`, `.nuxt/`, `.svelte-kit/`, `.output/`, or `coverage/` path segment, a lockfile name
+(`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lock`, `bun.lockb`), or a name ending in
 `.min.js`, `.min.css`, or `.map`. Apply it to every track (incl. the Codex findings in §7 below) —
 it backstops Codex, which self-collects its diff and cannot honor the gathering pathspecs.
 
@@ -289,7 +331,7 @@ for each finding in (workflowResult.reviewers[*].findings + codex findings):
             if finding not yet dropped:  # all anchors pass — top-level (= anchors[0]) already covered
                 finding.verification = "ok"
     elif finding.file and finding.line and finding.verbatim:
-        if len(collapse_whitespace(finding.verbatim)) < 5:
+        if len(collapse_whitespace(finding.verbatim)) < 10:
             finding.verification = "dropped_quote_too_short"   -> move to dropped list
         else:
             content = Read(finding.file, offset=max(0, finding.line-2), limit=5)
@@ -332,8 +374,19 @@ The review schema has **no `verbatim` field** (`additionalProperties:false`), so
 impossible by construction — line-range existence-checking is the verification ceiling. For each
 structured finding: confirm `file` exists AND both `line_start` and `line_end` fall within the file's
 length; on failure move it to Dropped Findings (`codex_file_missing` / `codex_line_out_of_range`).
-Include surviving findings under "Adversarial-Codex" and note they are existence-checked, not
-quote-verified.
+Refutation substitutes for the missing quote check: critical/high/medium findings go through the
+verify-only Workflow pass (§1) and arrive at the script (via `--codex-verify`) with `refuted`
+annotations that drop them like any refuted reviewer finding. Include surviving findings under
+"Adversarial-Codex" and note they are existence-checked and (critical/high/medium) refuter-verified,
+not quote-verified.
+
+Beyond the pseudocode above, the script also: tags verified non-systemic findings outside the
+changed-files list with `outside_diff: true` (diff modes only), maps Codex native severities to the
+standard scale (`critical→critical`, `high|medium→important`, `low→minor`, native kept as
+`codex_severity`), dedups across reviewers (same file AND same `kind` AND (lines ±3 OR identical
+collapsed verbatim); highest severity wins, others in `also_flagged_by`), and emits
+`stats.perReviewer` (verified / refuted / citation-dropped counts) + `stats.duplicatesMerged` for
+the report's Calibration line.
 
 **Harvest** the payload as a validity/staleness gate, then a two-outcome branch — a structured-output
 failure must never report as a clean success:

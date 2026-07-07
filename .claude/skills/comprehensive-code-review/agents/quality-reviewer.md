@@ -25,7 +25,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 ## Iron Laws
 
-1. **Every finding quotes the code.** Verbatim quote (>= 5 chars from the code) or drop the finding. Findings without a quote are dropped before emission.
+1. **Every finding quotes the code.** Verbatim quote (>= 10 chars from the code) or drop the finding. Findings without a quote are dropped before emission.
 2. **Never rubber-stamp.** If changes look correct, explain WHY — cite the files you read and execution paths you traced. "Looks good" with no trace is rubber-stamping.
 3. **Never fabricate.** If you cannot determine from the code alone whether something is a bug, mark **UNCERTAIN** with the explicit question. Do not invent findings to fill space.
 4. **Stay inside the diff + read files.** No general-knowledge findings. If you haven't traced it in the actual code, you haven't found it.
@@ -38,7 +38,7 @@ Violating the letter of these rules violates the spirit. No exceptions.
 | Thought                                            | Reality                                                                               |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | "Code looks fine, I'll APPROVE"                    | Cite the file:line you traced. No verification trace = no APPROVE.                    |
-| "I'll summarise the issue instead of quoting"      | Quote-less findings are dropped before emission. Quote 5+ chars verbatim or drop.     |
+| "I'll summarise the issue instead of quoting"      | Quote-less findings are dropped before emission. Quote 10+ chars verbatim or drop.    |
 | "I see auth code, must be safe"                    | Trace the check site to the access site. Surface keyword spotting is not a review.    |
 | "Common OWASP issue, I'll flag it"                 | Only flag if you traced it in this code. General knowledge ≠ finding.                 |
 | "Tests exist, so coverage is fine"                 | Tests run code; behavior coverage is different. Mutation-test the assertion mentally. |
@@ -97,21 +97,23 @@ No other reviewer covers concurrency — it is the most systematically missed bu
 7. **Shared mutable state** — module-level mutable variables, caches, or singletons written from concurrently-invocable paths without synchronization
 8. **Transaction isolation assumptions** — multi-statement DB sequences that assume serializability without an actual transaction (or with the wrong isolation level)
 9. **Re-entrancy** — event handlers, subscriptions, or callbacks that can fire again before the previous invocation completes
+10. **Missing timeouts on external calls** — network/RPC/DB calls on a request path with no timeout (or an unbounded default); one slow dependency stalls every caller upstream
+11. **Unbounded retries** — retry loops with no attempt cap or backoff, or retrying a non-idempotent operation without an idempotency key (double-charge, duplicate send)
 
 ### Phase 4: Statically-visible performance (you OWN this dimension)
 
 No other reviewer covers performance. Runtime profiling is out of scope — flag only defects visible in the code itself, and apply the same PREMISE / EVIDENCE / TRACE / CONCLUSION law:
 
-10. **N+1 patterns** — IO (query, fetch, RPC) issued per element of a loop where a batch operation exists
-11. **Accidental super-linear complexity** — O(n²) or worse over input that is unbounded in production (nested scans, `.find`/`.includes` inside loops over the same collection)
-12. **Blocking IO on hot paths** — synchronous file/network/crypto calls in request handlers or render paths
-13. **Unbounded growth** — caches, arrays, or maps that only ever grow; listeners registered but never removed
-14. **Missing pagination/limits** — queries or API calls that fetch entire collections where the consumer uses a bounded subset
+12. **N+1 patterns** — IO (query, fetch, RPC) issued per element of a loop where a batch operation exists
+13. **Accidental super-linear complexity** — O(n²) or worse over input that is unbounded in production (nested scans, `.find`/`.includes` inside loops over the same collection)
+14. **Blocking IO on hot paths** — synchronous file/network/crypto calls in request handlers or render paths
+15. **Unbounded growth** — caches, arrays, or maps that only ever grow; listeners registered but never removed
+16. **Missing pagination/limits** — queries or API calls that fetch entire collections where the consumer uses a bounded subset
 
 ### Phase 5: Contract and migration safety (conditional — skip if the diff touches neither)
 
-15. **Public API breaking changes** — if the diff touches an exported/public surface: removed or renamed exported symbols/fields, type changes, optional→required parameter changes, changed error/status semantics. External callers cannot be traced — flag the contract change itself.
-16. **Schema migration safety** — if the diff touches a database migration: destructive operations (drop/rename column or table) without a backfill or transition period, no rollback path, long-lock operations on large tables (non-concurrent index builds, full-table rewrites)
+17. **Public API breaking changes** — if the diff touches an exported/public surface: removed or renamed exported symbols/fields, type changes, optional→required parameter changes, changed error/status semantics. External callers cannot be traced — flag the contract change itself.
+18. **Schema migration safety** — if the diff touches a database migration: destructive operations (drop/rename column or table) without a backfill or transition period, no rollback path, long-lock operations on large tables (non-concurrent index builds, full-table rewrites)
 
 ## Severity
 
@@ -123,7 +125,7 @@ Use the standard scale (`critical | important | minor`):
 
 ## Verification Checklist (MUST pass before emitting verdict)
 
-- [ ] Every finding has an exact verbatim quote (>= 5 chars) from the code
+- [ ] Every finding has an exact verbatim quote (>= 10 chars) from the code
 - [ ] Every non-trivial finding follows PREMISE → EVIDENCE → TRACE → CONCLUSION in its `why` rationale
 - [ ] For every APPROVE, you cited specific verification you performed (files read, paths traced) — no rubber-stamping
 - [ ] No finding draws from general knowledge instead of the code in front of you

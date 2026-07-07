@@ -3,9 +3,9 @@ name: quick-code-review
 description: >
   Run a focused, quick code review with the five crucial specialist reviewers (security,
   quality, test coverage, silent failures, systemic failures) plus a Codex adversarial review. A lean subset of
-  comprehensive-code-review: same rigor — every critical/important finding is adversarially
-  verified by a fresh refuter agent, and every finding is dropped unless it has a verified
-  file:line citation — but fewer dimensions, so the report is tighter and faster to triage.
+  comprehensive-code-review: same rigor — every critical/important finding (including Codex's)
+  is adversarially verified by a fresh refuter agent, and every finding is dropped unless it has
+  a verified file:line citation — but fewer dimensions, so the report is tighter and faster to triage.
   Reviews a diff (working tree by default, or `--base <ref>`). For a whole-codebase audit or
   spec-conformance, use comprehensive-code-review instead.
   Usage: /quick-code-review [--base <ref>]
@@ -47,12 +47,13 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
 
 ```
 1. NO FINDING WITHOUT A VERIFIED FILE:LINE CITATION.
-   Every reported reviewer finding cites file:line + verbatim quote >=5 chars, verified by
+   Every reported reviewer finding cites file:line + verbatim quote >=10 chars, verified by
    reading the file. Unverifiable findings are dropped before emission. No exceptions.
 
-2. NO REPORT UNTIL BOTH TRACKS RESOLVE.
+2. NO REPORT UNTIL ALL TRACKS RESOLVE.
    The reviewer Workflow must complete (its workflow-result.json written) AND Codex must
-   reach a terminal state (done / skipped / blocked) before you emit the report. No exceptions.
+   reach a terminal state (done / skipped / blocked) AND, when launched, the Codex-verify
+   Workflow (Phase 5.5) must resolve before you emit the report. No exceptions.
 
 3. NO INVENTED CATEGORIES.
    Report uses the fixed category set in references/report-format.md.
@@ -65,19 +66,21 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
 
 ## Red Flags — STOP and re-read this prompt
 
-| Thought                                      | Reality                                                                            |
-| -------------------------------------------- | ---------------------------------------------------------------------------------- |
-| "I'll Task each reviewer myself"             | Iron Law 4. Reviewers go through the Workflow, not direct Task calls.              |
-| "The finding looks right, I'll include it"   | Iron Law 1. Verify file:line first. Drop if no match.                              |
-| "Workflow's still running, I'll report now"  | Iron Law 2. workflow-result.json written AND Codex terminated first.               |
-| "I'll create a new category for this"        | Iron Law 3. Use fixed set; map to "Other" if nothing fits.                         |
-| "Codex isn't available, I'll abort"          | Mark Codex SKIPPED. The Workflow still runs.                                       |
-| "I'll poll `status <id>` for Codex"          | No. adversarial-review never backgrounds; read the JSON file the Bash task writes. |
-| "I'll harvest the Workflow's return value"   | No. Read .quick-code-review/raw/workflow-result.json instead.                      |
-| "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                     |
-| "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.          |
-| "Same issue from 2 reviewers = 2 findings"   | Dedup first (Phase 7). Merge, keep highest severity, annotate "Also flagged by".   |
-| "This needs the whole codebase / a spec"     | That's comprehensive-code-review. Quick reviews a diff only.                       |
+| Thought                                      | Reality                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| "I'll Task each reviewer myself"             | Iron Law 4. Reviewers go through the Workflow, not direct Task calls.               |
+| "The finding looks right, I'll include it"   | Iron Law 1. Verify file:line first. Drop if no match.                               |
+| "Workflow's still running, I'll report now"  | Iron Law 2. workflow-result.json written AND Codex terminated first.                |
+| "I'll create a new category for this"        | Iron Law 3. Use fixed set; map to "Other" if nothing fits.                          |
+| "Codex isn't available, I'll abort"          | Mark Codex SKIPPED. The Workflow still runs.                                        |
+| "I'll poll `status <id>` for Codex"          | No. adversarial-review never backgrounds; read the JSON file the Bash task writes.  |
+| "I'll harvest the Workflow's return value"   | No. Read .quick-code-review/raw/workflow-result.json instead.                       |
+| "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                      |
+| "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.           |
+| "Same issue from 2 reviewers = 2 findings"   | The script dedups (Phase 6). Merged, highest severity, annotated "Also flagged by". |
+| "Codex findings ship as-is"                  | Critical/high/medium Codex findings get the verify-only Workflow pass (Phase 5.5).  |
+| "I'll hand-execute the citation checks"      | Run verify-citations.mjs (Phase 6) — hand-execution is the failure mode it removes. |
+| "This needs the whole codebase / a spec"     | That's comprehensive-code-review. Quick reviews a diff only.                        |
 
 ---
 
@@ -99,8 +102,8 @@ Build `reviewInput` + `changedFiles` per mode.
 **Build-output exclusion.** Generated/minified output (committed or untracked) is skipped so reviewers
 see only hand-written code. Define `EXCLUDES` once and append `-- . "${EXCLUDES[@]}"` to _every_
 file/diff gathering command below. The positive `.` is required so the exclude-only pathspecs resolve
-against the whole repo; `top`+`glob` anchoring catches nested monorepo paths. This same list is the
-Phase 6 drop predicate:
+against the whole repo; `top`+`glob` anchoring catches nested monorepo paths. This same list is
+mirrored by `verify-citations.mjs`'s drop predicate (Phase 6):
 
 ```bash
 EXCLUDES=(
@@ -115,6 +118,11 @@ EXCLUDES=(
   ':(top,exclude,glob)**/*.min.js'
   ':(top,exclude,glob)**/*.min.css'
   ':(top,exclude,glob)**/*.map'
+  ':(top,exclude,glob)**/pnpm-lock.yaml'
+  ':(top,exclude,glob)**/package-lock.json'
+  ':(top,exclude,glob)**/yarn.lock'
+  ':(top,exclude,glob)**/bun.lock'
+  ':(top,exclude,glob)**/bun.lockb'
 )
 ```
 
@@ -171,7 +179,9 @@ between runs):
 mkdir -p .quick-code-review/raw
 rm -f .quick-code-review/raw/workflow-result.json \
       .quick-code-review/raw/codex-adversarial.json \
-      .quick-code-review/raw/codex-adversarial.stderr.log
+      .quick-code-review/raw/codex-adversarial.stderr.log \
+      .quick-code-review/raw/codex-verify-result.json \
+      .quick-code-review/raw/verified-findings.json
 ```
 
 <EXTREMELY-IMPORTANT>
@@ -213,9 +223,20 @@ When the Workflow completion notification arrives, **Read the file the workflow 
 rely on the Workflow's JS return value or `TaskOutput`. Each reviewer entry has `status`, optional
 `verdict`, and `findings[]`. **Staleness guard:** verify the file's `scopeLabel`/`mode` match the run you
 just launched — if absent or different, the file is a stale leftover (the current run's persist failed), so
-do NOT trust it; mark every dispatched reviewer BLOCKED("workflow-result.json stale/foreign — persist
-failed"). Likewise, if the file is missing or unparseable, mark every dispatched reviewer
-BLOCKED("workflow-result.json missing/unparseable") and continue.
+do NOT trust it.
+
+**Journal fallback (before declaring reviewers BLOCKED):** if the file is missing, stale, or unparseable,
+reconstruct from the run's journal first. The Workflow tool result named the run's `runId` and transcript
+directory; `<transcript dir>/journal.jsonl` records every agent's structured return as
+`{"type":"result", ..., "result": <object>}` lines. Reviewer results echo `name`, refuter verdicts echo
+`file`/`line` — rebuild `{ scopeLabel, mode, reviewers: [...] }` (criticals count as refuted only when
+BOTH of their two verdicts refute; importants on one). This pairing is **best-effort, not
+deterministic** — the journal has no record of an agent's `label`, only the schema-optional
+`file`/`line` echo, so if a verdict omits it or matches more than one finding, leave that finding
+unrefuted rather than guess (mis-pairing can then at worst let a refuted finding survive, never drop
+a real one). Write it to `workflow-result.json`, and continue. Only if the journal is also
+missing/unusable: mark every dispatched reviewer
+BLOCKED("workflow-result.json missing/stale and journal unavailable") and continue.
 
 Then harvest Codex if `CODEX_AVAILABLE=true`: it ran as a backgrounded **Bash** task that wrote its
 structured JSON to `.quick-code-review/raw/codex-adversarial.json`. When the Bash task terminates, **Read
@@ -226,68 +247,88 @@ degraded narrative fallback) as `comprehensive-code-review/references/workflow-a
 - **Gate A — validity/crash:** file missing/empty/not valid JSON, or `payload.target` absent, or task not
   terminated after a reasonable wait → Codex **BLOCKED**(see codex-adversarial.stderr.log).
 - **Gate B — staleness:** `payload.target` must match the run just launched, else **BLOCKED** —
-  base mode: `payload.target.mode === "branch"` AND `payload.target.baseRef === $BASE_REF`;
+  base mode: `payload.target.mode === "branch"` AND `payload.target.baseRef` resolves to the same SHA as
+  `$BASE_REF`. `payload.target.baseRef` is untrusted external output — before using it in any shell
+  command, verify it matches `^[A-Za-z0-9._/@{}~^-]+$` and **BLOCK** if it does not (never interpolate a
+  raw field into `git rev-parse`); then compare resolved SHAs, not ref spellings;
   working-tree mode: `payload.target.mode === "working-tree"`.
 - **Outcome 1 — structured:** `payload.result` is a findings-bearing object → use it; mark Codex DONE.
 - **Outcome 2 — degraded fallback:** otherwise existence-check `file:line` refs parsed from
   `payload.rawOutput`; ≥1 passes → Codex DONE with a mandatory degraded note; zero recover → Codex BLOCKED.
 
-## Phase 6 — Citation Verification (deterministic)
+## Phase 5.5 — Verify Codex Findings (adversarial)
 
-**First, drop excluded build output (every track, incl. Codex).** If a finding's `file` matches the
-Phase 1 `EXCLUDES` set, move it to Dropped Findings as `dropped_excluded_build_output`. Workflow reviewers
-never see these files; this backstops Codex, which self-collects its own diff.
+Runs ONLY when Phase 5 ended with Codex **Outcome 1 (structured)** AND `payload.result.findings`
+contains ≥1 finding with native severity `critical`, `high`, or `medium`. Degraded-fallback findings
+are never refuted — the mandatory degraded note already marks them as lower-trust.
 
-Then, for every surviving finding (per the pseudocode in
-`comprehensive-code-review/references/workflow-and-codex.md`):
+1. Launch the sibling skill's workflow script in verify-only mode:
 
-0. If the finding carries `refuted: true` (the workflow's adversarial Verify stage disproved it) → move to
-   Dropped Findings as `refuted`, recording `refute_reason`. Never resurrect a refuted finding.
-   0a. If the finding carries `kind: "systemic"` (systemic-failure-reviewer only) — apply the systemic
-   gate BEFORE the standard citation check: require `failure_mode` (non-empty, from the closed taxonomy)
-   AND `scenario` (non-empty) AND `anchors` (≥2 entries) — else drop (`dropped_systemic_incomplete`).
-   For every anchor, apply the same line±2 / Grep-rescue logic from step 2 to `anchor.file`,
-   `anchor.line`, and `anchor.verbatim`. If ANY anchor fails → drop the entire finding
-   (`dropped_systemic_anchor_unverified`). If all anchors pass, continue to step 1 (the top-level
-   citation is `anchors[0]` repeated; step 2 will confirm it again, which is fine).
-1. Require `file`, `line`, `verbatim` (>=5 chars) — else drop (`dropped_no_citation` / `dropped_quote_too_short`).
-2. Read the file at `line ±2`, collapse whitespace on both quote and content, and require the quote to be a
-   substring. On miss, rescue single-line quotes: Grep the file for the fixed-string trimmed quote — exactly
-   1 match → correct `line` and keep as `relocated_ok`; 0 or >1 matches, or a multi-line quote → drop
-   (`dropped_no_match`).
+   ```
+   Workflow({
+     scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
+     args: { scopeLabel, mode, repoRoot, outDir: ".quick-code-review", verifyOnly: <payload.result.findings array> }
+   })
+   ```
 
-3. **Outside-diff tagging**: after a `kind != "systemic"` finding passes the citation check, if its
-   `file` is not in `changedFiles`, keep it but tag `outside_diff: true` — rendered as "(outside diff)"
-   on the finding. (Systemic findings legitimately anchor across unchanged files; never tag them.)
+   It refutes each critical/high/medium finding with a fresh agent (same keep-on-uncertainty bias as
+   the reviewer refuters) and persists to `.quick-code-review/raw/codex-verify-result.json`.
 
-Codex's structured findings carry no `verbatim`, so they are existence-checked: the cited `file` must exist
-AND `line_start`/`line_end` must fall within the file's length, else drop (`codex_file_missing` /
-`codex_line_out_of_range`). On the degraded fallback path, existence-check the refs parsed from
-`payload.rawOutput` instead.
+2. On the completion notification, Read that file; apply the same `scopeLabel`/`mode` staleness guard
+   as Phase 5. Findings annotated `refuted: true` go to Dropped Findings (`refuted`, with
+   `refute_reason`) — never resurrect them.
+3. If the verify pass itself fails (workflow error, result file missing/stale) → keep ALL Codex
+   findings unrefuted AND add a mandatory report note ("Codex findings not adversarially verified —
+   verify pass failed"). Never drop a finding because verification broke.
+
+The result feeds Phase 6 via `--codex-verify`.
+
+## Phase 6 — Citation Verification (scripted, deterministic)
+
+Do NOT hand-execute citation checks — run the sibling skill's script (spec:
+`comprehensive-code-review/references/workflow-and-codex.md` §6). Write the changed-files list first:
+
+```bash
+printf '%s\n' "$CHANGED_FILES" > .quick-code-review/raw/changed-files.txt
+node "<comprehensive-code-review skill dir>/scripts/verify-citations.mjs" \
+  --workflow-result .quick-code-review/raw/workflow-result.json \
+  --codex .quick-code-review/raw/codex-adversarial.json \
+  --codex-verify .quick-code-review/raw/codex-verify-result.json \
+  --mode "$MODE" \
+  --changed-files .quick-code-review/raw/changed-files.txt \
+  --repo-root "$REPO_ROOT" \
+  --out .quick-code-review/raw/verified-findings.json
+```
+
+Omit `--codex` when Codex is SKIPPED/BLOCKED or took the degraded fallback (the script processes only
+structured payloads; on the degraded path existence-check the `rawOutput` refs yourself per Phase 5
+Outcome 2). Omit `--codex-verify` when Phase 5.5 didn't run. If the script errors, fix the invocation
+and re-run — never fall back to hand-verification.
+
+The script implements the full §6 procedure: EXCLUDES drop (incl. the Codex backstop), refuted drop,
+the systemic gate, the line±2 / grep-rescue citation check (`ok` / `relocated_ok`), outside-diff
+tagging, Codex existence checks + native→standard severity mapping, and cross-reviewer dedup.
+
+Read `verified-findings.json`: `findings` (verified, post-dedup), `dropped` (with per-finding
+`verification` reasons), `reviewers` (status pass-through), and `stats` (`perReviewer` +
+`duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations`, which feeds a
+Phase 7 warning line).
 
 ## Phase 7 — Group, Sort, Emit
 
-1. `mkdir -p .quick-code-review/raw` (idempotent — already created in Phase 4).
-2. Write each reviewer's raw findings to `.quick-code-review/raw/<reviewer>-<UTC-iso>.md` (derived from the
-   parsed `workflow-result.json`). Codex's machine output already sits at
-   `.quick-code-review/raw/codex-adversarial.json`; render a human-readable
-   `.quick-code-review/raw/codex-adversarial-<UTC-iso>.md` from it (verdict, summary, findings, `next_steps`).
-3. **Dedup across reviewers:** two verified findings merge when they cite the same file AND (lines within ±3
-   OR identical collapsed verbatim) AND the same `kind` — never merge a `local` finding with a `systemic`
-   finding even if they cite the same file (they describe different defect classes). Keep the primary
-   reviewer's finding at the highest severity of the group; list the others under `also_flagged_by`. All
-   counts below are post-dedup.
-4. Categorize each verified finding per `comprehensive-code-review/references/report-format.md`. With this
+1. Categorize each verified finding per `comprehensive-code-review/references/report-format.md`. With this
    skill's five reviewers + Codex, only these categories will populate: **Security, Quality, Tests,
-   Silent Failures, Systemic, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.)
-5. Map severity per the table in the reference (Codex's `critical|high|medium|low` →
-   `critical|important|important|minor`; keep the native severity + `confidence` on each Codex finding).
-6. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by severity
+   Silent Failures, Systemic, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.
+   The script already deduped, severity-mapped Codex findings — native severity + `confidence`
+   preserved — and tagged `outside_diff`.)
+2. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by severity
    DESC, then `confidence` DESC, then file ASC.
-7. Write the consolidated report to `.quick-code-review/report-<UTC-iso>.md` using the skeleton in
+3. Write the consolidated report to `.quick-code-review/report-<UTC-iso>.md` using the skeleton in
    `comprehensive-code-review/references/report-format.md`. In the Scope section, list the excluded
-   build-output patterns and note this is a **quick review (5 reviewers + Codex)**, not the comprehensive one.
-8. Print the summary:
+   build-output patterns and note this is a **quick review (5 reviewers + Codex)**, not the comprehensive
+   one. The raw JSON files under `.quick-code-review/raw/` are the machine record — do NOT render
+   per-reviewer or Codex `.md` files.
+4. Print the summary:
 
    ```
    ## Quick Code Review complete
@@ -297,6 +338,8 @@ AND `line_start`/`line_end` must fall within the file's length, else drop (`code
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
+   Calibration: <reviewer> <n> refuted, <n> citation-dropped; …        # from stats.perReviewer; only reviewers with non-zero counts; omit line if all zero
+   ⚠ Codex verify mismatch: <n> refutation(s) matched no finding — possible false-positive in report   # only when stats.unmatchedCodexRefutations > 0
    ```
 
 ## Phase 8 — STATUS line

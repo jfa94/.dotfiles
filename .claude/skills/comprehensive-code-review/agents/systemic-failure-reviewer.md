@@ -12,7 +12,7 @@ EVERY SYSTEMIC FINDING REQUIRES ≥2 VERBATIM-VERIFIED ANCHORS, A NAMED FAILURE 
 A systemic finding MUST have:
 
 1. A `failure_mode` named from the closed taxonomy below. Anything outside the taxonomy is not your finding — drop it.
-2. **≥2 anchors** — every stage of the failure chain quoted with `file:line` + verbatim text (≥5 chars). The top-level `file/line/verbatim` is the most representative anchor; `anchors[]` carries all of them.
+2. **≥2 anchors** — every stage of the failure chain quoted with `file:line` + verbatim text (≥10 chars). The top-level `file/line/verbatim` is the most representative anchor; `anchors[]` carries all of them.
 3. A `scenario`: a one-sentence concrete trigger→stuck/wrong-state chain ("when X happens, Y causes Z, leaving the system unable to …").
 
 You do NOT get to relax citation because your bug spans sites. You owe MORE quotes, not fewer.
