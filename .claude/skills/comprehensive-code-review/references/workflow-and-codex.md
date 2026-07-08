@@ -67,9 +67,12 @@ Three behaviors live inside the workflow, not the skill:
 
 - **Adversarial Verify stage**: each critical/important finding is handed to a fresh refuter agent
   that sees only the claim + location (title, severity, file:line, verbatim quote — NOT the
-  reviewer's `why` reasoning chain) and must hunt for concrete counter-evidence. **Criticals get 2
-  independent refuters and are refuted only unanimously** (a single same-model verifier is the
-  weakest link for the highest-stakes drops); importants get 1. Refuted findings
+  reviewer's `why` reasoning chain) and must hunt for concrete counter-evidence. Refuters run on a
+  cheaper model than the reviewers (a refuter can only *drop* a finding on concrete counter-evidence,
+  so a weaker one keeps more, never loses a real bug — and an Opus-reviewer/Sonnet-refuter pairing is
+  a cross-model check with fewer correlated blind spots). **Criticals get 2 independent refuters and
+  are refuted only unanimously** (a single refuter is the weakest link for the highest-stakes drops);
+  importants get 1. Refuted findings
   stay in the payload annotated `refuted: true` + `refute_reason` — the skill moves them to Dropped
   Findings (never silently deleted, never resurrected). A verifier that dies/skips keeps the finding.
 - **Diffless reviewers**: `documentation-reviewer` audits current state, not the change; the workflow

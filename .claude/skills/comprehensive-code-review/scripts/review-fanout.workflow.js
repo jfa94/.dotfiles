@@ -91,6 +91,13 @@ const FINDINGS_SCHEMA = {
   },
 };
 
+// Verifier/refuter agents run on a cheaper model than the reviewers. A refuter
+// can only DROP a finding (mark it refuted, on concrete counter-evidence,
+// keep-on-uncertainty); a weaker refuter refutes less → keeps more, never loses
+// a real bug. Bonus: Opus-reviewer + Sonnet-refuter is a cross-model check
+// (fewer correlated blind spots than same-model).
+const VERIFIER_MODEL = "sonnet";
+
 const VERIFY_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -448,8 +455,8 @@ if (Array.isArray(input.verifyOnly) && input.verifyOnly.length > 0) {
       " findings (native critical/high/medium).",
   );
   // Same invariant as the reviewer Verify stage below: native criticals need
-  // 2 independent unanimous refuters (a single same-model verifier is the
-  // weakest link for the highest-stakes drops); high/medium keep 1.
+  // 2 independent unanimous refuters (a single refuter is the weakest link for
+  // the highest-stakes drops); high/medium keep 1.
   const verdictSets = await parallel(
     eligible.map((f) => () => {
       const votes = f.severity === "critical" ? 2 : 1;
@@ -465,6 +472,7 @@ if (Array.isArray(input.verifyOnly) && input.verifyOnly.length > 0) {
                 f.line_start +
                 (votes > 1 ? ":v" + (v + 1) : ""),
               phase: "Verify",
+              model: VERIFIER_MODEL,
               schema: VERIFY_SCHEMA,
             }),
         ),
@@ -540,8 +548,8 @@ const results = await pipeline(
     );
     if (toVerify.length === 0) return res;
     // Criticals get 2 independent refuters and are dropped only on a unanimous
-    // refute — a single same-model verifier is the weakest link for the
-    // highest-stakes drops. Importants keep the single refuter.
+    // refute — a single refuter is the weakest link for the highest-stakes
+    // drops. Importants keep the single refuter.
     const verdictSets = await parallel(
       toVerify.map((f) => () => {
         const votes = f.severity === "critical" ? 2 : 1;
@@ -559,6 +567,7 @@ const results = await pipeline(
                   f.line +
                   (votes > 1 ? ":v" + (v + 1) : ""),
                 phase: "Verify",
+                model: VERIFIER_MODEL,
                 schema: VERIFY_SCHEMA,
               }),
           ),
