@@ -5,15 +5,19 @@ set -uo pipefail
 
 INPUT=$(cat)
 CMD=$(json_get "$INPUT" '.tool_input.command // empty')
-printf '%s' "$CMD" | grep -qE '^[[:space:]]*git( -C [^ ]+)? push([[:space:]]|$)' || exit 0
+# Match git push at start or after a chain operator — `git commit && git push`
+# skipped a ^-anchored trigger entirely.
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push' || exit 0
 
 if ! command -v semgrep >/dev/null 2>&1; then
   echo "semgrep not found; skipping SAST scan" >&2
   exit 0
 fi
 
+# Honor git -C <dir>: scan the repo being pushed, not just the session project.
+DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
 CWD=$(project_dir "$INPUT")
-cd "$CWD" || exit 0
+cd "${DIR:-$CWD}" || exit 0
 
 DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)
 [[ -n "$DEFAULT" ]] || DEFAULT="main"
@@ -31,8 +35,27 @@ fi
 if [[ -n "$CACHE_FILE" && -f "$CACHE_FILE" ]]; then
   SEMGREP_OUT=$(cat "$CACHE_FILE")
 else
+  # Pre-filter against .semgrepignore: when semgrep receives explicit file paths
+  # it bypasses .semgrepignore, so we enforce it here manually.
+  exclude_patterns=()
+  if [[ -f .semgrepignore ]]; then
+    while IFS= read -r line; do
+      [[ -z "$line" || "$line" == \#* ]] && continue
+      exclude_patterns+=("${line%/}")  # strip trailing slash for prefix matching
+    done < .semgrepignore
+  fi
   args=()
-  while IFS= read -r f; do [[ -n "$f" ]] && args+=("$f"); done <<< "$CHANGED"
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    skip=false
+    for pat in "${exclude_patterns[@]+"${exclude_patterns[@]}"}"; do
+      if [[ "$f" == "$pat" || "$f" == "$pat/"* ]]; then
+        skip=true; break
+      fi
+    done
+    $skip || args+=("$f")
+  done <<< "$CHANGED"
+  [[ ${#args[@]} -eq 0 ]] && exit 0
   SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null || true)
   if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
     printf '%s' "$SEMGREP_OUT" > "$CACHE_FILE"
@@ -40,7 +63,7 @@ else
 fi
 
 if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
-  echo "semgrep returned no valid results; SAST scan incomplete, not blocking" >&2
+  echo "semgrep returned no valid results — scan error or no network for --config auto; SAST scan incomplete, not blocking" >&2
   exit 0
 fi
 

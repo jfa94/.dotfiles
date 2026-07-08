@@ -2,32 +2,41 @@
 
 ## Role and Style
 
-- Be concise, direct, and willing to push back on flawed logic or risky approaches.
-- Prefer the native Codex tools and MCP/app tools over shell equivalents when they fit the task.
+- Be concise everywhere, including commit messages — sacrifice grammar for brevity.
+- Push back on flawed logic; offer options with trade-offs instead of defaulting to agreement; prefer durable fixes over tactical ones when the trade-off is worth it.
+
+## When Working
+
 - Before broad exploration or research, read a project's `/docs` directory when it exists.
-- Use subagents for exploration or review that needs 3 or more files, sources, or logs.
-- If you make meaningful code changes, update project documentation when the repository has a `/docs` system.
-- Present options with trade-offs when the right approach is not obvious.
-- Ask only when a missing fact cannot be discovered locally and a reasonable assumption would be risky.
-- Verify work before calling it complete: exercise changed behavior, run relevant checks, and look for regressions.
+- Use subagents for exploration or review that spans 3 or more files, sources, or logs.
+- After meaningful code changes (new features, changed APIs/architecture/config), update project documentation when the repository has a `/docs` system.
+- Ask, don't assume: if intent, architecture, or requirements are unclear, ask before coding — no silent assumptions. Running unattended, choose the most reasonable interpretation, proceed, and flag the assumption in your closing summary.
+- Flag uncertainty; don't fake confidence. When useful, run a small, low-risk experiment and bring the hypothesis and result back to discuss.
+- End each plan with a concise list of unresolved questions, if any.
+- Before calling a task done, verify it works: exercise the changed behavior, confirm every plan step landed, and check for regressions.
 
 ## Testing and Quality
 
-- Write tests for new features unless explicitly told not to.
-- Do not delete, weaken, or rewrite existing tests to make failures disappear. Fix the implementation.
-- Do not disable, downgrade, or skip lint, typecheck, tests, or quality gates to silence failures.
-- Do not hardcode return values for specific test inputs.
-- Do not add silent fallback behavior that hides real failures.
-- Keep tests independent; avoid shared mutable state.
-- For broad input domains, prefer property-based testing, such as `fast-check` in TypeScript projects.
+- Write tests for every new feature — happy path and edge cases — unless told otherwise.
+- Never edit or delete a test to make it pass; fix the implementation instead.
+- Never hardcode return values to satisfy specific test inputs.
+- Never write fallback code that silently degrades functionality; surface the error.
+- Never disable, downgrade, or skip lint, typecheck, tests, or quality gates to silence failures — fix the cause.
+- Keep tests independent — no shared mutable state.
+- For functions with broad input domains, use property-based testing (fast-check).
+
+## Coding Standards
+
+- Match solution complexity to the problem; don't over-engineer or add flexibility before it's needed.
+- Don't touch unrelated code; raise any smells you spot as a separate issue rather than fixing inline.
 
 ## Safety
 
-- Never drop a database table.
+- Never drop a database table without the user's explicit, same-turn confirmation.
 - Never run `DROP`, `TRUNCATE`, unbounded `DELETE`/`UPDATE`, schema-changing SQL, or Supabase `apply_migration` without explicit user confirmation in the current turn.
 - Store secrets only in environment files such as `.env*`; never place API keys or tokens in source files.
 - Never modify `.env`, `.env.*`, credential files, private keys, or `secrets/` without explicit user confirmation.
-- Never force-push in any form: `--force`, `-f`, `--force-with-lease`, or `--force-if-includes`.
+- Never force-push in any form: `--force`, `-f`, `--force-with-lease`, `--force-if-includes`, or a `+refspec` (`git push origin +branch`).
 - Never use git bypass flags such as `--no-verify`, `--no-gpg-sign`, or `-n`.
 - Never publish packages with `pnpm publish`, `npm publish`, or `yarn publish`.
 - Never push, merge, or close PRs outside the dotfiles repo without explicit confirmation. Direct commits to `main` in this dotfiles repo are allowed.
@@ -40,10 +49,11 @@
 - Analytics: PostHog.
 - Payments: Stripe.
 - Icons: Lucide.
-- Backend language/runtime: TypeScript on Deno when starting fresh.
+- Backend language/runtime: TypeScript on Node.
 
 ## Frontend Conventions
 
+- Bootstrap linting/formatting/testing with `ts/configure.sh frontend <project-dir>` — installs the latest dev-dep versions via `pnpm add -D` (no manual `pnpm install` needed).
 - Shared components live under `src/components/`; page-specific components live next to the relevant `page.tsx`.
 - Co-locate component tests, for example `Button.tsx` and `Button.test.tsx`.
 - Use TypeScript strict mode with `noUncheckedIndexedAccess`.
@@ -52,9 +62,16 @@
 - Reuse existing global CSS utilities before adding duplicates.
 - Tailwind class order: layout, box model, background, borders, typography, effects, filters, transitions/animations, transforms, interactivity, SVG.
 - Responsive Tailwind classes start at the base class and increase by breakpoint.
-- React components use functions, with callback functions written as arrows.
+- Use arrow functions for callbacks.
 - Define prop interfaces above components.
 - Do not import services directly from React components; use hooks or server actions.
+
+## Backend Conventions
+
+- Manage dependencies via `package.json` (pnpm); avoid ad-hoc global installs.
+- Use ESM: set `"type": "module"` and explicit `.js` extensions on relative imports.
+- Bootstrap linting/formatting/testing with `ts/configure.sh node <project-dir>` — installs the latest dev-dep versions via `pnpm add -D` (no manual `pnpm install` needed).
+- Commands (from the scaffold): `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format`.
 
 ## Common Commands
 
@@ -80,7 +97,8 @@
 - This dotfiles repo stores authored Codex config under `.codex/`. Setup symlinks those files into `~/.codex/`.
 - Do not duplicate Claude agents or skills under `.codex/`. The source of truth for Claude-owned agents and skills remains `.claude/`.
 - Codex uses native `tui.status_line` items in `.codex/config.toml` for its footer; it does not support Claude-style arbitrary stdin-fed shell rendering.
-- Codex hooks cover Bash, `apply_patch`/Edit/Write, MCP tools, and lifecycle events. There is no exact Claude `Read` hook equivalent, so the old read-once behavior is documented but inactive.
+- Codex hooks cover Bash, `apply_patch`/Edit/Write, MCP tools, and lifecycle events. There is no exact Claude `Read` hook equivalent; Claude has since retired its read-once hook as well (see `.codex/reference/read-once.md`).
 - Codex `PreToolUse` does not support Claude-style `ask`; hooks that used to ask now deny with retry instructions or rely on Codex's normal approval flow.
+- Claude's SessionStart hooks (model lock, compact restore, superpowers reinject) are Claude-internal and have no Codex counterpart by design.
 - Claude WebFetch domain allowlists are not a direct Codex web-search control. Sandboxed shell networking is governed by the `workspace-net` permission profile.
 - Codex appends a machine-specific `[hooks.state]` section (hook `trusted_hash` values) to `config.toml`. A git clean filter (`.codex/strip-hooks-state.sh`, wired via `.gitattributes` + `setup.sh`) strips this trailing section on commit, so the working file keeps it (hooks stay trusted) but git ignores the churn. Assumes `[hooks.state]` stays the last section — if Codex ever writes config after it, the filter would over-strip.

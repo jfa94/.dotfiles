@@ -5,9 +5,13 @@ set -uo pipefail
 
 INPUT=$(cat)
 CMD=$(json_get "$INPUT" '.tool_input.command // empty')
-printf '%s' "$CMD" | grep -qE '^[[:space:]]*git( -C [^ ]+)? commit([[:space:]]|$)' || exit 0
+# Match git commit at start or after a chain operator (&&, ;, ||, &, |) —
+# `git add -A && git commit` skipped a ^-anchored trigger.
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?commit' || exit 0
+# Honor git -C <dir>: scan the repo the commit targets, not just the session project.
+DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
 CWD=$(project_dir "$INPUT")
-cd "$CWD" || exit 0
+cd "${DIR:-$CWD}" || exit 0
 
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
 BLOCKED=$(printf '%s\n' "$STAGED" | grep -iE '(^|/)\.env($|\.|/)|(^|/)secrets/|\.pem$|\.key$|\.p12$|\.pfx$|/id_rsa$|/id_ed25519$' || true)
@@ -20,17 +24,19 @@ if command -v trufflehog >/dev/null 2>&1 && [[ -n "$STAGED" ]]; then
   TH_ERR=$(mktemp)
   TH_OUT=$(printf '%s\n' "$STAGED" | xargs -I{} trufflehog filesystem "{}" --only-verified --no-update --json 2>"$TH_ERR" || true)
   if [[ -s "$TH_ERR" ]]; then
-    echo "trufflehog reported errors; regex secret scan still runs" >&2
+    echo "trufflehog reported errors; secret scan may be incomplete (regex sweep still runs):" >&2
     tail -3 "$TH_ERR" >&2
   fi
   rm -f "$TH_ERR"
   if [[ -n "$TH_OUT" ]]; then
-    deny "Trufflehog detected verified secrets in staged files."
+    deny "Trufflehog detected verified secrets in staged files: $(printf '%s' "$STAGED" | tr '\n' ' ')"
     exit 0
   fi
 fi
 
+# Regex sweep, added lines only: a commit that REMOVES a secret must not be blocked.
 SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null |
+  grep -E '^\+' |
   grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|secret_?key\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' ||
   true)
 if [[ -n "$SECRETS" ]]; then

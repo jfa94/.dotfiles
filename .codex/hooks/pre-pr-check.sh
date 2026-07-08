@@ -7,9 +7,12 @@ INPUT=$(cat)
 CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 [[ -n "$CMD" ]] || exit 0
 
-printf '%s' "$CMD" | grep -qE '^[[:space:]]*gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)*[[:space:]]+pr[[:space:]]+(create|ready)([[:space:]]|$)' || exit 0
+# Match: gh [-R owner/repo] pr create|ready — at start or after a chain operator
+# (`git push && gh pr create` skipped a ^-anchored trigger).
+printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)*[[:space:]]+pr[[:space:]]+(create|ready)([[:space:]]|$)' || exit 0
 
-if printf '%s' "$CMD" | grep -qE 'pr[[:space:]]+create' && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])--draft([[:space:]]|$)'; then
+# Drafts are not merge-ready; mutation fires on gh pr ready instead
+if printf '%s' "$CMD" | grep -qE 'pr[[:space:]]+create' && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])(--draft|-d)([[:space:]]|$)'; then
   exit 0
 fi
 

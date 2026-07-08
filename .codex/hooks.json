@@ -22,7 +22,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*supabase.*execute_sql",
+        "matcher": "mcp__.*[Ss]upabase.*execute_sql",
         "hooks": [
           {
             "type": "command",
@@ -48,11 +48,6 @@
             "type": "command",
             "command": "bash $HOME/.codex/hooks/aws-readonly-check.sh",
             "statusMessage": "Checking AWS command is read-only"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.codex/hooks/native-tool-nudge.sh",
-            "statusMessage": "Checking native tool alternatives"
           },
           {
             "type": "command",
