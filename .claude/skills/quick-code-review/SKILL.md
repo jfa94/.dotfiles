@@ -218,7 +218,13 @@ Both return immediately and run in the background. Do not hand-dispatch reviewer
 
 ## Phase 5 — Harvest
 
-When the Workflow completion notification arrives, **Read the file the workflow wrote** —
+The two background tracks (reviewer Workflow, Codex Bash) finish in **any order** — harvest each the moment
+its own notification arrives; do not make one wait on the other. When Codex reaches **Outcome 1** below,
+launch the Codex-verify workflow **immediately** (the launch step is at the end of Outcome 1), concurrent
+with the reviewer Workflow if it is still running — that overlap removes the old serial tail where verify
+only started after both tracks had already finished.
+
+When the reviewer Workflow completion notification arrives, **Read the file the workflow wrote** —
 `.quick-code-review/raw/workflow-result.json` — and parse `{ scopeLabel, mode, reviewers: [...] }`. Do NOT
 rely on the Workflow's JS return value or `TaskOutput`. Each reviewer entry has `status`, optional
 `verdict`, and `findings[]`. **Staleness guard:** verify the file's `scopeLabel`/`mode` match the run you
@@ -253,16 +259,21 @@ degraded narrative fallback) as `comprehensive-code-review/references/workflow-a
   raw field into `git rev-parse`); then compare resolved SHAs, not ref spellings;
   working-tree mode: `payload.target.mode === "working-tree"`.
 - **Outcome 1 — structured:** `payload.result` is a findings-bearing object → use it; mark Codex DONE.
+  **Then, without waiting for the reviewer track, launch the Codex-verify workflow now** if
+  `payload.result.findings` has ≥1 finding of native severity `critical`/`high`/`medium` (the call and
+  eligibility rule are in Phase 5.5) — firing it here overlaps verify with the still-running reviewer Workflow.
 - **Outcome 2 — degraded fallback:** otherwise existence-check `file:line` refs parsed from
   `payload.rawOutput`; ≥1 passes → Codex DONE with a mandatory degraded note; zero recover → Codex BLOCKED.
 
 ## Phase 5.5 — Verify Codex Findings (adversarial)
 
-Runs ONLY when Phase 5 ended with Codex **Outcome 1 (structured)** AND `payload.result.findings`
+The **launch** happens back in **Phase 5, Outcome 1** — the instant Codex harvests, concurrent with the
+reviewer Workflow — NOT here after both tracks finish. This phase is where you **await and apply** its
+result. The launch runs ONLY when Codex ended with **Outcome 1 (structured)** AND `payload.result.findings`
 contains ≥1 finding with native severity `critical`, `high`, or `medium`. Degraded-fallback findings
 are never refuted — the mandatory degraded note already marks them as lower-trust.
 
-1. Launch the sibling skill's workflow script in verify-only mode:
+1. The launch (fired in Phase 5, repeated here for reference) — the sibling skill's workflow script in verify-only mode:
 
    ```
    Workflow({

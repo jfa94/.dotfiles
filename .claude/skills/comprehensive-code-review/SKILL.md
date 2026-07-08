@@ -277,7 +277,13 @@ Both return immediately and run in the background. Do not hand-dispatch reviewer
 
 ## Phase 6 — Harvest
 
-When the Workflow completion notification arrives, **Read the file the workflow wrote** —
+The two background tracks (reviewer Workflow, Codex Bash) finish in **any order** — harvest each the
+moment its own notification arrives; do not make one wait on the other. Critically, when Codex reaches
+**Outcome 1** below, launch the Codex-verify workflow **immediately** (the launch step lives at the end
+of Outcome 1), concurrent with the reviewer Workflow if it is still running. That overlap is what removes
+the old serial tail where verify only started after BOTH tracks had already finished.
+
+When the reviewer Workflow completion notification arrives, **Read the file the workflow wrote** —
 `.comprehensive-code-review/raw/workflow-result.json` — and parse `{ scopeLabel, mode, reviewers: [...] }`.
 Do NOT rely on the Workflow's JS return value or `TaskOutput`; neither surfaces the structured object to
 you. Each reviewer entry has `status`, optional `verdict`, and `findings[]`. **Staleness guard:** verify
@@ -322,7 +328,10 @@ missing/unparseable — companion crash / did not terminate; see codex-adversari
 
 **Outcome 1 — structured:** `payload.result` is a non-null object containing a `findings` array → use the
 structured review: `verdict` (`approve` / `needs-attention`), `summary`, `findings[]`, and `next_steps[]`.
-Mark Codex DONE.
+Mark Codex DONE. **Then, without waiting for the reviewer track, launch the Codex-verify workflow now** if
+`payload.result.findings` has ≥1 finding of native severity `critical`/`high`/`medium` (the Workflow call
+and eligibility rule are in Phase 6.5). Firing it here — the instant Codex harvests — is what overlaps
+verify with the still-running reviewer Workflow instead of tacking it on after both tracks finish.
 
 **Outcome 2 — degraded fallback:** otherwise (`payload.result` is null, absent, or not a findings-bearing
 object — i.e. `payload.parseError` set or the payload is malformed) → existence-check any `file:line`
@@ -337,12 +346,14 @@ references parsed from `payload.rawOutput`:
 
 ## Phase 6.5 — Verify Codex Findings (adversarial)
 
-Runs ONLY when Phase 6 ended with Codex **Outcome 1 (structured)** AND `payload.result.findings`
-contains ≥1 finding with native severity `critical`, `high`, or `medium`. Degraded-fallback
-findings are never refuted (no schema-validated claims to verify) — the mandatory degraded note
-already marks them as lower-trust.
+The **launch** happens back in **Phase 6, Outcome 1** — the instant Codex harvests, concurrent with the
+reviewer Workflow — NOT here after both tracks finish. This phase is where you **await and apply** its
+result. The launch runs ONLY when Codex ended with **Outcome 1 (structured)** AND `payload.result.findings`
+contains ≥1 finding with native severity `critical`, `high`, or `medium`. Degraded-fallback findings are
+never refuted (no schema-validated claims to verify) — the mandatory degraded note already marks them as
+lower-trust.
 
-1. Launch the same workflow script in verify-only mode:
+1. The launch (fired in Phase 6, repeated here for reference) — the same workflow script in verify-only mode:
 
    ```
    Workflow({

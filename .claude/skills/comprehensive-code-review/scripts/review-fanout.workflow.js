@@ -1,5 +1,5 @@
 export const meta = {
-  name: "comprehensive-review-fanout",
+  name: "code-review-fanout",
   description:
     "Fan out specialist code reviewers in parallel; adversarially verify critical/important findings with fresh refuter agents; persist the consolidated findings to a file the calling skill reads (the JS return value is not harvestable).",
   phases: [
@@ -286,13 +286,28 @@ function buildCodexVerifyPrompt(f) {
 // (TaskOutput is deprecated; the task-notification carries only prose). The
 // script itself has no filesystem access, so dispatch ONE agent (which has
 // Write) to persist a result object to a fixed path the skill reads.
-// Findings caps keep payloads small, so verbatim transcription is reliable;
-// the agent reads the file back to confirm it parses before returning.
-// Retries once — persistence is the run's single point of failure, and a flaky
-// persist agent must not discard every reviewer's work.
+// The payload is compact JSON (no pretty-print indent) to minimise the bytes
+// the agent transcribes; the agent reads the file back and confirms it parses
+// AND the entry/findings counts match — a structural check that catches
+// truncation without the byte-exact match that needlessly retried on cosmetic
+// whitespace diffs. Retries once — persistence is the run's single point of
+// failure, and a flaky persist agent must not discard every reviewer's work.
 async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
   const outPath = repoRoot + "/" + outDir + "/raw/" + fileName;
-  const payload = JSON.stringify(resultObj, null, 2);
+  const payload = JSON.stringify(resultObj);
+  const entries = Array.isArray(resultObj[topKey]) ? resultObj[topKey] : [];
+  const expectedEntries = entries.length;
+  // When entries carry nested findings[] (the reviewers path), also verify the
+  // total findings count — guards a within-entry truncation that leaves the
+  // entry count intact. Flat entries (the codex path, where each entry IS a
+  // finding) are fully covered by the entry count alone.
+  const hasNested = entries.some((e) => Array.isArray(e && e.findings));
+  const expectedFindings = hasNested
+    ? entries.reduce(
+        (n, e) => n + (Array.isArray(e && e.findings) ? e.findings.length : 0),
+        0,
+      )
+    : null;
   // Collision-proof delimiter: extend the marker until it cannot occur inside the
   // payload, so a verbatim finding quote that happens to contain the literal marker
   // (e.g. when this skill reviews its own source) can't truncate the extracted text.
@@ -300,12 +315,15 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
   while (payload.includes(marker)) marker += "_X";
   const openTag = "<" + marker + ">";
   const closeTag = "</" + marker + ">";
-  // UTF-8 byte length via pure JS (no Node crypto/Buffer in the workflow sandbox):
-  // each %XX escape is one encoded byte, every other char is one ASCII byte.
-  const expectedBytes = encodeURIComponent(payload).replace(
-    /%[0-9A-F]{2}/gi,
-    "_",
-  ).length;
+  const findingsClause =
+    expectedFindings !== null
+      ? "; and the total number of findings across those entries is exactly " +
+        expectedFindings
+      : "";
+  const findingsReturnClause =
+    expectedFindings !== null
+      ? " AND findings_count === " + expectedFindings
+      : "";
   const prompt = [
     "You persist a code-review result to disk. Do NOT modify, summarize, reformat, or add commentary to the content.",
     "",
@@ -321,20 +339,24 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
       " and " +
       closeTag +
       " markers below (exclude the markers themselves).",
-    "3. Read the file back; confirm it parses as JSON and the top-level object has a `" +
+    "3. Read the file back and confirm ALL of: it parses as JSON; its top-level `" +
       topKey +
-      "` array.",
-    "4. Run `wc -c < " +
-      outPath +
-      "` and confirm it prints exactly " +
-      expectedBytes +
-      " (the payload's UTF-8 byte count, excluding any trailing newline — write the file WITHOUT a trailing newline). A mismatch means you altered the content; rewrite verbatim and re-check.",
+      "` array has exactly " +
+      expectedEntries +
+      " entries" +
+      findingsClause +
+      ". Any mismatch means you altered or truncated the content; rewrite verbatim and re-check.",
     "",
-    "Return written=true ONLY if the read-back parsed successfully AND the byte count matches " +
-      expectedBytes +
-      "; set byte_count to the wc -c result and entry_count to the length of the `" +
+    "Return written=true ONLY if the read-back parsed AND entry_count === " +
+      expectedEntries +
+      findingsReturnClause +
+      "; set entry_count to the length of the `" +
       topKey +
-      "` array.",
+      "` array" +
+      (expectedFindings !== null
+        ? " and findings_count to the total findings across all entries"
+        : "") +
+      ".",
     "",
     openTag,
     payload,
@@ -350,20 +372,24 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
       schema: {
         type: "object",
         additionalProperties: false,
-        required: ["written", "path", "byte_count"],
+        required: ["written", "path", "entry_count"],
         properties: {
           written: { type: "boolean" },
           path: { type: "string" },
-          byte_count: { type: "integer" },
           entry_count: { type: "integer" },
+          findings_count: { type: "integer" },
         },
       },
     }).catch((e) => {
       threw = e;
       return null;
     });
-    if (res && res.written === true && res.byte_count === expectedBytes)
-      return res;
+    const okEntries =
+      res && res.written === true && res.entry_count === expectedEntries;
+    const okFindings =
+      expectedFindings === null ||
+      (res && res.findings_count === expectedFindings);
+    if (okEntries && okFindings) return res;
     if (threw) {
       log(
         "persist attempt " +
@@ -384,10 +410,16 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
         (res
           ? " (written=" +
             res.written +
-            ", byte_count=" +
-            res.byte_count +
-            " vs expected " +
-            expectedBytes +
+            ", entry_count=" +
+            res.entry_count +
+            "/" +
+            expectedEntries +
+            (expectedFindings !== null
+              ? ", findings_count=" +
+                res.findings_count +
+                "/" +
+                expectedFindings
+              : "") +
             ")"
           : " (agent returned no output)"),
     );
