@@ -180,17 +180,22 @@ rediscover. Run every tool that is ALREADY installed — never install, never au
 
 Rules: ~120s timeout per tool (on expiry: kill, skip, note); a failing/erroring tool is skipped
 with a one-line note, never blocks the review; cap each tool's output at ~200 lines; scope to
-changed files where the tool supports file args (under `--full`, run repo-wide). Append results
-to `reviewInput` as:
+changed files where the tool supports file args (under `--full`, run repo-wide).
+
+Route seeds to disk — do NOT inline raw output (it would be copied into every reviewer prompt). For
+each tool that produced output: `mkdir -p <outDir>/raw/seeds` and write the capped output to
+`<outDir>/raw/seeds/<tool>.txt` (`<outDir>` = `.comprehensive-code-review`; mirrors `raw/full-diff.patch`).
+Then append to `reviewInput` ONLY a compact manifest — never the raw output:
 
 ```
-## Static-analysis seeds (candidate leads — triage, do NOT transcribe)
-Raw tool output. A seed becomes a finding ONLY when you trace it and quote the code yourself
-(file:line + verbatim); report seeds you cannot substantiate as nothing at all.
-<tool>: <output>
+## Static-analysis seeds (candidate leads — Read the file for your lens, then trace + quote yourself)
+A seed becomes a finding ONLY when you trace it and quote the code yourself (file:line + verbatim);
+report seeds you cannot substantiate as nothing at all. Read only the tools relevant to your role.
+- <tool>: <N> lines → <outDir>/raw/seeds/<tool>.txt
 ```
 
-List which seed tools ran (or "none installed") in the report's Scope section.
+If no tool produced output, append nothing. List which seed tools ran (or "none installed") in the
+report's Scope section.
 
 ## Phase 2 — Resolve Codex
 
