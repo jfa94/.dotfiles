@@ -1,10 +1,12 @@
 # Workflow & Codex Reference
 
-This skill dispatches the 11 specialist reviewers through a `Workflow` and runs Codex as a
-separate background Bash job. Citation verification runs via `scripts/verify-citations.mjs`;
-report assembly stays in the main session. This file is the contract for all of them.
+This skill dispatches ONE `Workflow` that owns the 11-reviewer fan-out, the Codex adversarial
+review (a codex-runner agent inside the workflow runs the CLI), and the Codex-verify refutation
+pass — all concurrent by construction. Citation verification runs via
+`scripts/verify-citations.mjs`; report assembly stays in the main session. This file is the
+contract for all of them.
 
-## 1. Reviewer fan-out via Workflow
+## 1. Single-workflow fan-out (reviewers + Codex)
 
 Invoke the shipped script by path (do NOT inline a script string):
 
@@ -21,6 +23,13 @@ Workflow({
     repoRoot: "<absolute repo root>",
     claudeMdPath: "<path to CLAUDE.md or 'not found'>",
     spec: null | { path: "<spec path>", content: "<spec file content>" },
+    codex: null | {
+      cmd: "<absolute path to codex-companion.mjs (CODEX_CMD)>",
+      targetFlags: "--base <ref>" | "--scope working-tree",
+      expectedTarget:
+        { mode: "branch", baseSha: "<git rev-parse'd SHA of the trusted ref>" } |
+        { mode: "working-tree" },
+    },
     reviewers: [
       {
         name: "architecture-reviewer",
@@ -41,12 +50,28 @@ Workflow({
 });
 ```
 
-The workflow's final stage writes `{ reviewers: [ { name, status, verdict?, blocked_reason?, dropped_by_cap?, findings: [...] }, ... ] }`
+`codex: null` (Codex unavailable) makes the workflow report the track SKIPPED; reviewers run
+regardless. The orchestrator never launches Codex itself — the old two-call contract (backgrounded
+Codex Bash + Workflow in one message) relied on prose compliance and serialized whenever the model
+waited on Codex before launching the workflow.
+
+The workflow's final stage writes
+
+```json
+{ "scopeLabel": "...", "mode": "...",
+  "reviewers": [ { "name", "status", "verdict?", "blocked_reason?", "dropped_by_cap?", "findings": [] } ],
+  "codex": { "status": "DONE|BLOCKED|SKIPPED", "outcome": "structured|degraded|null",
+             "blocked_reason?": "...", "verdict?": "...", "summary?": "...",
+             "degraded_refs": [ { "file": "...", "line": 1 } ], "verifyRan": true } }
+```
+
 to `<repoRoot>/.comprehensive-code-review/raw/workflow-result.json`. **Read that file to harvest the
 result — the workflow's JS `return` value is NOT retrievable by the caller** (`TaskOutput` is
 deprecated; the completion notification carries only prose). Each `findings[]` entry matches the
 canonical schema below. Every reviewer named in `args.reviewers` appears in the result (BLOCKED with a
-reason if its agent failed or was skipped).
+reason if its agent failed or was skipped). The `codex` key is the track's terminal state only — the
+review content itself stays in `codex-adversarial.json` (source of truth, written by the CLI) and
+`codex-verify-result.json` (refuted annotations, written when `verifyRan` is true).
 
 The persist stage is transcription-checked: the script computes the payload's UTF-8 byte count and
 the persist agent must confirm `wc -c` on the written file matches before returning `written=true`
@@ -63,7 +88,7 @@ flagged the same file:line (the case the dedup stage exists for), the match is a
 rather than guess — a mis-paired refutation can then at worst let a refuted finding survive
 (findings are deduped only _after_ refuted ones are dropped), never drop a real one.
 
-Three behaviors live inside the workflow, not the skill:
+Five behaviors live inside the workflow, not the skill:
 
 - **Adversarial Verify stage**: each critical/important finding is handed to a fresh refuter agent
   that sees only the claim + location (title, severity, file:line, verbatim quote — NOT the
@@ -79,27 +104,18 @@ Three behaviors live inside the workflow, not the skill:
   withholds the diff from it (it gets the changed-files list only) to avoid context dilution.
 - **Spec scoping**: `args.spec` (when provided) is included ONLY in implementation-reviewer's prompt —
   broadcasting it to every reviewer would cost spec × N tokens and duplicate the acceptance-criteria pass.
-
-### Verify-only mode (Codex refutation)
-
-Passing `verifyOnly` (a non-empty array of Codex structured findings — the `payload.result.findings`
-entries, shape in §6) skips the reviewer fan-out entirely. The workflow refutes each finding with
-native severity `critical`/`high`/`medium` using a fresh agent (Codex findings carry no `verbatim`,
-so the refuter Reads `file` around `line_start..line_end` instead of starting from a quote; same
-keep-on-uncertainty bias), annotates `refuted`/`refute_reason`, and persists
-
-```json
-{ "scopeLabel": "...", "mode": "...", "codexFindings": [ ...all input findings, annotated... ] }
-```
-
-to `<repoRoot>/<outDir>/raw/codex-verify-result.json` (same persist agent + retry). Invocation:
-
-```js
-Workflow({
-  scriptPath: "<this skill's base directory>/scripts/review-fanout.workflow.js",
-  args: { scopeLabel, mode, repoRoot, verifyOnly: [ ...codex findings... ] },
-});
-```
+- **Codex track**: when `args.codex` is set, a codex-runner agent (`general-purpose`, so Bash is
+  guaranteed) runs the adversarial-review CLI per §3, applies the §6 validity/staleness gates and
+  structured/degraded routing, and returns the track's terminal state — concurrent with the reviewer
+  pipeline (the promise starts before the pipeline is awaited).
+- **Codex-verify stage**: when the runner returns a structured outcome with ≥1 native
+  `critical`/`high`/`medium` finding, the workflow refutes those findings in-script — concurrent with
+  reviewers still in flight. Codex findings carry no `verbatim`, so each refuter Reads `file` around
+  `line_start..line_end` instead of starting from a quote; same keep-on-uncertainty bias; native
+  criticals need 2 unanimous refuters, high/medium 1. It annotates `refuted`/`refute_reason` and persists
+  `{ "scopeLabel", "mode", "codexFindings": [ ...all findings, annotated... ] }` to
+  `<repoRoot>/<outDir>/raw/codex-verify-result.json` (same persist agent + retry), and sets
+  `codex.verifyRan: true` in the consolidated result.
 
 ## 2. Canonical FINDINGS_SCHEMA (defined in the workflow script)
 
@@ -151,12 +167,17 @@ schema does not declare (they are workflow annotations, not reviewer output):
 Refuter verdicts themselves (`VERIFY_SCHEMA`) are `{ refuted, reason }` plus optional `file`/`line`
 echoes of the finding's location — journal-reconstruction aids, ignored by the in-memory pairing.
 
-## 3. Codex invocation pattern
+## 3. Codex invocation pattern (runs INSIDE the workflow's codex-runner agent)
+
+The orchestrator only resolves `CODEX_CMD` and the target flags (Phase 2/3) and passes them in
+`args.codex`; the workflow's codex-runner agent executes the CLI. These are the CLI facts that
+agent's prompt encodes:
 
 `adversarial-review` has **no real backgrounding** — its `--background` flag is parsed but ignored
 (`handleReviewCommand` always runs foreground), it prints no `background as <id>` line, and there is
-no companion-level job to poll. So run it **synchronously** and background it with the **Bash tool's
-`run_in_background: true`**.
+no companion-level job to poll. The runner executes it **synchronously**, backgrounded with the
+**Bash tool's `run_in_background: true`** (the review can outlast the 10-minute foreground cap; the
+agent waits for the task's completion notification and never kills or re-runs a live review).
 
 Pass `--json`: the companion then emits exactly one JSON object on stdout (`outputResult` →
 `console.log(JSON.stringify(payload))`) and routes progress to a job logfile instead of stderr
@@ -167,22 +188,21 @@ model text inside the same `--json` payload — the degraded fallback parses tha
 non-`--json` run; see §6.)
 
 ```bash
-# Resolve companion script (latest installed version)
+# Orchestrator (Phase 2): resolve companion script (latest installed version)
 CODEX_CMD=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | sort -V | tail -1)
 
-# Launch (in a Bash tool call with run_in_background: true). $CODEX_TARGET is one of:
+# codex-runner agent (inside the workflow): $CODEX_TARGET is one of:
 #   --base "$CODEX_BASE"   (base / full modes)   |   --scope working-tree   (working-tree mode)
 node "$CODEX_CMD" adversarial-review --json $CODEX_TARGET \
   >.comprehensive-code-review/raw/codex-adversarial.json \
   2>.comprehensive-code-review/raw/codex-adversarial.stderr.log
 ```
 
-Do NOT pass `--background`; do NOT pass `--model` (let the companion auto-default to the best model);
-and do NOT call the companion's `status`/`result` subcommands for reviews (those exist only for the
-`task` subcommand). Harvest the review by reading `codex-adversarial.json` once the Bash task terminates
-and `JSON.parse`-ing it (payload shape + fallback in §6). If it has not terminated by the time the
-Workflow finishes, wait for it (Iron Law 2); if the file is empty/unparseable and `.stderr.log` shows a
-crash, mark Codex BLOCKED.
+No `--background`; no `--model` (let the companion auto-default to the best model); no
+`status`/`result` subcommand calls for reviews (those exist only for the `task` subcommand). Once the
+task terminates the runner reads `codex-adversarial.json`, `JSON.parse`s it, and applies the §6 gates
+and routing; the orchestrator consumes only the `codex` key of `workflow-result.json` plus the raw
+files on disk.
 
 `--base <ref>` makes Codex diff `merge-base(HEAD,<ref>)..HEAD`. Above 2 files / 256 KB the companion
 self-collects — it sends only a summary + commit log + file list and tells Codex to inspect the range
@@ -378,8 +398,8 @@ impossible by construction — line-range existence-checking is the verification
 structured finding: confirm `file` exists AND both `line_start` and `line_end` fall within the file's
 length; on failure move it to Dropped Findings (`codex_file_missing` / `codex_line_out_of_range`).
 Refutation substitutes for the missing quote check: critical/high/medium findings go through the
-verify-only Workflow pass (§1) and arrive at the script (via `--codex-verify`) with `refuted`
-annotations that drop them like any refuted reviewer finding. Include surviving findings under
+workflow's in-script Codex-verify stage (§1) and arrive at the script (via `--codex-verify`) with
+`refuted` annotations that drop them like any refuted reviewer finding. Include surviving findings under
 "Adversarial-Codex" and note they are existence-checked and (critical/high/medium) refuter-verified,
 not quote-verified.
 
@@ -391,19 +411,22 @@ collapsed verbatim); highest severity wins, others in `also_flagged_by`), and em
 `stats.perReviewer` (verified / refuted / citation-dropped counts) + `stats.duplicatesMerged` for
 the report's Calibration line.
 
-**Harvest** the payload as a validity/staleness gate, then a two-outcome branch — a structured-output
-failure must never report as a clean success:
+**Harvest** — the workflow's codex-runner agent applies these gates and routing itself and reports
+the result in `workflow-result.json`'s `codex` key (the orchestrator re-applies them only in the
+journal-fallback salvage path). A structured-output failure must never report as a clean success:
 
-1. **Gate A — validity/crash:** file missing/empty/not valid JSON, or `payload.target` absent, or the
-   Bash task not yet terminated → **BLOCKED** (companion crash — see `codex-adversarial.stderr.log`).
-2. **Gate B — staleness:** `payload.target` must match the run just launched, else **BLOCKED** (stale /
-   foreign): base / `--full` → `target.mode === "branch"` AND `target.baseRef === <the launched ref>`;
+1. **Gate A — validity/crash:** file missing/empty/not valid JSON, or `payload.target` absent →
+   **BLOCKED** (companion crash — see `codex-adversarial.stderr.log`).
+2. **Gate B — staleness:** `payload.target` must match `expectedTarget`, else **BLOCKED** (stale /
+   foreign): base / `--full` → `target.mode === "branch"` AND `target.baseRef` resolving to
+   `expectedTarget.baseSha` (`baseRef` is untrusted external output — regex-validate
+   `^[A-Za-z0-9._/@{}~^-]+$` before any git command, compare resolved SHAs, not spellings);
    working-tree → `target.mode === "working-tree"`. (This is the Codex analogue of the
    `workflow-result.json` scopeLabel/mode guard.)
 3. **Route on `result`:**
-   - **Structured** — `payload.result` is a non-null object with a `findings` array → existence-check
-     each finding (above) and mark Codex DONE.
+   - **Structured** — `payload.result` is a non-null object with a `findings` array → mark Codex DONE,
+     `outcome: "structured"` (per-finding existence checks run later in `verify-citations.mjs`).
    - **Degraded** — otherwise (`result` null / absent / not findings-bearing) → existence-check any
-     `file:line` references parsed from `payload.rawOutput`: **≥1 recovered** → Codex DONE with a
-     mandatory degraded note (structured output unavailable, not schema-validated); **zero recovered** →
-     Codex **BLOCKED**.
+     `file:line` references parsed from `payload.rawOutput`: **≥1 recovered** → Codex DONE,
+     `outcome: "degraded"` with the recovered refs in `codex.degraded_refs` (the skill adds the
+     mandatory degraded note); **zero recovered** → Codex **BLOCKED**.

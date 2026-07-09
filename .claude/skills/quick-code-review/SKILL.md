@@ -15,11 +15,13 @@ argument-hint: "[--base <ref>]"
 # Quick Code Review
 
 You are the orchestrator for a focused, multi-dimensional code review — the lean sibling of
-`comprehensive-code-review`. You dispatch **five** crucial specialist reviewers through a **Workflow**
-(which forces every reviewer into one findings schema, adversarially verifies every critical/important
-finding with a fresh refuter agent, and writes the consolidated result to a file), run **Codex** as a
-concurrent backgrounded Bash job whose scope mirrors the reviewers, verify every finding has a real
-file:line citation, dedup across reviewers, group results by category, and emit one consolidated report.
+`comprehensive-code-review`. You dispatch ONE **Workflow** that owns everything concurrent: the
+**five** crucial specialist reviewers (one findings schema, every critical/important finding
+adversarially verified by a fresh refuter agent), the **Codex** adversarial review (a codex-runner
+agent runs the CLI, scope mirrors the reviewers), and the Codex-verify refutation pass — all inside
+the single workflow, so no track can serialize behind another. You then verify every finding has a
+real file:line citation, dedup across reviewers, group results by category, and emit one consolidated
+report.
 
 This skill **reuses the comprehensive skill's engine** — the workflow script, the reviewer agent
 definitions, and the reference contracts all live in the sibling `comprehensive-code-review/` directory
@@ -50,18 +52,18 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
    Every reported reviewer finding cites file:line + verbatim quote >=10 chars, verified by
    reading the file. Unverifiable findings are dropped before emission. No exceptions.
 
-2. NO REPORT UNTIL ALL TRACKS RESOLVE.
-   The reviewer Workflow must complete (its workflow-result.json written) AND Codex must
-   reach a terminal state (done / skipped / blocked) AND, when launched, the Codex-verify
-   Workflow (Phase 5.5) must resolve before you emit the report. No exceptions.
+2. NO REPORT UNTIL THE WORKFLOW RESOLVES.
+   The single Workflow must complete (its workflow-result.json written, carrying reviewer
+   AND Codex terminal states) before you emit the report. No exceptions.
 
 3. NO INVENTED CATEGORIES.
    Report uses the fixed category set in references/report-format.md.
    Findings that don't fit go to "Other" with reviewer name preserved. No exceptions.
 
-4. REVIEWERS DISPATCH VIA THE WORKFLOW.
-   Do not hand-dispatch reviewer Task calls. The Workflow owns reviewer fan-out and schema
-   enforcement. The only direct background call you make is Codex. No exceptions.
+4. EVERYTHING DISPATCHES VIA THE WORKFLOW.
+   Do not hand-dispatch reviewer Task calls, and do not run Codex yourself with a Bash
+   call. The Workflow owns reviewer fan-out, the Codex track, and the Codex-verify pass.
+   You make NO direct background calls. No exceptions.
 ```
 
 ## Red Flags — STOP and re-read this prompt
@@ -70,15 +72,15 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
 | -------------------------------------------- | ----------------------------------------------------------------------------------- |
 | "I'll Task each reviewer myself"             | Iron Law 4. Reviewers go through the Workflow, not direct Task calls.               |
 | "The finding looks right, I'll include it"   | Iron Law 1. Verify file:line first. Drop if no match.                               |
-| "Workflow's still running, I'll report now"  | Iron Law 2. workflow-result.json written AND Codex terminated first.                |
+| "Workflow's still running, I'll report now"  | Iron Law 2. workflow-result.json written first.                                    |
 | "I'll create a new category for this"        | Iron Law 3. Use fixed set; map to "Other" if nothing fits.                          |
-| "Codex isn't available, I'll abort"          | Mark Codex SKIPPED. The Workflow still runs.                                        |
-| "I'll poll `status <id>` for Codex"          | No. adversarial-review never backgrounds; read the JSON file the Bash task writes.  |
+| "Codex isn't available, I'll abort"          | Pass `codex: null`. The workflow marks Codex SKIPPED; reviewers still run.          |
+| "I'll run Codex myself with a Bash call"     | Iron Law 4. The workflow's codex-runner agent owns the CLI run.                     |
 | "I'll harvest the Workflow's return value"   | No. Read .quick-code-review/raw/workflow-result.json instead.                       |
 | "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                      |
 | "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.           |
 | "Same issue from 2 reviewers = 2 findings"   | The script dedups (Phase 6). Merged, highest severity, annotated "Also flagged by". |
-| "Codex findings ship as-is"                  | Critical/high/medium Codex findings get the verify-only Workflow pass (Phase 5.5).  |
+| "Codex findings ship as-is"                  | Critical/high/medium Codex findings are refuted inside the workflow's Codex-verify stage. |
 | "I'll hand-execute the citation checks"      | Run verify-citations.mjs (Phase 6) — hand-execution is the failure mode it removes. |
 | "This needs the whole codebase / a spec"     | That's comprehensive-code-review. Quick reviews a diff only.                        |
 
@@ -169,7 +171,22 @@ fi
 
 Codex always sees the same scope as the agents in this skill (there is no `--full` divergence here).
 
-## Phase 4 — Launch Both Tracks (single message)
+Then build the staleness contract the workflow's codex-runner agent will enforce (Gate B):
+
+```bash
+# base mode — resolve the trusted ref to a SHA NOW, before launch:
+EXPECTED_TARGET='{ "mode": "branch", "baseSha": "'$(git rev-parse "$BASE_REF^{commit}")'" }'
+# working-tree mode:
+EXPECTED_TARGET='{ "mode": "working-tree" }'
+```
+
+Assemble the workflow's `codex` arg (or `null` when `CODEX_AVAILABLE=false`):
+
+```
+codex = { cmd: <CODEX_CMD>, targetFlags: <CODEX_TARGET>, expectedTarget: <EXPECTED_TARGET as JSON> }
+```
+
+## Phase 4 — Launch the Workflow (single call)
 
 First ensure the output dir exists and delete any prior run's output files so a stale file from an earlier
 run can never be mistaken for this run's output (the dir is gitignored, so stale state persists locally
@@ -185,51 +202,35 @@ rm -f .quick-code-review/raw/workflow-result.json \
 ```
 
 <EXTREMELY-IMPORTANT>
-Your next assistant message MUST launch both background tracks together:
+Launch ONE Workflow — it owns the reviewer fan-out, the Codex adversarial review (a codex-runner
+agent runs the CLI inside the workflow), AND the Codex-verify refutation pass, all concurrently —
+using the sibling skill's script:
 
-1. **Bash call (`run_in_background: true`)** — Codex adversarial review, ONLY if `CODEX_AVAILABLE=true`.
-   `adversarial-review` has NO real backgrounding — run it synchronously and let the Bash tool background it.
-   Pass `--json` so the companion emits one structured JSON object on stdout; redirect stdout to a file and
-   stderr to a separate log so nothing can interleave with the captured JSON:
+```
+Workflow({
+  scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
+  args: { scopeLabel, mode, reviewInput, changedFiles, repoRoot, claudeMdPath,
+          outDir: ".quick-code-review", reviewers,
+          codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
+})
+```
 
-   ```bash
-   node "$CODEX_CMD" adversarial-review --json $CODEX_TARGET \
-     >.quick-code-review/raw/codex-adversarial.json \
-     2>.quick-code-review/raw/codex-adversarial.stderr.log
-   ```
+The `args` values are the records gathered in Phases 1–3. Pass them as real JSON. `repoRoot` MUST be the
+absolute repo root — the workflow writes its results under `repoRoot/.quick-code-review/` because of the
+`outDir` arg. Do NOT pass a `spec` (this skill has no implementation-reviewer).
 
-   Do NOT pass `--background`. Do NOT pass `--model` (let the companion auto-default to the best model).
-   Do NOT poll the companion's `status`/`result` subcommands. The Bash task keeps running across turns;
-   harvest the JSON file when it terminates (Phase 5).
-
-2. **Workflow call** — the reviewer fan-out, using the sibling skill's script:
-   ```
-   Workflow({
-     scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
-     args: { scopeLabel, mode, reviewInput, changedFiles, repoRoot, claudeMdPath, outDir: ".quick-code-review", reviewers }
-   })
-   ```
-   The `args` values are the records gathered in Phase 1. Pass them as real JSON. `repoRoot` MUST be the
-   absolute repo root — the workflow writes its result under `repoRoot/.quick-code-review/` because of the
-   `outDir` arg. Do NOT pass a `spec` (this skill has no implementation-reviewer).
-
-Both return immediately and run in the background. Do not hand-dispatch reviewer Task calls.
+Do NOT launch Codex yourself (no Bash call, backgrounded or otherwise) and do NOT hand-dispatch
+reviewer Task calls — the workflow owns both tracks precisely so they can never serialize.
 </EXTREMELY-IMPORTANT>
 
 ## Phase 5 — Harvest
 
-The two background tracks (reviewer Workflow, Codex Bash) finish in **any order** — harvest each the moment
-its own notification arrives; do not make one wait on the other. When Codex reaches **Outcome 1** below,
-launch the Codex-verify workflow **immediately** (the launch step is at the end of Outcome 1), concurrent
-with the reviewer Workflow if it is still running — that overlap removes the old serial tail where verify
-only started after both tracks had already finished.
-
-When the reviewer Workflow completion notification arrives, **Read the file the workflow wrote** —
-`.quick-code-review/raw/workflow-result.json` — and parse `{ scopeLabel, mode, reviewers: [...] }`. Do NOT
-rely on the Workflow's JS return value or `TaskOutput`. Each reviewer entry has `status`, optional
-`verdict`, and `findings[]`. **Staleness guard:** verify the file's `scopeLabel`/`mode` match the run you
-just launched — if absent or different, the file is a stale leftover (the current run's persist failed), so
-do NOT trust it.
+When the Workflow completion notification arrives, **Read the file the workflow wrote** —
+`.quick-code-review/raw/workflow-result.json` — and parse
+`{ scopeLabel, mode, reviewers: [...], codex: {...} }`. Do NOT rely on the Workflow's JS return value or
+`TaskOutput`. Each reviewer entry has `status`, optional `verdict`, and `findings[]`. **Staleness guard:**
+verify the file's `scopeLabel`/`mode` match the run you just launched — if absent or different, the file is
+a stale leftover (the current run's persist failed), so do NOT trust it.
 
 **Journal fallback (before declaring reviewers BLOCKED):** if the file is missing, stale, or unparseable,
 reconstruct from the run's journal first. The Workflow tool result named the run's `runId` and transcript
@@ -240,59 +241,38 @@ BOTH of their two verdicts refute; importants on one). This pairing is **best-ef
 deterministic** — the journal has no record of an agent's `label`, only the schema-optional
 `file`/`line` echo, so if a verdict omits it or matches more than one finding, leave that finding
 unrefuted rather than guess (mis-pairing can then at worst let a refuted finding survive, never drop
-a real one). Write it to `workflow-result.json`, and continue. Only if the journal is also
-missing/unusable: mark every dispatched reviewer
-BLOCKED("workflow-result.json missing/stale and journal unavailable") and continue.
+a real one). The codex-runner's structured return is in the journal too — rebuild the `codex` key
+from it (its record carries `status`/`outcome`/`degraded_refs`; set `verifyRan` true only if
+`verify:codex:*` verdicts appear). Write it to `workflow-result.json`, and continue. Only if the
+journal is also missing/unusable: mark every dispatched reviewer
+BLOCKED("workflow-result.json missing/stale and journal unavailable") and `codex`
+BLOCKED("workflow died before the codex track resolved") — but first, if `codex-adversarial.json`
+exists, salvage what the CLI wrote: apply Gates A/B and the structured/degraded routing yourself per
+`comprehensive-code-review/references/workflow-and-codex.md` §6 (in that salvage path treat
+`payload.target.baseRef` as untrusted — regex-validate `^[A-Za-z0-9._/@{}~^-]+$` before any git
+command, compare resolved SHAs).
 
-Then harvest Codex if `CODEX_AVAILABLE=true`: it ran as a backgrounded **Bash** task that wrote its
-structured JSON to `.quick-code-review/raw/codex-adversarial.json`. When the Bash task terminates, **Read
-that file and `JSON.parse` it** — there is no companion job to poll. Wait for it to finish before emitting
-the report (Iron Law 2). Apply the same validity/staleness gates and two-outcome routing (structured vs
-degraded narrative fallback) as `comprehensive-code-review/references/workflow-and-codex.md` specifies:
+Then read the Codex track's terminal state from the same file's `codex` key — the workflow ran the
+CLI, the validity/staleness gates (A/B), the structured/degraded routing, AND the Codex-verify
+refutation pass in-script, so there is nothing to launch or poll here:
 
-- **Gate A — validity/crash:** file missing/empty/not valid JSON, or `payload.target` absent, or task not
-  terminated after a reasonable wait → Codex **BLOCKED**(see codex-adversarial.stderr.log).
-- **Gate B — staleness:** `payload.target` must match the run just launched, else **BLOCKED** —
-  base mode: `payload.target.mode === "branch"` AND `payload.target.baseRef` resolves to the same SHA as
-  `$BASE_REF`. `payload.target.baseRef` is untrusted external output — before using it in any shell
-  command, verify it matches `^[A-Za-z0-9._/@{}~^-]+$` and **BLOCK** if it does not (never interpolate a
-  raw field into `git rev-parse`); then compare resolved SHAs, not ref spellings;
-  working-tree mode: `payload.target.mode === "working-tree"`.
-- **Outcome 1 — structured:** `payload.result` is a findings-bearing object → use it; mark Codex DONE.
-  **Then, without waiting for the reviewer track, launch the Codex-verify workflow now** if
-  `payload.result.findings` has ≥1 finding of native severity `critical`/`high`/`medium` (the call and
-  eligibility rule are in Phase 5.5) — firing it here overlaps verify with the still-running reviewer Workflow.
-- **Outcome 2 — degraded fallback:** otherwise existence-check `file:line` refs parsed from
-  `payload.rawOutput`; ≥1 passes → Codex DONE with a mandatory degraded note; zero recover → Codex BLOCKED.
-
-## Phase 5.5 — Verify Codex Findings (adversarial)
-
-The **launch** happens back in **Phase 5, Outcome 1** — the instant Codex harvests, concurrent with the
-reviewer Workflow — NOT here after both tracks finish. This phase is where you **await and apply** its
-result. The launch runs ONLY when Codex ended with **Outcome 1 (structured)** AND `payload.result.findings`
-contains ≥1 finding with native severity `critical`, `high`, or `medium`. Degraded-fallback findings
-are never refuted — the mandatory degraded note already marks them as lower-trust.
-
-1. The launch (fired in Phase 5, repeated here for reference) — the sibling skill's workflow script in verify-only mode:
-
-   ```
-   Workflow({
-     scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
-     args: { scopeLabel, mode, repoRoot, outDir: ".quick-code-review", verifyOnly: <payload.result.findings array> }
-   })
-   ```
-
-   It refutes each critical/high/medium finding with a fresh agent (same keep-on-uncertainty bias as
-   the reviewer refuters) and persists to `.quick-code-review/raw/codex-verify-result.json`.
-
-2. On the completion notification, Read that file; apply the same `scopeLabel`/`mode` staleness guard
-   as Phase 5. Findings annotated `refuted: true` go to Dropped Findings (`refuted`, with
-   `refute_reason`) — never resurrect them.
-3. If the verify pass itself fails (workflow error, result file missing/stale) → keep ALL Codex
-   findings unrefuted AND add a mandatory report note ("Codex findings not adversarially verified —
-   verify pass failed"). Never drop a finding because verification broke.
-
-The result feeds Phase 6 via `--codex-verify`.
+- `codex.status`: `DONE` / `BLOCKED` / `SKIPPED` (SKIPPED when you passed `codex: null`). Surface
+  `codex.blocked_reason` verbatim when BLOCKED.
+- `codex.outcome === "structured"` → the structured review lives in
+  `.quick-code-review/raw/codex-adversarial.json` (`payload.result`); Phase 6's script reads it directly.
+- `codex.outcome === "degraded"` → structured output was unavailable; `codex.degraded_refs` holds the
+  existence-checked `file:line` refs recovered from the narrative output. Add the **mandatory degraded
+  note** in both the Reviewers table Verdict cell (suffix `(degraded — narrative fallback)`) and the
+  Codex section ("structured output unavailable — findings recovered from narrative fallback; degraded,
+  not schema-validated").
+- `codex.verifyRan === true` → the workflow refuted the critical/high/medium Codex findings and
+  persisted `.quick-code-review/raw/codex-verify-result.json`. Read it, apply the same
+  `scopeLabel`/`mode` staleness guard as above; findings annotated `refuted: true` go to Dropped
+  Findings (`refuted`, with `refute_reason`) — never resurrect them. If the file is missing/stale
+  despite `verifyRan: true` → keep ALL Codex findings unrefuted AND add a mandatory report note
+  ("Codex findings not adversarially verified — verify pass failed"). Never drop a finding because
+  verification broke. Degraded-fallback findings are never refuted — the degraded note already marks
+  them as lower-trust.
 
 ## Phase 6 — Citation Verification (scripted, deterministic)
 
@@ -312,8 +292,8 @@ node "<comprehensive-code-review skill dir>/scripts/verify-citations.mjs" \
 ```
 
 Omit `--codex` when Codex is SKIPPED/BLOCKED or took the degraded fallback (the script processes only
-structured payloads; on the degraded path existence-check the `rawOutput` refs yourself per Phase 5
-Outcome 2). Omit `--codex-verify` when Phase 5.5 didn't run. If the script errors, fix the invocation
+structured payloads; on the degraded path use `codex.degraded_refs` from Phase 5). Omit
+`--codex-verify` when `codex.verifyRan` is false. If the script errors, fix the invocation
 and re-run — never fall back to hand-verification.
 
 The script implements the full §6 procedure: EXCLUDES drop (incl. the Codex backstop), refuted drop,

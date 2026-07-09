@@ -173,7 +173,7 @@ _(only present if --spec provided)_
 ### Adversarial-Codex
 
 _(only present if Codex ran. Codex findings are existence-checked and — for native
-critical/high/medium — refuter-verified via the verify-only Workflow pass (Phase 6.5), but not
+critical/high/medium — refuter-verified via the workflow's in-script Codex-verify stage, but not
 quote-verified: the review schema has no `verbatim` field. They carry their native severity +
 confidence. Refuted Codex findings appear in Dropped Findings like any refuted reviewer finding.
 When Codex is DONE via the degraded narrative fallback (structured output unavailable), the

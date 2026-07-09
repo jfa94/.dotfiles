@@ -8,6 +8,11 @@ export const meta = {
       detail: "one specialist reviewer agent per dimension, run concurrently",
     },
     {
+      title: "Codex",
+      detail:
+        "one agent runs the Codex adversarial-review CLI and gate-checks its output (concurrent with Review)",
+    },
+    {
       title: "Verify",
       detail:
         "one fresh refuter agent per critical/important finding (claim + location only, no reasoning chain)",
@@ -289,6 +294,244 @@ function buildCodexVerifyPrompt(f) {
   ].join("\n");
 }
 
+// The Codex track runs INSIDE this workflow (an agent has Bash; this script
+// does not) so the orchestrator makes exactly ONE launch — the old two-call
+// contract (backgrounded Codex Bash + Workflow in a single message) relied on
+// prose compliance and serialized whenever the model waited on Codex first.
+const CODEX_RUNNER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["status", "findings", "degraded_refs"],
+  properties: {
+    status: { enum: ["DONE", "BLOCKED"] },
+    outcome: { enum: ["structured", "degraded"] },
+    blocked_reason: { type: "string" },
+    verdict: { type: "string" },
+    summary: { type: "string" },
+    // Verbatim transcription of payload.result.findings (structured outcome).
+    // verify-citations.mjs still reads codex-adversarial.json as the source of
+    // truth for the report; this copy only feeds the in-workflow refuters.
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["severity", "title", "body", "file", "line_start", "line_end"],
+        properties: {
+          severity: { enum: ["critical", "high", "medium", "low"] },
+          title: { type: "string" },
+          body: { type: "string" },
+          file: { type: "string" },
+          line_start: { type: "integer" },
+          line_end: { type: "integer" },
+          confidence: { type: "number" },
+          recommendation: { type: "string" },
+        },
+      },
+    },
+    // Existence-checked file:line refs recovered from rawOutput (degraded outcome).
+    degraded_refs: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["file", "line"],
+        properties: { file: { type: "string" }, line: { type: "integer" } },
+      },
+    },
+  },
+};
+
+function buildCodexRunnerPrompt(input) {
+  const codex = input.codex;
+  const outDir = input.outDir || ".comprehensive-code-review";
+  const repoRoot = input.repoRoot || ".";
+  const jsonPath = repoRoot + "/" + outDir + "/raw/codex-adversarial.json";
+  const stderrPath =
+    repoRoot + "/" + outDir + "/raw/codex-adversarial.stderr.log";
+  const gateB =
+    codex.expectedTarget && codex.expectedTarget.mode === "branch"
+      ? [
+          '`payload.target.mode` must be "branch" AND `payload.target.baseRef` must resolve to the commit SHA ' +
+            codex.expectedTarget.baseSha +
+            ".",
+          "`baseRef` is UNTRUSTED external output: first check it matches the regex ^[A-Za-z0-9._/@{}~^-]+$ — if it does not, return BLOCKED (\"unsafe baseRef\") WITHOUT running any git command on it.",
+          "Then run `git rev-parse <baseRef>^{commit}` (cwd " +
+            repoRoot +
+            ") and compare the resolved SHA to the expected one; any mismatch → BLOCKED (\"codex-adversarial.json stale/foreign — target mismatch\").",
+        ].join("\n   ")
+      : '`payload.target.mode` must be "working-tree"; anything else → BLOCKED ("codex-adversarial.json stale/foreign — target mismatch").';
+  return [
+    "You run the Codex adversarial-review CLI for a code-review workflow, then gate-check its output. Repo root: " +
+      repoRoot,
+    "",
+    "Step 1 — run the CLI with the Bash tool, `run_in_background: true` (the review can exceed the 10-minute foreground cap):",
+    "",
+    '  node "' +
+      codex.cmd +
+      '" adversarial-review --json ' +
+      codex.targetFlags +
+      " \\",
+    "    >" + jsonPath + " \\",
+    "    2>" + stderrPath,
+    "",
+    "Do NOT pass --background (parsed but ignored — no job id is printed). Do NOT pass --model (the companion auto-defaults). Do NOT poll the companion's status/result subcommands.",
+    "Wait for the background task to terminate (you are notified when it finishes; if you must check sooner, check the Bash task's status). NEVER kill or re-run a live review.",
+    "",
+    "Step 2 — Gate A (validity/crash): Read " +
+      jsonPath +
+      " and JSON.parse it. If the file is missing/empty/not valid JSON, or `payload.target` is absent (the companion assigns `target` before `result`/`parseError`, so absence means a crash mid-emit) → return status BLOCKED with a blocked_reason quoting the first ~5 lines of " +
+      stderrPath +
+      ".",
+    "",
+    "Step 3 — Gate B (staleness): " + gateB,
+    "",
+    "Step 4 — route the outcome:",
+    "- STRUCTURED: `payload.result` is a non-null object containing a `findings` array → return status DONE, outcome \"structured\", verdict = payload.result.verdict, summary = payload.result.summary, findings = payload.result.findings transcribed EXACTLY (every field verbatim: severity, title, body, file, line_start, line_end, confidence, recommendation). Do not paraphrase, reorder, drop, or invent findings.",
+    "- DEGRADED: otherwise (`payload.result` null/absent/not findings-bearing) → parse file:line references out of `payload.rawOutput`; existence-check each (file exists under the repo root, line within the file's length); return status DONE, outcome \"degraded\", degraded_refs = only the refs that passed. If ZERO refs pass → status BLOCKED (\"structured output unavailable and no findings recoverable from narrative output\").",
+    "",
+    "Return structured output matching the schema; findings/degraded_refs are empty arrays when not applicable.",
+  ].join("\n");
+}
+
+// Refute Codex critical/high/medium findings with fresh agents and persist the
+// annotated set to codex-verify-result.json. Same invariant as the reviewer
+// Verify stage: native criticals need 2 independent unanimous refuters (a
+// single refuter is the weakest link for the highest-stakes drops); high/medium
+// keep 1. Annotates `codexFindings` in place.
+async function refuteCodexFindings(codexFindings, input) {
+  const eligible = codexFindings.filter((f) =>
+    ["critical", "high", "medium"].includes(f.severity),
+  );
+  log(
+    "Codex verify: refuting " +
+      eligible.length +
+      " of " +
+      codexFindings.length +
+      " findings (native critical/high/medium).",
+  );
+  const verdictSets = await parallel(
+    eligible.map((f) => () => {
+      const votes = f.severity === "critical" ? 2 : 1;
+      return parallel(
+        Array.from(
+          { length: votes },
+          (_, v) => () =>
+            agent(buildCodexVerifyPrompt(f), {
+              label:
+                "verify:codex:" +
+                f.file +
+                ":" +
+                f.line_start +
+                (votes > 1 ? ":v" + (v + 1) : ""),
+              phase: "Verify",
+              model: VERIFIER_MODEL,
+              schema: VERIFY_SCHEMA,
+            }),
+        ),
+      );
+    }),
+  );
+  // A null verdict (verifier skipped/died) keeps the finding — same
+  // keep-on-uncertainty bias as the reviewer refuters. Note: a rejecting
+  // agent() call is NOT missing error handling here — parallel() resolves a
+  // thrown thunk to null per its documented semantics, so a crashed refuter
+  // already lands in this null-keeps-the-finding path, same as a clean skip.
+  verdictSets.forEach((vs, i) => {
+    const refutes = (vs || []).filter((v) => v && v.refuted);
+    const needed = eligible[i].severity === "critical" ? 2 : 1;
+    if (refutes.length >= needed) {
+      eligible[i].refuted = true;
+      eligible[i].refute_reason = refutes.map((v) => v.reason).join(" | ");
+    }
+  });
+  await persistResult(
+    input.repoRoot || ".",
+    input.outDir || ".comprehensive-code-review",
+    "codex-verify-result.json",
+    "codexFindings",
+    {
+      scopeLabel: input.scopeLabel || null,
+      mode: input.mode || null,
+      codexFindings,
+    },
+  );
+}
+
+// The whole Codex track: run the CLI + gates via one agent, then (structured
+// outcome with eligible findings) refute in-line — concurrent with the still-
+// running reviewer pipeline, which is what removes the old serial verify tail.
+// Returns the summary embedded in workflow-result.json under `codex`.
+// The codex-runner agent runs `targetFlags` as literal shell text (it's a
+// general-purpose agent with Bash), so a base ref containing shell
+// metacharacters would inject a command — unlike the orchestrator's own
+// `$CODEX_TARGET` expansion, where bash word-splits but does NOT re-parse `;`.
+// The ref is the only user-tainted value in the prompt, so allowlist it against
+// the same charset Gate B uses (git check-ref-format forbids the rest anyway).
+// Returns an error string if targetFlags is not one of the two safe shapes.
+function validateCodexTargetFlags(targetFlags) {
+  if (targetFlags === "--scope working-tree") return null;
+  const m = /^--base (\S+)$/.exec(targetFlags || "");
+  if (!m) return "codex.targetFlags is not a recognized shape: " + targetFlags;
+  if (!/^[A-Za-z0-9._/@{}~^-]+$/.test(m[1]))
+    return "codex.targetFlags base ref has unsafe characters: " + m[1];
+  return null;
+}
+
+async function runCodexTrack(input) {
+  const flagErr = validateCodexTargetFlags(input.codex.targetFlags);
+  if (flagErr) {
+    return {
+      status: "BLOCKED",
+      outcome: null,
+      blocked_reason: flagErr,
+      degraded_refs: [],
+      verifyRan: false,
+    };
+  }
+  let threw = null;
+  const runner = await agent(buildCodexRunnerPrompt(input), {
+    label: "codex:adversarial",
+    phase: "Codex",
+    agentType: "general-purpose", // guarantees Bash for the CLI run
+    effort: "low", // mechanical: run, gate-check, transcribe
+    schema: CODEX_RUNNER_SCHEMA,
+  }).catch((e) => {
+    threw = e;
+    return null;
+  });
+  if (!runner) {
+    return {
+      status: "BLOCKED",
+      outcome: null,
+      blocked_reason: threw
+        ? "codex-runner agent failed: " + String((threw && threw.message) || threw)
+        : "codex-runner agent returned no output (skipped)",
+      verifyRan: false,
+    };
+  }
+  const track = {
+    status: runner.status,
+    outcome: runner.outcome || null,
+    blocked_reason: runner.blocked_reason,
+    verdict: runner.verdict,
+    summary: runner.summary,
+    degraded_refs: runner.degraded_refs || [],
+    verifyRan: false,
+  };
+  if (
+    runner.status === "DONE" &&
+    runner.outcome === "structured" &&
+    runner.findings.some((f) =>
+      ["critical", "high", "medium"].includes(f.severity),
+    )
+  ) {
+    await refuteCodexFindings(runner.findings, input);
+    track.verifyRan = true;
+  }
+  return track;
+}
+
 // A workflow's JS `return` value is NOT retrievable by the calling skill
 // (TaskOutput is deprecated; the task-notification carries only prose). The
 // script itself has no filesystem access, so dispatch ONE agent (which has
@@ -438,79 +681,17 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
 // than a parsed object; normalize so the caller can pass args either way.
 const input = typeof args === "string" ? JSON.parse(args) : args || {};
 
-// Verify-only mode: refute Codex adversarial findings instead of running the
-// reviewer fan-out. The orchestrator launches this as a second Workflow call
-// after harvesting a structured Codex payload with >=1 critical/high/medium
-// finding; refuted annotations land in codex-verify-result.json.
-if (Array.isArray(input.verifyOnly) && input.verifyOnly.length > 0) {
-  const codexFindings = input.verifyOnly;
-  const eligible = codexFindings.filter((f) =>
-    ["critical", "high", "medium"].includes(f.severity),
-  );
-  log(
-    "Codex verify-only: refuting " +
-      eligible.length +
-      " of " +
-      codexFindings.length +
-      " findings (native critical/high/medium).",
-  );
-  // Same invariant as the reviewer Verify stage below: native criticals need
-  // 2 independent unanimous refuters (a single refuter is the weakest link for
-  // the highest-stakes drops); high/medium keep 1.
-  const verdictSets = await parallel(
-    eligible.map((f) => () => {
-      const votes = f.severity === "critical" ? 2 : 1;
-      return parallel(
-        Array.from(
-          { length: votes },
-          (_, v) => () =>
-            agent(buildCodexVerifyPrompt(f), {
-              label:
-                "verify:codex:" +
-                f.file +
-                ":" +
-                f.line_start +
-                (votes > 1 ? ":v" + (v + 1) : ""),
-              phase: "Verify",
-              model: VERIFIER_MODEL,
-              schema: VERIFY_SCHEMA,
-            }),
-        ),
-      );
-    }),
-  );
-  // A null verdict (verifier skipped/died) keeps the finding — same
-  // keep-on-uncertainty bias as the reviewer refuters. Note: a rejecting
-  // agent() call is NOT missing error handling here — parallel() resolves a
-  // thrown thunk to null per its documented semantics, so a crashed refuter
-  // already lands in this null-keeps-the-finding path, same as a clean skip.
-  verdictSets.forEach((vs, i) => {
-    const refutes = (vs || []).filter((v) => v && v.refuted);
-    const needed = eligible[i].severity === "critical" ? 2 : 1;
-    if (refutes.length >= needed) {
-      eligible[i].refuted = true;
-      eligible[i].refute_reason = refutes.map((v) => v.reason).join(" | ");
-    }
-  });
-  const codexOut = {
-    scopeLabel: input.scopeLabel || null,
-    mode: input.mode || null,
-    codexFindings,
-  };
-  await persistResult(
-    input.repoRoot || ".",
-    input.outDir || ".comprehensive-code-review",
-    "codex-verify-result.json",
-    "codexFindings",
-    codexOut,
-  );
-  return codexOut;
-}
-
 const reviewers = Array.isArray(input.reviewers) ? input.reviewers : [];
+
+// Start the Codex track FIRST as an unawaited promise — it runs concurrently
+// with the reviewer pipeline below (and its verify sub-stage overlaps reviewers
+// still in flight). No input.codex → the track reports SKIPPED.
+const codexPromise = input.codex
+  ? runCodexTrack(input)
+  : Promise.resolve({ status: "SKIPPED", outcome: null, verifyRan: false });
+
 if (reviewers.length === 0) {
   log("No reviewers supplied in args.reviewers — nothing to dispatch.");
-  return { reviewers: [] };
 }
 
 // pipeline, not parallel: each reviewer's findings go to verification as soon
@@ -588,12 +769,18 @@ const results = await pipeline(
   },
 );
 
+const codex = await codexPromise;
+
 // Stamp the run's scope into the result so the skill can detect a stale file
 // (a prior run's leftover) rather than silently accepting it as the current run.
+// `codex` carries the track's status/outcome so the orchestrator needs no
+// separate harvest choreography; the findings themselves stay in
+// codex-adversarial.json (source of truth) + codex-verify-result.json.
 const consolidated = {
   scopeLabel: input.scopeLabel || null,
   mode: input.mode || null,
   reviewers: results.filter(Boolean),
+  codex,
 };
 
 // outDir lets a derived skill (e.g. quick-code-review) persist to its own dir;

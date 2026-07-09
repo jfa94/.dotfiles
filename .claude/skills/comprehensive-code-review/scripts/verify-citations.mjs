@@ -11,7 +11,7 @@
 // --codex takes raw/codex-adversarial.json; only payload.result.findings
 // (structured outcome) is processed — the degraded rawOutput fallback stays
 // with the orchestrator. --codex-verify takes raw/codex-verify-result.json
-// (refuter annotations from the verify-only workflow pass).
+// (refuter annotations from the workflow's in-script Codex-verify stage).
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
