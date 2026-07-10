@@ -103,6 +103,11 @@ const FINDINGS_SCHEMA = {
 // (fewer correlated blind spots than same-model).
 const VERIFIER_MODEL = "sonnet";
 
+// Persist is mechanical write + read-back verify. Sonnet over haiku: the agent
+// must reproduce a potentially large JSON payload verbatim, and a
+// truncation-prone model would burn the single retry and null the persist.
+const PERSIST_MODEL = "sonnet";
+
 const VERIFY_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -618,6 +623,7 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
       // Distinct label per attempt so a resume never replays a cached failure.
       label: "persist:" + fileName + ":try" + attempt,
       phase: "Persist",
+      model: PERSIST_MODEL,
       effort: "low", // mechanical transcription — no reasoning needed
       schema: {
         type: "object",
