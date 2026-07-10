@@ -486,6 +486,18 @@ if command -v claude &>/dev/null; then
 
   info "Installing Claude Code plugins..."
   plugins_status="installed"
+
+  # plugin install flips enabledPlugins to true through the settings.json
+  # symlink; snapshot before and merge-restore after so existing values win
+  # while newly installed plugins keep the key the installer wrote
+  settings_file="$DOTFILES_DIR/.claude/settings.json"
+  plugins_snapshot=""
+  if command -v jq &>/dev/null && [[ -f "$settings_file" ]]; then
+    plugins_snapshot=$(jq '.enabledPlugins // {}' "$settings_file")
+  else
+    warn "jq or settings.json missing; enabledPlugins may get flipped by plugin installs"
+  fi
+
   while IFS= read -r line; do
     [[ -z "$line" || "$line" == \#* ]] && continue
     if claude plugin install "$line" --scope user 2>/dev/null; then
@@ -494,6 +506,13 @@ if command -v claude &>/dev/null; then
       warn "Plugin already installed or failed: $line"
     fi
   done < "$DOTFILES_DIR/.claude/plugins.txt"
+
+  if [[ -n "$plugins_snapshot" ]]; then
+    # write via the repo path, never the ~/.claude symlink (mv would replace it)
+    jq --argjson snap "$plugins_snapshot" \
+      '.enabledPlugins = ((.enabledPlugins // {}) + $snap)' \
+      "$settings_file" > "$settings_file.tmp" && mv "$settings_file.tmp" "$settings_file"
+  fi
 fi
 
 # =============================================================================
