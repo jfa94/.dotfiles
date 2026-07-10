@@ -789,7 +789,7 @@ const consolidated = {
   codex,
 };
 
-// outDir lets a derived skill (e.g. quick-code-review) persist to its own dir;
+// outDir lets a derived skill (e.g. focused-code-review) persist to its own dir;
 // default preserves the comprehensive skill's path.
 await persistResult(
   input.repoRoot || ".",
