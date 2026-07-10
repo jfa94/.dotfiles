@@ -403,6 +403,15 @@ workflow's in-script Codex-verify stage (§1) and arrive at the script (via `--c
 "Adversarial-Codex" and note they are existence-checked and (critical/high/medium) refuter-verified,
 not quote-verified.
 
+The optional inputs are LLM/CLI-written and must never crash the pass: a missing, empty, or
+invalid-JSON `--codex` file sets `codexPayloadError` in the output (Codex findings empty; the
+orchestrator reports the Codex track BLOCKED with that reason); same for `--codex-verify` →
+`codexVerifyError`, in which case the refutation loop is skipped and Codex findings ship unrefuted
+(the orchestrator adds the mandatory "not adversarially verified" note — never drop a finding
+because verification broke). Both errors also echo on stderr and in the stdout summary line.
+`--workflow-result` is a required input with its own journal-fallback recovery; the script still
+fails hard on it.
+
 Beyond the pseudocode above, the script also: tags verified non-systemic findings outside the
 changed-files list with `outside_diff: true` (diff modes only), maps Codex native severities to the
 standard scale (`critical→critical`, `high|medium→important`, `low→minor`, native kept as

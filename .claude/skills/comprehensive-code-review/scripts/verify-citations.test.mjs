@@ -24,7 +24,10 @@ function run(
     files = {},
     reviewers = [],
     codex,
+    codexRaw,
+    codexMissing,
     codexVerify,
+    codexVerifyRaw,
     mode = "working-tree",
     changed,
   },
@@ -49,14 +52,19 @@ function run(
     "--out",
     path.join(dir, "out.json"),
   ];
-  if (codex) {
+  if (codex || codexRaw !== undefined || codexMissing) {
     const p = path.join(dir, "codex.json");
-    writeFileSync(p, JSON.stringify(codex));
+    if (!codexMissing) {
+      writeFileSync(p, codexRaw !== undefined ? codexRaw : JSON.stringify(codex));
+    }
     args.push("--codex", p);
   }
-  if (codexVerify) {
+  if (codexVerify || codexVerifyRaw !== undefined) {
     const p = path.join(dir, "codex-verify.json");
-    writeFileSync(p, JSON.stringify(codexVerify));
+    writeFileSync(
+      p,
+      codexVerifyRaw !== undefined ? codexVerifyRaw : JSON.stringify(codexVerify),
+    );
     args.push("--codex-verify", p);
   }
   if (changed) {
@@ -372,6 +380,75 @@ test("dedup never merges a local finding with a systemic finding at the same sit
   assert.equal(out.findings.length, 2);
   assert.equal(out.stats.duplicatesMerged, 0);
   assert.ok(out.findings.every((f) => !f.also_flagged_by));
+});
+
+test("codex payload empty/missing/invalid: surfaced, reviewers still verified", (t) => {
+  for (const bad of [
+    { codexRaw: "" },
+    { codexRaw: "  \n" },
+    { codexRaw: "{ not json" },
+    { codexMissing: true },
+  ]) {
+    const out = run(t, {
+      files: { "src/a.js": SRC },
+      reviewers: [reviewer("quality", [finding({})])],
+      ...bad,
+    });
+    assert.ok(out.codexPayloadError, JSON.stringify(bad));
+    assert.equal(out.codexVerifyError, null);
+    assert.equal(out.findings.length, 1); // reviewer finding survives
+    assert.equal(out.findings[0].reviewer, "quality");
+    assert.equal(out.dropped.length, 0);
+  }
+});
+
+test("codex degraded payload (result null): no error, no codex findings", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding({})])],
+    codex: {
+      target: { mode: "working-tree", explicit: true },
+      result: null,
+      rawOutput: "narrative text",
+    },
+  });
+  assert.equal(out.codexPayloadError, null);
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.findings[0].reviewer, "quality");
+});
+
+test("codex-verify empty/invalid: surfaced, codex findings kept unrefuted", (t) => {
+  for (const raw of ["", "{ not json"]) {
+    const out = run(t, {
+      files: { "src/a.js": SRC },
+      reviewers: [],
+      codex: {
+        target: { mode: "working-tree", explicit: true },
+        result: {
+          verdict: "needs-attention",
+          summary: "s",
+          findings: [
+            {
+              severity: "high",
+              title: "T",
+              body: "B",
+              file: "src/a.js",
+              line_start: 2,
+              line_end: 3,
+              confidence: 0.9,
+              recommendation: "R",
+            },
+          ],
+          next_steps: [],
+        },
+      },
+      codexVerifyRaw: raw,
+    });
+    assert.ok(out.codexVerifyError, JSON.stringify(raw));
+    assert.equal(out.codexPayloadError, null);
+    assert.equal(out.findings.length, 1); // unrefuted, ships
+    assert.equal(out.findings[0].reviewer, "codex-adversarial");
+  }
 });
 
 test("codex excludes backstop: build-output path dropped, missing file field dropped", (t) => {

@@ -357,6 +357,12 @@ only structured payloads; on the degraded path use `codex.degraded_refs` from Ph
 `--full` (no outside-diff tagging). If the script errors, fix the invocation and re-run — never
 fall back to hand-verification.
 
+The script never crashes on a bad Codex file — a missing/empty/invalid `--codex` or
+`--codex-verify` payload is surfaced in the output instead. After running it, check
+`verified-findings.json`: `codexPayloadError` set → report the Codex track BLOCKED with that reason;
+`codexVerifyError` set → keep the Codex findings and add the mandatory note "Codex findings not
+adversarially verified — verify pass failed".
+
 The script implements the full §6 procedure: EXCLUDES drop (incl. the Codex backstop), refuted
 drop, the systemic gate (failure_mode + scenario + ≥2 verified anchors), the line±2 /
 grep-rescue citation check (`ok` / `relocated_ok`), outside-diff tagging, Codex existence checks

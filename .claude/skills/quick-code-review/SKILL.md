@@ -296,6 +296,12 @@ structured payloads; on the degraded path use `codex.degraded_refs` from Phase 5
 `--codex-verify` when `codex.verifyRan` is false. If the script errors, fix the invocation
 and re-run — never fall back to hand-verification.
 
+The script never crashes on a bad Codex file — a missing/empty/invalid `--codex` or
+`--codex-verify` payload is surfaced in the output instead. After running it, check
+`verified-findings.json`: `codexPayloadError` set → report the Codex track BLOCKED with that reason;
+`codexVerifyError` set → keep the Codex findings and add the mandatory note "Codex findings not
+adversarially verified — verify pass failed".
+
 The script implements the full §6 procedure: EXCLUDES drop (incl. the Codex backstop), refuted drop,
 the systemic gate, the line±2 / grep-rescue citation check (`ok` / `relocated_ok`), outside-diff
 tagging, Codex existence checks + native→standard severity mapping, and cross-reviewer dedup.

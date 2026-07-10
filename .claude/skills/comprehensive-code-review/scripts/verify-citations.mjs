@@ -75,6 +75,23 @@ function isExcluded(rel) {
   return EXCLUDED_SUFFIXES.some((suf) => base.endsWith(suf));
 }
 
+// Optional inputs (--codex / --codex-verify) are LLM/CLI-written; surface bad
+// ones as report-visible errors, never crash the whole verification pass.
+function readJsonSafe(p, label) {
+  let raw;
+  try {
+    raw = readFileSync(p, "utf8");
+  } catch (e) {
+    return { error: label + " unreadable: " + e.message };
+  }
+  if (!raw.trim()) return { error: label + " is empty" };
+  try {
+    return { value: JSON.parse(raw) };
+  } catch (e) {
+    return { error: label + " invalid JSON: " + e.message };
+  }
+}
+
 // File-content cache: returns array of lines or null if unreadable.
 const fileCache = new Map();
 function fileLines(repoRoot, file) {
@@ -223,13 +240,29 @@ function main() {
 
   // --- Codex findings (structured outcome only): existence-checked, not quote-verified ---
   let codexFindings = [];
+  let codexPayloadError = null;
+  let codexVerifyError = null;
   if (opts.codex) {
-    const payload = JSON.parse(readFileSync(opts.codex, "utf8"));
-    codexFindings = (payload.result && payload.result.findings) || [];
+    const r = readJsonSafe(opts.codex, "--codex payload");
+    if (r.error) {
+      codexPayloadError = r.error;
+      console.error(
+        "verify-citations: " + r.error + " — Codex track dropped from this pass",
+      );
+    } else {
+      codexFindings = (r.value.result && r.value.result.findings) || [];
+    }
   }
   if (opts["codex-verify"] && codexFindings.length) {
-    const verify = JSON.parse(readFileSync(opts["codex-verify"], "utf8"));
-    for (const v of verify.codexFindings || []) {
+    const r = readJsonSafe(opts["codex-verify"], "--codex-verify payload");
+    const verify = r.value;
+    if (r.error) {
+      codexVerifyError = r.error;
+      console.error(
+        "verify-citations: " + r.error + " — Codex findings kept unrefuted",
+      );
+    }
+    for (const v of (verify && verify.codexFindings) || []) {
       if (!v.refuted) continue;
       // Content (this loop's target) comes from the trusted codex-adversarial
       // payload; only the refute bit is trusted from the LLM-transcribed
@@ -346,12 +379,17 @@ function main() {
     })),
     findings: deduped,
     dropped,
+    codexPayloadError,
+    codexVerifyError,
     stats: { perReviewer, duplicatesMerged, unmatchedCodexRefutations },
   };
   mkdirSync(path.dirname(path.resolve(opts.out)), { recursive: true });
   writeFileSync(opts.out, JSON.stringify(output, null, 2));
   console.log(
-    `verified=${deduped.length} dropped=${dropped.length} duplicatesMerged=${duplicatesMerged} -> ${opts.out}`,
+    `verified=${deduped.length} dropped=${dropped.length} duplicatesMerged=${duplicatesMerged}` +
+      (codexPayloadError ? ` codexPayloadError=${JSON.stringify(codexPayloadError)}` : "") +
+      (codexVerifyError ? ` codexVerifyError=${JSON.stringify(codexVerifyError)}` : "") +
+      ` -> ${opts.out}`,
   );
 }
 
