@@ -211,6 +211,10 @@ Multi-context: split the index by section (`## System-wide` for `docs/decisions/
 
 Use judgment. If a section grows long enough that navigation becomes painful, split it into subsections. There is no hard line count — split when it genuinely improves readability.
 
+### Post-write residue check
+
+After the last file is written, grep every file you touched for tool-call residue — stray `</content>`, `</invoke>`, or similar harness tags at or near end-of-file (`grep -rn '</content>\|</invoke>' docs/`) — and delete any you find. These leak in when a write is assembled from tool-call output; a hit means the file was corrupted mid-write.
+
 ---
 
 ## Phase 4 — Version Bump (only when explicitly requested)
