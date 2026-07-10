@@ -15,6 +15,7 @@ BREWFILE="$SCRIPT_DIR/Brewfile"
 #              not the native package array.
 #            "bootstrap" = apt-only; installed via install_<name>_apt(),
 #              not the APT_PACKAGES array (name deltas are real per-OS names).
+#            "direct" = installed cross-platform via install_<name>().
 MANIFEST="
 zsh|zsh|zsh|zsh
 git|git|git|git
@@ -40,6 +41,7 @@ semgrep|semgrep|optional|optional
 supabase|supabase/tap/supabase|optional|optional
 docker|docker|-|-
 docker-desktop|docker-desktop|-|-
+codex|direct|direct|direct
 "
 
 # --- ponytail: single-line array/for-loop assumption; re-write this parser
@@ -73,6 +75,7 @@ while IFS='|' read -r name brew apt pacman; do
 
   case "$apt" in
     -) ;;
+    direct) grep -q "^install_${name}()" "$SETUP" || err "$name: manifest says apt=direct but install_${name}() not found in setup.sh" ;;
     optional) contains "$name" "${ACTUAL_OPTIONAL[@]}" || err "$name: manifest says apt=optional but not in setup.sh's optional-tool loop" ;;
     bootstrap) grep -q "^install_${name}_apt()" "$SETUP" || err "$name: manifest says apt=bootstrap but install_${name}_apt() not found in setup.sh" ;;
     *) contains "$apt" "${ACTUAL_APT[@]}" || err "$name: manifest says apt=$apt but not in APT_PACKAGES" ;;
@@ -80,6 +83,7 @@ while IFS='|' read -r name brew apt pacman; do
 
   case "$pacman" in
     -) ;;
+    direct) grep -q "^install_${name}()" "$SETUP" || err "$name: manifest says pacman=direct but install_${name}() not found in setup.sh" ;;
     optional) contains "$name" "${ACTUAL_OPTIONAL[@]}" || err "$name: manifest says pacman=optional but not in setup.sh's optional-tool loop" ;;
     bootstrap) grep -q "^install_${name}_apt()" "$SETUP" || err "$name: manifest says pacman=bootstrap but install_${name}_apt() not found in setup.sh" ;;
     *) contains "$pacman" "${ACTUAL_PACMAN[@]}" || err "$name: manifest says pacman=$pacman but not in PACMAN_PACKAGES" ;;
@@ -87,6 +91,7 @@ while IFS='|' read -r name brew apt pacman; do
 
   case "$brew" in
     -) ;;
+    direct) grep -q "^install_${name}()" "$SETUP" || err "$name: manifest says brew=direct but install_${name}() not found in setup.sh" ;;
     *) contains "$brew" "${ACTUAL_BREW[@]}" || err "$name: manifest says brew=$brew but not in Brewfile" ;;
   esac
 done <<< "$MANIFEST"

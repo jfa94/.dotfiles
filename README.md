@@ -29,6 +29,7 @@ The script:
 - Symlinks Codex config into `~/.codex/`, including native TUI status-line settings from `.codex/config.toml`.
 - Installs Homebrew (if missing) and the `Brewfile` packages.
 - Installs the Claude Code CLI and the plugins/marketplaces listed in `.claude/plugins.txt`.
+- Installs Codex CLI with OpenAI's standalone installer, then installs the plugins listed in `.codex/plugins.txt`.
 - Sets up vim plugin/undo directories.
 
 It is idempotent — re-running skips anything already linked. If conflicts are detected, you’ll be prompted to replace, skip, or decide file-by-file. New files added to the repo are only deployed on a re-run.
@@ -41,3 +42,19 @@ via the native package manager instead of Homebrew; a few tools not in the
 default repos (`deno`, `pnpm`, `trufflehog`, `semgrep`, `supabase`) use their
 official install scripts on both distros. Docker is **not** managed on Linux —
 install it yourself (Docker Desktop's WSL integration, or natively on Arch).
+
+## Codex CLI
+
+Codex uses OpenAI's standalone installer on macOS and Linux. It installs managed
+releases under `~/.codex/packages/standalone`, exposes `codex` through
+`~/.local/bin`, and owns future CLI updates; Codex is intentionally absent from
+the `Brewfile` and Linux native package lists.
+
+Setup refuses an active Homebrew or npm installation to avoid ambiguous duplicate
+CLIs. Remove the old package first, then re-run setup:
+
+```zsh
+brew uninstall --cask codex
+# or
+npm uninstall -g @openai/codex
+```

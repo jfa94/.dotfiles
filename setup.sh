@@ -115,7 +115,7 @@ install_node_apt() {
 }
 
 # --- Cross-distro installs (official scripts, identical on apt + pacman) ---
-# ponytail: these, the gh keyring above, and the Homebrew/claude installers in
+# ponytail: these, the gh keyring above, and the Homebrew/Claude/Codex installers in
 # Sections 6-7 pull unpinned scripts/keys straight from upstream with no
 # checksum/signature check - accepted risk for a personal dotfiles repo.
 # Pin/verify if this ever runs somewhere that matters more.
@@ -148,6 +148,41 @@ install_supabase() {
   # SUPABASE_INSTALL_DIR is script-internal (not read for the skip decision);
   # --no-modify-path is the flag that actually suppresses the rc write.
   SUPABASE_INSTALL_DIR="$HOME/.supabase/bin" bash -c "$(curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install)" -- --no-modify-path
+}
+
+install_codex() {
+  local codex_path="" resolved_path=""
+  local managed_root="$HOME/.codex/packages/standalone"
+
+  codex_path="$(command -v codex 2>/dev/null || true)"
+  if [[ -n "$codex_path" ]]; then
+    managed_root="$(realpath "$managed_root" 2>/dev/null || printf '%s' "$managed_root")"
+    resolved_path="$(realpath "$codex_path" 2>/dev/null || true)"
+    if [[ "$codex_path" == "$HOME/.local/bin/codex" \
+      && "$resolved_path" == "$managed_root/releases/"*/bin/codex \
+      && -x "$resolved_path" ]]; then
+      codex_status="already installed"
+      success "Codex CLI already installed (standalone), skipping"
+      return 0
+    fi
+
+    error "Codex CLI is managed outside OpenAI's standalone installer: $codex_path"
+    error "Remove it first (Homebrew: 'brew uninstall --cask codex'; npm: 'npm uninstall -g @openai/codex'), then re-run setup."
+    return 1
+  fi
+
+  info "Installing Codex CLI..."
+  CODEX_NON_INTERACTIVE=1 sh -c "$(curl -fsSL https://chatgpt.com/codex/install.sh)"
+  codex_path="$(command -v codex 2>/dev/null || true)"
+  managed_root="$(realpath "$managed_root" 2>/dev/null || printf '%s' "$managed_root")"
+  resolved_path="$(realpath "$codex_path" 2>/dev/null || true)"
+  if [[ "$codex_path" != "$HOME/.local/bin/codex" \
+    || "$resolved_path" != "$managed_root/releases/"*/bin/codex \
+    || ! -x "$resolved_path" ]]; then
+    error "Codex standalone installer completed without a valid managed CLI."
+    return 1
+  fi
+  codex_status="freshly installed"
 }
 
 install_packages_linux() {
@@ -344,7 +379,7 @@ mkdir -p ~/.vim/plugged
 
 # Each tool's install dir, put on PATH now so presence checks later in this
 # run see it (mirrors what .zprofile does for future login shells:
-# pipx/claude->~/.local/bin, deno->~/.deno/bin, pnpm->~/.local/share/pnpm,
+# pipx/Claude/Codex->~/.local/bin, deno->~/.deno/bin, pnpm->~/.local/share/pnpm,
 # supabase->~/.supabase/bin; trufflehog installs straight to /usr/local/bin,
 # already on PATH).
 export PATH="$HOME/.local/bin:$HOME/.deno/bin:$HOME/.local/share/pnpm:$HOME/.supabase/bin:$PATH"
@@ -376,6 +411,11 @@ else
   install_packages_linux
   pkg_summary="Packages ($PKG): installed"
 fi
+
+# Codex must use OpenAI's managed standalone layout. Install after package
+# setup (curl is now available) and before Codex plugin installation.
+codex_status="not installed"
+install_codex
 
 # =============================================================================
 # Section 7: Install Claude Code
@@ -488,6 +528,7 @@ fi
 echo "$pkg_summary"
 [[ -n "${optional_status:-}" ]] && echo "Optional tools:$optional_status"
 echo "Claude Code: $claude_status"
+echo "Codex CLI: $codex_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
 echo "Claude plugins: $plugins_status"
