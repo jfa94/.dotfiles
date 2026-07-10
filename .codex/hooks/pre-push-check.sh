@@ -13,8 +13,8 @@ DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+'
 CWD=$(project_dir "$INPUT")
 TARGET="${DIR:-$CWD}"
 [[ -f "$TARGET/package.json" ]] || exit 0
-cd "$TARGET" || exit 0
-command -v pnpm >/dev/null 2>&1 || { echo "pnpm not found; skipping pre-push quality gate" >&2; exit 0; }
+if ! cd "$TARGET"; then deny "Pre-push gate cannot enter target repository: $TARGET"; exit 0; fi
+command -v pnpm >/dev/null 2>&1 || { deny "Pre-push quality gate requires pnpm, but pnpm is unavailable."; exit 0; }
 
 QUAL=0
 if grep -q '"quality"' package.json; then

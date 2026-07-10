@@ -93,6 +93,29 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.codex/hooks/sessionstart-symlink-check.sh",
+            "statusMessage": "Checking Codex symlink integrity"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.codex/hooks/sessionstart-compact-restore.sh",
+            "timeout": 15,
+            "statusMessage": "Restoring pre-compaction requests"
+          }
+        ]
+      }
     ]
   }
 }

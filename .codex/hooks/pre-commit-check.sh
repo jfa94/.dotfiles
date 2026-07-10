@@ -11,27 +11,42 @@ printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:
 # Honor git -C <dir>: scan the repo the commit targets, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
 CWD=$(project_dir "$INPUT")
-cd "${DIR:-$CWD}" || exit 0
+if ! cd "${DIR:-$CWD}"; then deny "Pre-commit gate cannot enter target repository."; exit 0; fi
 
-STAGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+if ! STAGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null); then
+  deny "Pre-commit gate could not inspect staged files."
+  exit 0
+fi
 BLOCKED=$(printf '%s\n' "$STAGED" | grep -iE '(^|/)\.env($|\.|/)|(^|/)secrets/|\.pem$|\.key$|\.p12$|\.pfx$|/id_rsa$|/id_ed25519$' || true)
 if [[ -n "$BLOCKED" ]]; then
   deny "Blocked: staged files contain secrets or env files: $(printf '%s' "$BLOCKED" | tr '\n' ' ')"
   exit 0
 fi
 
-if command -v trufflehog >/dev/null 2>&1 && [[ -n "$STAGED" ]]; then
-  TH_ERR=$(mktemp)
-  TH_OUT=$(printf '%s\n' "$STAGED" | xargs -I{} trufflehog filesystem "{}" --only-verified --no-update --json 2>"$TH_ERR" || true)
-  if [[ -s "$TH_ERR" ]]; then
-    echo "trufflehog reported errors; secret scan may be incomplete (regex sweep still runs):" >&2
-    tail -3 "$TH_ERR" >&2
-  fi
-  rm -f "$TH_ERR"
-  if [[ -n "$TH_OUT" ]]; then
-    deny "Trufflehog detected verified secrets in staged files: $(printf '%s' "$STAGED" | tr '\n' ' ')"
-    exit 0
-  fi
+if [[ -n "$STAGED" ]]; then
+  command -v trufflehog >/dev/null 2>&1 || { deny "Pre-commit secret gate requires TruffleHog, but it is unavailable."; exit 0; }
+  while IFS= read -r staged_file; do
+    [[ -n "$staged_file" ]] || continue
+    STAGED_BLOB=$(mktemp)
+    TH_ERR=$(mktemp)
+    if ! git show ":$staged_file" > "$STAGED_BLOB" 2>"$TH_ERR"; then
+      DETAIL=$(tail -3 "$TH_ERR" | tr '\n' ' ')
+      rm -f "$STAGED_BLOB" "$TH_ERR"
+      deny "Pre-commit gate could not read staged blob $staged_file: $DETAIL"
+      exit 0
+    fi
+    if ! TH_OUT=$(trufflehog filesystem "$STAGED_BLOB" --only-verified --no-update --json 2>"$TH_ERR"); then
+      DETAIL=$(tail -3 "$TH_ERR" | tr '\n' ' ')
+      rm -f "$STAGED_BLOB" "$TH_ERR"
+      deny "TruffleHog failed while scanning $staged_file: $DETAIL"
+      exit 0
+    fi
+    rm -f "$STAGED_BLOB" "$TH_ERR"
+    if [[ -n "$TH_OUT" ]]; then
+      deny "TruffleHog detected a verified secret in staged file: $staged_file"
+      exit 0
+    fi
+  done <<< "$STAGED"
 fi
 
 # Regex sweep, added lines only: a commit that REMOVES a secret must not be blocked.

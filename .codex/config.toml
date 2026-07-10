@@ -1,15 +1,42 @@
 approval_policy = "on-request"
 default_permissions = "workspace-net"
+model_reasoning_effort = "low"
+plan_mode_reasoning_effort = "high"
+model_auto_compact_token_limit = 200000
+web_search = "live"
 
 [features]
 hooks = true
 
 [permissions.workspace-net.filesystem]
-":minimal" = "read"
+"/" = "read"
 "~/.codex" = "read"
 "~/.codex/auth.json" = "deny"
-"~/.gitconfig" = "read"
-"~/.dotfiles" = "read"
+"~/.ssh" = "deny"
+"~/.aws/credentials" = "deny"
+"~/.aws/config" = "deny"
+"~/.config/gh/hosts.yml" = "deny"
+"~/.dotfiles" = "write"
+"~/Projects" = "write"
+"~/.dotfiles/**/.env" = "deny"
+"~/.dotfiles/**/.env.*" = "deny"
+"~/.dotfiles/**/secrets" = "deny"
+"~/.dotfiles/**/secrets/**" = "deny"
+"~/.dotfiles/**/*.pem" = "deny"
+"~/.dotfiles/**/*.key" = "deny"
+"~/.dotfiles/**/*.p12" = "deny"
+"~/.dotfiles/**/*.pfx" = "deny"
+"~/Projects/**/.env" = "deny"
+"~/Projects/**/.env.*" = "deny"
+"~/Projects/**/secrets" = "deny"
+"~/Projects/**/secrets/**" = "deny"
+"~/Projects/**/*.pem" = "deny"
+"~/Projects/**/*.key" = "deny"
+"~/Projects/**/*.p12" = "deny"
+"~/Projects/**/*.pfx" = "deny"
+"/tmp" = "write"
+"/private/tmp" = "write"
+"/var/tmp" = "write"
 
 [permissions.workspace-net.filesystem.":workspace_roots"]
 "." = "write"
@@ -60,6 +87,9 @@ trust_level = "trusted"
 trust_level = "trusted"
 
 [tui]
+alternate_screen = "always"
+notifications = true
+notification_condition = "unfocused"
 status_line = [
   "model-with-reasoning",
   "current-dir",
@@ -70,9 +100,12 @@ status_line = [
 ]
 status_line_use_colors = true
 
+[tui.keymap.editor]
+insert_newline = ["alt-enter", "ctrl-enter"]
+
 [tui.model_availability_nux]
 "gpt-5.5" = 4
-"gpt-5.6-sol" = 1
+"gpt-5.6-sol" = 3
 
 [plugins."github@openai-curated"]
 enabled = true

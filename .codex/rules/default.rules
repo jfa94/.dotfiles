@@ -124,33 +124,6 @@ AWS_LOGS_READ_OPS = [
     "list-tags-for-resource",
 ]
 
-AWS_READ_SERVICES = [
-    "cloudformation",
-    "lambda",
-    "ec2",
-    "dynamodb",
-    "rds",
-    "ecs",
-    "sns",
-    "sqs",
-    "iam",
-    "apigateway",
-    "apigatewayv2",
-    "stepfunctions",
-    "events",
-    "cognito-idp",
-    "ssm",
-    "secretsmanager",
-    "route53",
-    "cloudwatch",
-    "cloudfront",
-    "acm",
-    "kms",
-    "s3api",
-    "elasticache",
-    "amplify",
-]
-
 # Hard policy denies. Prefix rules can't match a +refspec force-push
 # (`git push origin +branch`) at arbitrary argv positions — the
 # dangerous-patterns-check hook is the backstop for that form.
@@ -328,9 +301,8 @@ prefix_rule(
     ],
 )
 
-# Git commands. Codex cannot express `git -C <any-path> <specific-command>`;
-# allowing the `git -C` prefix is the closest enforceable equivalent. The
-# dangerous-patterns hook still blocks force pushes and bypass flags with -C.
+# Git commands. Dynamic `git -C <path> <command>` forms remain unmatched and
+# therefore prompt; allowing `git -C` would permit arbitrary subcommands.
 prefix_rule(
     pattern = ["git", GIT_COMMANDS],
     decision = "allow",
@@ -341,13 +313,6 @@ prefix_rule(
         "git commit -m test",
         "git push origin main",
     ],
-)
-
-prefix_rule(
-    pattern = ["git", "-C"],
-    decision = "allow",
-    justification = "Codex prefix rules cannot wildcard the path after -C; hooks enforce dangerous flag denies for git -C commands.",
-    match = ["git -C /tmp/repo status"],
 )
 
 # GitHub CLI parity with Claude's allowlist. PR mutation safety remains covered
@@ -429,11 +394,4 @@ prefix_rule(
     pattern = ["aws", "sts", "get-caller-identity"],
     decision = "allow",
     justification = "Caller identity inspection is read-only.",
-)
-
-prefix_rule(
-    pattern = ["aws", AWS_READ_SERVICES],
-    decision = "allow",
-    justification = "Codex cannot wildcard AWS describe-*/list-*/get-* operations; the AWS read-only hook denies non-read operations and sensitive Secrets Manager retrieval.",
-    match = ["aws ec2 describe-instances"],
 )

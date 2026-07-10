@@ -99,6 +99,6 @@
 - Codex uses native `tui.status_line` items in `.codex/config.toml` for its footer; it does not support Claude-style arbitrary stdin-fed shell rendering.
 - Codex hooks cover Bash, `apply_patch`/Edit/Write, MCP tools, and lifecycle events. There is no exact Claude `Read` hook equivalent; Claude has since retired its read-once hook as well (see `.codex/reference/read-once.md`).
 - Codex `PreToolUse` does not support Claude-style `ask`; hooks that used to ask now deny with retry instructions or rely on Codex's normal approval flow.
-- Claude's SessionStart hooks (model lock, compact restore, superpowers reinject) are Claude-internal and have no Codex counterpart by design.
+- Codex SessionStart warns when dotfiles symlinks drift and restores capped original/latest user requests from rollout JSONL after compaction. Claude's model-lock mutation has no Codex counterpart; static reasoning config is authoritative. Superpowers reinjection remains excluded.
 - Claude WebFetch domain allowlists are not a direct Codex web-search control. Sandboxed shell networking is governed by the `workspace-net` permission profile.
 - Codex appends a machine-specific `[hooks.state]` section (hook `trusted_hash` values) to `config.toml`. A git clean filter (`.codex/strip-hooks-state.sh`, wired via `.gitattributes` + `setup.sh`) strips this trailing section on commit, so the working file keeps it (hooks stay trusted) but git ignores the churn. Assumes `[hooks.state]` stays the last section — if Codex ever writes config after it, the filter would over-strip.

@@ -18,9 +18,10 @@ fi
 
 CWD=$(project_dir "$INPUT")
 [[ -f "$CWD/package.json" ]] || exit 0
-cd "$CWD" || exit 0
+if ! cd "$CWD"; then deny "Mutation gate cannot enter target repository: $CWD"; exit 0; fi
 
 grep -qE '"@stryker-mutator/core"' package.json || exit 0
+command -v pnpm >/dev/null 2>&1 || { deny "Mutation gate requires pnpm, but pnpm is unavailable."; exit 0; }
 
 BASE_REF=$(printf '%s' "$CMD" | grep -oE '(--base[= ]|-B )[^ ]+' | head -1 | sed 's/^--base[= ]//;s/^-B //')
 if [[ -z "$BASE_REF" ]]; then
@@ -29,7 +30,7 @@ fi
 BASE_REF="${BASE_REF:-main}"
 
 git fetch origin "$BASE_REF" --depth=50 2>/dev/null || {
-  echo "pre-pr: failed to fetch origin/$BASE_REF; skipping mutation gate" >&2
+  deny "Mutation gate could not fetch origin/$BASE_REF; refusing to skip required comparison."
   exit 0
 }
 

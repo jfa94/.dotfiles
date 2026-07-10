@@ -10,14 +10,14 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push' || exit 0
 
 if ! command -v semgrep >/dev/null 2>&1; then
-  echo "semgrep not found; skipping SAST scan" >&2
+  deny "Semgrep gate requires semgrep, but semgrep is unavailable."
   exit 0
 fi
 
 # Honor git -C <dir>: scan the repo being pushed, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
 CWD=$(project_dir "$INPUT")
-cd "${DIR:-$CWD}" || exit 0
+if ! cd "${DIR:-$CWD}"; then deny "Semgrep gate cannot enter target repository."; exit 0; fi
 
 DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)
 [[ -n "$DEFAULT" ]] || DEFAULT="main"
@@ -56,14 +56,17 @@ else
     $skip || args+=("$f")
   done <<< "$CHANGED"
   [[ ${#args[@]} -eq 0 ]] && exit 0
-  SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null || true)
+  if ! SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null); then
+    deny "Semgrep scan failed; refusing to treat an incomplete scan as success."
+    exit 0
+  fi
   if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
     printf '%s' "$SEMGREP_OUT" > "$CACHE_FILE"
   fi
 fi
 
 if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
-  echo "semgrep returned no valid results — scan error or no network for --config auto; SAST scan incomplete, not blocking" >&2
+  deny "Semgrep returned invalid output; refusing to treat an incomplete scan as success."
   exit 0
 fi
 

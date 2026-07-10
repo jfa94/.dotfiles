@@ -19,6 +19,17 @@ context() {
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$r}}'
 }
 
+post_error() {
+  local message="$1"
+  jq -cn --arg r "$message" '{systemMessage:$r}'
+}
+
+session_context() {
+  local message="$1"
+  jq -cn --arg r "$message" \
+    '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$r}}'
+}
+
 extract_paths() {
   local input="$1"
   local direct patch

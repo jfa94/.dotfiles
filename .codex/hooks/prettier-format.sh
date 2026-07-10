@@ -39,7 +39,11 @@ done < <(extract_paths "$INPUT")
 [[ ${#files[@]} -gt 0 ]] || exit 0
 
 if [[ -x "$ROOT/node_modules/.bin/prettier" ]]; then
-  "$ROOT/node_modules/.bin/prettier" --write "${files[@]}" >/dev/null 2>&1 || true
-elif command -v npx >/dev/null 2>&1; then
-  npx --yes prettier@3 --write "${files[@]}" >/dev/null 2>&1 || true
+  if ! OUTPUT=$("$ROOT/node_modules/.bin/prettier" --write "${files[@]}" 2>&1); then
+    post_error "Prettier failed: ${OUTPUT:0:1000}"
+    exit 1
+  fi
+else
+  post_error "Prettier is configured but the project-local formatter is unavailable. Install dependencies and retry."
+  exit 1
 fi
