@@ -25,7 +25,7 @@ chmod +x ~/.dotfiles/setup.sh && ~/.dotfiles/setup.sh
 The script:
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
-- Symlinks Claude Code config into `~/.claude/` (settings, hooks, skills, agents, statusline) and XDG config into `~/.config/`, then marks hook scripts executable.
+- Symlinks Claude Code config into `~/.claude/` (settings, hooks, skills, agents, statusline), exposes the same skill tree to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
 - Symlinks Codex config into `~/.codex/`, including native TUI status-line settings from `.codex/config.toml`.
 - Installs Homebrew (if missing) and the `Brewfile` packages.
 - Installs the Claude Code CLI and the plugins/marketplaces listed in `.claude/plugins.txt`.
@@ -33,6 +33,19 @@ The script:
 - Sets up vim plugin/undo directories.
 
 It is idempotent — re-running skips anything already linked. If conflicts are detected, you’ll be prompted to replace, skip, or decide file-by-file. New files added to the repo are only deployed on a re-run.
+
+### Shared Claude and Codex skills
+
+`.claude/skills` is the only authored skill tree. Setup links the whole directory
+to `~/.agents/skills`, Codex's user-level discovery location, so new or removed
+skills are visible to both tools without copies or per-skill link maintenance.
+This reserves `~/.agents/skills` for the shared tree; existing content follows
+setup's normal replace, skip, or prompt conflict policy.
+
+Codex normally detects skill changes automatically. Restart it if an update does
+not appear. Discovery does not translate Claude-specific tools or metadata, so
+skills that depend on Claude-only runtime features may need separate portability
+work before Codex can execute every step.
 
 ## Linux (WSL2 / CachyOS)
 

@@ -74,6 +74,11 @@ link_file() {
   success "$label linked"
 }
 
+link_claude_skills_for_codex() {
+  mkdir -p "$HOME/.agents"
+  link_file "$DOTFILES_DIR/.claude/skills" "$HOME/.agents/skills" "~/.agents/skills"
+}
+
 # --- Linux package lists (native, in-repo packages only) ---
 # Name deltas: python3<->python, golang-go<->go, default-jdk<->jdk-openjdk.
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
@@ -285,6 +290,16 @@ for prefix in .claude .codex .config; do
   done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
 done
 
+# Codex discovers user-authored skills under ~/.agents/skills. Keep Claude's
+# directory as the source of truth and expose the entire tree without copies.
+shared_skills_src="$DOTFILES_DIR/.claude/skills"
+shared_skills_dest="$HOME/.agents/skills"
+if [[ ! -L "$shared_skills_dest" || "$(readlink "$shared_skills_dest")" != "$shared_skills_src" ]]; then
+  if [[ -e "$shared_skills_dest" || -L "$shared_skills_dest" ]]; then
+    conflicts+=("~/.agents/skills")
+  fi
+fi
+
 # DOTFILES_MODE=replace|skip|prompt skips the interactive conflict prompt
 # (headless/CI runs have no /dev/tty).
 MODE="${DOTFILES_MODE:-replace}"
@@ -340,6 +355,8 @@ for prefix in .claude .codex .config; do
     link_file "$DOTFILES_DIR/$path" "$dest" "~/$prefix/$rel"
   done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
 done
+
+link_claude_skills_for_codex
 
 # Ensure hook scripts are executable (git may not preserve +x on all systems)
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
