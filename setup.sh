@@ -362,14 +362,17 @@ link_claude_skills_for_codex
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # Prune symlinks whose repo target no longer exists (file deleted/renamed in
-# dotfiles) — otherwise dead agents/hooks linger in ~/.claude forever.
-while IFS= read -r link; do
-  target=$(readlink "$link")
-  if [[ "$target" == "$DOTFILES_DIR/.claude/"* && ! -e "$target" ]]; then
-    rm "$link"
-    info "Pruned dangling symlink: ${link/#$HOME/~}"
-  fi
-done < <(find "$HOME/.claude" -maxdepth 3 -type l -not -path "*/plugins/*" 2>/dev/null)
+# dotfiles) — otherwise dead agents/hooks linger forever. Covers the same
+# prefixes we link above.
+for prefix in .claude .codex .config; do
+  while IFS= read -r link; do
+    target=$(readlink "$link")
+    if [[ "$target" == "$DOTFILES_DIR/$prefix/"* && ! -e "$target" ]]; then
+      rm "$link"
+      info "Pruned dangling symlink: ${link/#$HOME/~}"
+    fi
+  done < <(find "$HOME/$prefix" -maxdepth 3 -type l -not -path "*/plugins/*" 2>/dev/null)
+done
 
 find "$HOME/.codex/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
