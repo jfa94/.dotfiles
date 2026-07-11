@@ -38,8 +38,24 @@ done < <(extract_paths "$INPUT")
 
 [[ ${#files[@]} -gt 0 ]] || exit 0
 
-if [[ -x "$ROOT/node_modules/.bin/prettier" ]]; then
-  if ! OUTPUT=$("$ROOT/node_modules/.bin/prettier" --write "${files[@]}" 2>&1); then
+BIN="$ROOT/node_modules/.bin/prettier"
+if [[ ! -x "$BIN" ]]; then
+  # In a git worktree, ROOT is the worktree (no node_modules of its own).
+  # Borrow the main checkout's prettier *binary*, but keep running from ROOT
+  # (below) so the worktree's own .prettierignore/.prettierrc apply and
+  # config-declared plugins resolve up the tree into the main's node_modules.
+  # ponytail: assumes the worktree nests under the main checkout (factory
+  # layout: <repo>/.claude/worktrees/*). A worktree created outside the repo
+  # with a plugin-based config would fail plugin resolution — install deps
+  # in that worktree if that ever comes up.
+  MAIN=$(dirname "$(git -C "$CWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")
+  [[ -n "$MAIN" && -x "$MAIN/node_modules/.bin/prettier" ]] && BIN="$MAIN/node_modules/.bin/prettier"
+fi
+
+if [[ -x "$BIN" ]]; then
+  # Run from ROOT so ignore/config scope is the worktree, not the main checkout
+  # (whose .prettierignore may exclude .claude/worktrees/*).
+  if ! OUTPUT=$(cd "$ROOT" && "$BIN" --write "${files[@]}" 2>&1); then
     post_error "Prettier failed: ${OUTPUT:0:1000}"
     exit 1
   fi
