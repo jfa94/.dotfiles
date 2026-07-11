@@ -395,3 +395,5 @@ prefix_rule(
     decision = "allow",
     justification = "Caller identity inspection is read-only.",
 )
+prefix_rule(pattern=["pnpm", "test:pg"], decision="allow")
+prefix_rule(pattern=["gh", "auth", "status"], decision="allow")
