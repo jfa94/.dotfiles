@@ -509,7 +509,8 @@
     "resend@claude-plugins-official": false,
     "codex@openai-codex": true,
     "factory@jfa94": true,
-    "ponytail@ponytail": true
+    "ponytail@ponytail": true,
+    "aws-serverless@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
     "openai-codex": {

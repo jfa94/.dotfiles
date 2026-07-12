@@ -27,8 +27,7 @@
 .claude/tool-audit.jsonl
 .claude-plugin-data/
 .code-review/
-.comprehensive-code-review/
-.focused-code-review/
+.code-reviews/
 .claude/read-once/session-*.jsonl
 .claude/read-once/snapshots/
 .claude/read-once/stats.jsonl
