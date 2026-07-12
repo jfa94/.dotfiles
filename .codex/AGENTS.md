@@ -95,7 +95,8 @@
 ## Codex Parity Notes
 
 - This dotfiles repo stores user-level Codex config at `.codex/user-config.toml`; setup links it to `~/.codex/config.toml` so Codex does not also load it as project-local config. Other authored Codex files remain under `.codex/` and are linked path-for-path.
-- Do not duplicate Claude agents or skills under `.codex/`. The source of truth for Claude-owned agents and skills remains `.claude/`.
+- Do not duplicate Claude agents or skills under `.codex/`. The source of truth for Claude-owned agents and skills remains `.claude/`. Codex-only orchestration skills may live under `.codex/skills/` when they reference canonical Claude resources rather than copying them.
+- Code-review runtimes share collision-safe artifacts under each target repository's `.code-review/runs/<run-id>/` directory.
 - Codex uses native `tui.status_line` items in `.codex/user-config.toml` for its footer; it does not support Claude-style arbitrary stdin-fed shell rendering.
 - Codex hooks cover Bash, `apply_patch`/Edit/Write, MCP tools, and lifecycle events. There is no exact Claude `Read` hook equivalent; Claude has since retired its read-once hook as well (see `.codex/reference/read-once.md`).
 - Codex `PreToolUse` does not support Claude-style `ask`; hooks that used to ask now deny with retry instructions or rely on Codex's normal approval flow.

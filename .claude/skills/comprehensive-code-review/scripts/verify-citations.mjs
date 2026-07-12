@@ -18,6 +18,7 @@ import path from "node:path";
 
 const MIN_QUOTE = 10;
 const EXCLUDED_SEGMENTS = new Set([
+  ".code-review",
   "dist",
   "build",
   "out",

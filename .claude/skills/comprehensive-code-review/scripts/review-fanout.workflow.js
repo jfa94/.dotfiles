@@ -349,7 +349,7 @@ const CODEX_RUNNER_SCHEMA = {
 
 function buildCodexRunnerPrompt(input) {
   const codex = input.codex;
-  const outDir = input.outDir || ".comprehensive-code-review";
+  const outDir = input.outDir;
   const repoRoot = input.repoRoot || ".";
   const jsonPath = repoRoot + "/" + outDir + "/raw/codex-adversarial.json";
   const stderrPath =
@@ -452,10 +452,13 @@ async function refuteCodexFindings(codexFindings, input) {
   });
   await persistResult(
     input.repoRoot || ".",
-    input.outDir || ".comprehensive-code-review",
+    input.outDir,
     "codex-verify-result.json",
     "codexFindings",
     {
+      runtime: input.runtime,
+      profile: input.profile,
+      runId: input.runId,
       scopeLabel: input.scopeLabel || null,
       mode: input.mode || null,
       codexFindings,
@@ -686,6 +689,33 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
 // The Workflow runtime may hand `args` to the script as a JSON string rather
 // than a parsed object; normalize so the caller can pass args either way.
 const input = typeof args === "string" ? JSON.parse(args) : args || {};
+for (const key of ["runtime", "profile", "runId", "scopeLabel", "mode", "outDir"]) {
+  if (typeof input[key] !== "string" || input[key].length === 0) {
+    throw new Error("args." + key + " is required and must be a non-empty string");
+  }
+}
+if (input.runtime !== "claude") {
+  throw new Error('args.runtime must be "claude"');
+}
+if (!["focused", "comprehensive"].includes(input.profile)) {
+  throw new Error('args.profile must be "focused" or "comprehensive"');
+}
+const runIdPattern = /^\d{8}T\d{6}Z-(focused|comprehensive)-[A-Za-z0-9]{6}$/;
+if (!runIdPattern.test(input.runId)) {
+  throw new Error("args.runId must match <UTC timestamp>-<profile>-<6 alphanumeric nonce>");
+}
+if (!input.runId.includes("-" + input.profile + "-")) {
+  throw new Error("args.runId profile must match args.profile");
+}
+if (!/^\.code-review\/runs\/[A-Za-z0-9_-]+$/.test(input.outDir)) {
+  throw new Error("args.outDir must be a .code-review/runs/<runId> path");
+}
+if (!input.outDir.endsWith("/" + input.runId)) {
+  throw new Error("args.outDir must end with args.runId");
+}
+if (!["full", "base", "working-tree"].includes(input.mode)) {
+  throw new Error('args.mode must be "full", "base", or "working-tree"');
+}
 
 const reviewers = Array.isArray(input.reviewers) ? input.reviewers : [];
 
@@ -783,17 +813,18 @@ const codex = await codexPromise;
 // separate harvest choreography; the findings themselves stay in
 // codex-adversarial.json (source of truth) + codex-verify-result.json.
 const consolidated = {
+  runtime: input.runtime,
+  profile: input.profile,
+  runId: input.runId,
   scopeLabel: input.scopeLabel || null,
   mode: input.mode || null,
   reviewers: results.filter(Boolean),
   codex,
 };
 
-// outDir lets a derived skill (e.g. focused-code-review) persist to its own dir;
-// default preserves the comprehensive skill's path.
 await persistResult(
   input.repoRoot || ".",
-  input.outDir || ".comprehensive-code-review",
+  input.outDir,
   "workflow-result.json",
   "reviewers",
   consolidated,

@@ -6,6 +6,15 @@ pass — all concurrent by construction. Citation verification runs via
 `scripts/verify-citations.mjs`; report assembly stays in the main session. This file is the
 contract for all of them.
 
+After the changed-files empty guard and before any diff, seed, or workflow artifact is written, the
+orchestrator calls `scripts/review-run.mjs init` to atomically create a unique
+`.code-review/runs/<UTC YYYYMMDDTHHMMSSZ>-<profile>-<6 alphanumeric nonce>/raw/` directory. It immediately
+writes `run.json` with `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, `startedAt`, and
+`status: "RUNNING"`; after report emission the orchestrator calls `review-run.mjs finish` to add
+`completedAt` and set `DONE` or `DONE_WITH_CONCERNS`. Early stops become `ABORTED` with a reason.
+Runs are never cleared or reused. `outDir` is mandatory; the workflow has no legacy/default output
+directory.
+
 ## 1. Single-workflow fan-out (reviewers + Codex)
 
 Invoke the shipped script by path (do NOT inline a script string):
@@ -14,6 +23,9 @@ Invoke the shipped script by path (do NOT inline a script string):
 Workflow({
   scriptPath: "<this skill's base directory>/scripts/review-fanout.workflow.js",
   args: {
+    runtime: "claude",
+    profile: "focused" | "comprehensive",
+    runId: "<UTC timestamp>-<profile>-<nonce>",
     scopeLabel:
       "<human-readable scope, e.g. 'ENTIRE CODEBASE (current state)' or 'abc123...HEAD'>",
     mode: "full" | "base" | "working-tree",
@@ -21,6 +33,7 @@ Workflow({
       "<full mode: the whole-codebase instruction; diff modes: the diff text>",
     changedFiles: "<newline-joined file list>",
     repoRoot: "<absolute repo root>",
+    outDir: ".code-review/runs/<runId>",
     claudeMdPath: "<path to CLAUDE.md or 'not found'>",
     spec: null | { path: "<spec path>", content: "<spec file content>" },
     codex: null | {
@@ -50,6 +63,10 @@ Workflow({
 });
 ```
 
+The workflow validates `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, and `outDir` before
+dispatch. Persisted workflow and Codex-verification results echo all five identity/scope fields;
+harvesters reject any mismatch as stale/foreign.
+
 `codex: null` (Codex unavailable) makes the workflow report the track SKIPPED; reviewers run
 regardless. The orchestrator never launches Codex itself — the old two-call contract (backgrounded
 Codex Bash + Workflow in one message) relied on prose compliance and serialized whenever the model
@@ -58,14 +75,14 @@ waited on Codex before launching the workflow.
 The workflow's final stage writes
 
 ```json
-{ "scopeLabel": "...", "mode": "...",
+{ "runtime": "claude", "profile": "...", "runId": "...", "scopeLabel": "...", "mode": "...",
   "reviewers": [ { "name", "status", "verdict?", "blocked_reason?", "dropped_by_cap?", "findings": [] } ],
   "codex": { "status": "DONE|BLOCKED|SKIPPED", "outcome": "structured|degraded|null",
              "blocked_reason?": "...", "verdict?": "...", "summary?": "...",
              "degraded_refs": [ { "file": "...", "line": 1 } ], "verifyRan": true } }
 ```
 
-to `<repoRoot>/.comprehensive-code-review/raw/workflow-result.json`. **Read that file to harvest the
+to `<repoRoot>/<outDir>/raw/workflow-result.json`. **Read that file to harvest the
 result — the workflow's JS `return` value is NOT retrievable by the caller** (`TaskOutput` is
 deprecated; the completion notification carries only prose). Each `findings[]` entry matches the
 canonical schema below. Every reviewer named in `args.reviewers` appears in the result (BLOCKED with a
@@ -113,7 +130,7 @@ Five behaviors live inside the workflow, not the skill:
   reviewers still in flight. Codex findings carry no `verbatim`, so each refuter Reads `file` around
   `line_start..line_end` instead of starting from a quote; same keep-on-uncertainty bias; native
   criticals need 2 unanimous refuters, high/medium 1. It annotates `refuted`/`refute_reason` and persists
-  `{ "scopeLabel", "mode", "codexFindings": [ ...all findings, annotated... ] }` to
+  `{ "runtime", "profile", "runId", "scopeLabel", "mode", "codexFindings": [ ...all findings, annotated... ] }` to
   `<repoRoot>/<outDir>/raw/codex-verify-result.json` (same persist agent + retry), and sets
   `codex.verifyRan: true` in the consolidated result.
 
@@ -194,8 +211,8 @@ CODEX_CMD=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-com
 # codex-runner agent (inside the workflow): $CODEX_TARGET is one of:
 #   --base "$CODEX_BASE"   (base / full modes)   |   --scope working-tree   (working-tree mode)
 node "$CODEX_CMD" adversarial-review --json $CODEX_TARGET \
-  >.comprehensive-code-review/raw/codex-adversarial.json \
-  2>.comprehensive-code-review/raw/codex-adversarial.stderr.log
+  ><runDir>/raw/codex-adversarial.json \
+  2><runDir>/raw/codex-adversarial.stderr.log
 ```
 
 No `--background`; no `--model` (let the companion auto-default to the best model); no
@@ -269,7 +286,7 @@ diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
 1. **Write the full diff to disk, once:**
 
    ```bash
-   git diff <range> -- . "${EXCLUDES[@]}" > .comprehensive-code-review/raw/full-diff.patch   # never truncated
+   git diff <range> -- . "${EXCLUDES[@]}" > <runDir>/raw/full-diff.patch   # never truncated
    ```
 
    (base: `<range>` = `<ref>...HEAD`; working-tree: `<range>` = `HEAD`.)
@@ -278,7 +295,7 @@ diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
    can page the patch deterministically with Read offset/limit:
 
    ```bash
-   grep -n '^diff --git' .comprehensive-code-review/raw/full-diff.patch   # "line:diff --git a/<f> b/<f>"
+   grep -n '^diff --git' <runDir>/raw/full-diff.patch   # "line:diff --git a/<f> b/<f>"
    ```
 
 3. **Rank the changed files by risk** (so highest-risk content is read first; this is what removes the
@@ -293,7 +310,7 @@ diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
 4. **Set `reviewInput`** to an instruction block + the risk-ranked manifest table (NOT diff text):
 
    ```
-   The complete diff is at <repoRoot>/.comprehensive-code-review/raw/full-diff.patch (<N> lines).
+   The complete diff is at <repoRoot>/<runDir>/raw/full-diff.patch (<N> lines).
    Read ALL of it before reviewing — page through it with Read offset/limit using the per-file line
    index below. The manifest is a reading order, not a substitute for the diff.
 
@@ -325,7 +342,7 @@ This section is the SPEC for `scripts/verify-citations.mjs` — the skill runs t
 and never hand-executes this procedure. The pseudocode below documents what the script does;
 change the script and this spec together.
 
-Source the reviewer findings from `.comprehensive-code-review/raw/workflow-result.json` (the file the
+Source the reviewer findings from `<runDir>/raw/workflow-result.json` (the file the
 workflow wrote), not from the Workflow return value.
 
 `is_excluded_build_output(path)` matches the Phase 1 `EXCLUDES` set: a `dist/`, `build/`, `out/`,

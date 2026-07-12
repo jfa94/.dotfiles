@@ -31,9 +31,8 @@ Before proceeding, read the two reference files in the sibling skill's directory
 `comprehensive-code-review/references/workflow-and-codex.md` and
 `comprehensive-code-review/references/report-format.md`. They define the workflow contract, the findings
 schema, the Codex target-resolution table, the citation-verification pseudocode, and the output format.
-**Two deviations from those references apply to this skill:** (1) this skill has no `--full` and no
-`--spec` mode — only working-tree and `--base`; (2) the output directory is `.focused-code-review/`, not
-`.comprehensive-code-review/`.
+**One deviation from those references applies to this skill:** it has no `--full` and no `--spec`
+mode — only working-tree and `--base`.
 
 ## The five reviewers (fixed)
 
@@ -76,7 +75,7 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
 | "I'll create a new category for this"        | Iron Law 3. Use fixed set; map to "Other" if nothing fits.                          |
 | "Codex isn't available, I'll abort"          | Pass `codex: null`. The workflow marks Codex SKIPPED; reviewers still run.          |
 | "I'll run Codex myself with a Bash call"     | Iron Law 4. The workflow's codex-runner agent owns the CLI run.                     |
-| "I'll harvest the Workflow's return value"   | No. Read .focused-code-review/raw/workflow-result.json instead.                       |
+| "I'll harvest the Workflow's return value"   | No. Read `<runDir>/raw/workflow-result.json` instead.                                |
 | "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                      |
 | "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.           |
 | "Same issue from 2 reviewers = 2 findings"   | The script dedups (Phase 6). Merged, highest severity, annotated "Also flagged by". |
@@ -99,7 +98,10 @@ There is no `--full` and no `--spec` in this skill. If either is passed, tell th
 a diff only and to use `/comprehensive-code-review` for whole-codebase or spec-conformance review, then
 proceed treating the rest of the args normally (ignore the unsupported flag).
 
-Build `reviewInput` + `changedFiles` per mode.
+First gather `changedFiles` per mode and apply the empty guard without writing artifacts. Then create
+a unique run exactly as the shared reference specifies, with `PROFILE=focused`, before materializing
+`reviewInput`, a manifest, or any workflow output. Only after writing the initial `<runDir>/run.json`
+may you build `reviewInput` or write review artifacts.
 
 **Build-output exclusion.** Generated/minified output (committed or untracked) is skipped so reviewers
 see only hand-written code. Define `EXCLUDES` once and append `-- . "${EXCLUDES[@]}"` to _every_
@@ -109,6 +111,7 @@ mirrored by `verify-citations.mjs`'s drop predicate (Phase 6):
 
 ```bash
 EXCLUDES=(
+  ':(top,exclude,glob).code-review/**'
   ':(top,exclude,glob)**/dist/**'
   ':(top,exclude,glob)**/build/**'
   ':(top,exclude,glob)**/out/**'
@@ -188,18 +191,7 @@ codex = { cmd: <CODEX_CMD>, targetFlags: <CODEX_TARGET>, expectedTarget: <EXPECT
 
 ## Phase 4 — Launch the Workflow (single call)
 
-First ensure the output dir exists and delete any prior run's output files so a stale file from an earlier
-run can never be mistaken for this run's output (the dir is gitignored, so stale state persists locally
-between runs):
-
-```bash
-mkdir -p .focused-code-review/raw
-rm -f .focused-code-review/raw/workflow-result.json \
-      .focused-code-review/raw/codex-adversarial.json \
-      .focused-code-review/raw/codex-adversarial.stderr.log \
-      .focused-code-review/raw/codex-verify-result.json \
-      .focused-code-review/raw/verified-findings.json
-```
+The unique run directory already exists. Never reuse or clear another run directory.
 
 <EXTREMELY-IMPORTANT>
 Launch ONE Workflow — it owns the reviewer fan-out, the Codex adversarial review (a codex-runner
@@ -209,15 +201,14 @@ using the sibling skill's script:
 ```
 Workflow({
   scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
-  args: { scopeLabel, mode, reviewInput, changedFiles, repoRoot, claudeMdPath,
-          outDir: ".focused-code-review", reviewers,
+  args: { runtime: "claude", profile: "focused", runId, scopeLabel, mode,
+          reviewInput, changedFiles, repoRoot, claudeMdPath, outDir: runDir, reviewers,
           codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
 })
 ```
 
 The `args` values are the records gathered in Phases 1–3. Pass them as real JSON. `repoRoot` MUST be the
-absolute repo root — the workflow writes its results under `repoRoot/.focused-code-review/` because of the
-`outDir` arg. Do NOT pass a `spec` (this skill has no implementation-reviewer).
+absolute repo root. `outDir` is required and must be `.code-review/runs/<runId>`. Do not pass a `spec`.
 
 Do NOT launch Codex yourself (no Bash call, backgrounded or otherwise) and do NOT hand-dispatch
 reviewer Task calls — the workflow owns both tracks precisely so they can never serialize.
@@ -226,17 +217,19 @@ reviewer Task calls — the workflow owns both tracks precisely so they can neve
 ## Phase 5 — Harvest
 
 When the Workflow completion notification arrives, **Read the file the workflow wrote** —
-`.focused-code-review/raw/workflow-result.json` — and parse
-`{ scopeLabel, mode, reviewers: [...], codex: {...} }`. Do NOT rely on the Workflow's JS return value or
+`<runDir>/raw/workflow-result.json` — and parse
+`{ runtime, profile, runId, scopeLabel, mode, reviewers: [...], codex: {...} }`. Do NOT rely on the Workflow's JS return value or
 `TaskOutput`. Each reviewer entry has `status`, optional `verdict`, and `findings[]`. **Staleness guard:**
-verify the file's `scopeLabel`/`mode` match the run you just launched — if absent or different, the file is
+verify its `runtime`, `profile`, `runId`, `scopeLabel`, and `mode` match the run — if absent or different, it is
 a stale leftover (the current run's persist failed), so do NOT trust it.
 
 **Journal fallback (before declaring reviewers BLOCKED):** if the file is missing, stale, or unparseable,
 reconstruct from the run's journal first. The Workflow tool result named the run's `runId` and transcript
 directory; `<transcript dir>/journal.jsonl` records every agent's structured return as
 `{"type":"result", ..., "result": <object>}` lines. Reviewer results echo `name`, refuter verdicts echo
-`file`/`line` — rebuild `{ scopeLabel, mode, reviewers: [...] }` (criticals count as refuted only when
+`file`/`line` — rebuild
+`{ runtime: "claude", profile: "focused", runId, scopeLabel, mode, reviewers: [...] }`
+(criticals count as refuted only when
 BOTH of their two verdicts refute; importants on one). This pairing is **best-effort, not
 deterministic** — the journal has no record of an agent's `label`, only the schema-optional
 `file`/`line` echo, so if a verdict omits it or matches more than one finding, leave that finding
@@ -259,15 +252,15 @@ refutation pass in-script, so there is nothing to launch or poll here:
 - `codex.status`: `DONE` / `BLOCKED` / `SKIPPED` (SKIPPED when you passed `codex: null`). Surface
   `codex.blocked_reason` verbatim when BLOCKED.
 - `codex.outcome === "structured"` → the structured review lives in
-  `.focused-code-review/raw/codex-adversarial.json` (`payload.result`); Phase 6's script reads it directly.
+  `<runDir>/raw/codex-adversarial.json` (`payload.result`); Phase 6's script reads it directly.
 - `codex.outcome === "degraded"` → structured output was unavailable; `codex.degraded_refs` holds the
   existence-checked `file:line` refs recovered from the narrative output. Add the **mandatory degraded
   note** in both the Reviewers table Verdict cell (suffix `(degraded — narrative fallback)`) and the
   Codex section ("structured output unavailable — findings recovered from narrative fallback; degraded,
   not schema-validated").
 - `codex.verifyRan === true` → the workflow refuted the critical/high/medium Codex findings and
-  persisted `.focused-code-review/raw/codex-verify-result.json`. Read it, apply the same
-  `scopeLabel`/`mode` staleness guard as above; findings annotated `refuted: true` go to Dropped
+  persisted `<runDir>/raw/codex-verify-result.json`. Read it, apply the same five-field staleness
+  guard as above; findings annotated `refuted: true` go to Dropped
   Findings (`refuted`, with `refute_reason`) — never resurrect them. If the file is missing/stale
   despite `verifyRan: true` → keep ALL Codex findings unrefuted AND add a mandatory report note
   ("Codex findings not adversarially verified — verify pass failed"). Never drop a finding because
@@ -280,15 +273,15 @@ Do NOT hand-execute citation checks — run the sibling skill's script (spec:
 `comprehensive-code-review/references/workflow-and-codex.md` §6). Write the changed-files list first:
 
 ```bash
-printf '%s\n' "$CHANGED_FILES" > .focused-code-review/raw/changed-files.txt
+printf '%s\n' "$CHANGED_FILES" > "$RUN_DIR/raw/changed-files.txt"
 node "<comprehensive-code-review skill dir>/scripts/verify-citations.mjs" \
-  --workflow-result .focused-code-review/raw/workflow-result.json \
-  --codex .focused-code-review/raw/codex-adversarial.json \
-  --codex-verify .focused-code-review/raw/codex-verify-result.json \
+  --workflow-result "$RUN_DIR/raw/workflow-result.json" \
+  --codex "$RUN_DIR/raw/codex-adversarial.json" \
+  --codex-verify "$RUN_DIR/raw/codex-verify-result.json" \
   --mode "$MODE" \
-  --changed-files .focused-code-review/raw/changed-files.txt \
+  --changed-files "$RUN_DIR/raw/changed-files.txt" \
   --repo-root "$REPO_ROOT" \
-  --out .focused-code-review/raw/verified-findings.json
+  --out "$RUN_DIR/raw/verified-findings.json"
 ```
 
 Omit `--codex` when Codex is SKIPPED/BLOCKED or took the degraded fallback (the script processes only
@@ -320,17 +313,17 @@ Phase 7 warning line).
    preserved — and tagged `outside_diff`.)
 2. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by severity
    DESC, then `confidence` DESC, then file ASC.
-3. Write the consolidated report to `.focused-code-review/report-<UTC-iso>.md` using the skeleton in
+3. Write the consolidated report to `<runDir>/report.md` using the skeleton in
    `comprehensive-code-review/references/report-format.md`. In the Scope section, list the excluded
    build-output patterns and note this is a **focused review (5 reviewers + Codex)**, not the comprehensive
-   one. The raw JSON files under `.focused-code-review/raw/` are the machine record — do NOT render
+   one. The raw JSON files under `<runDir>/raw/` are the machine record — do NOT render
    per-reviewer or Codex `.md` files.
 4. Print the summary:
 
    ```
    ## Focused Code Review complete
 
-   Report: .focused-code-review/report-<ts>.md
+   Report: <runDir>/report.md
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)

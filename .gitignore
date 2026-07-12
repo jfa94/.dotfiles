@@ -26,6 +26,7 @@
 .claude/CLAUDE.local.md
 .claude/tool-audit.jsonl
 .claude-plugin-data/
+.code-review/
 .comprehensive-code-review/
 .focused-code-review/
 .claude/read-once/session-*.jsonl

@@ -95,9 +95,66 @@ link_codex_user_config() {
   link_file "$src" "$dest" "~/.codex/config.toml"
 }
 
-link_claude_skills_for_codex() {
+link_skills_for_codex() {
+  local skills_dest="$HOME/.agents/skills"
+  local legacy_src="$DOTFILES_DIR/.claude/skills"
+  local codex_src="$DOTFILES_DIR/.codex/skills/code-review"
+  local skill src name target answer
+
   mkdir -p "$HOME/.agents"
-  link_file "$DOTFILES_DIR/.claude/skills" "$HOME/.agents/skills" "~/.agents/skills"
+
+  # Migrate the previously managed whole-tree link without treating it as a
+  # user conflict. Other root conflicts retain setup's normal policy.
+  if [[ -L "$skills_dest" && "$(readlink "$skills_dest")" == "$legacy_src" ]]; then
+    rm "$skills_dest"
+    mkdir -p "$skills_dest"
+    replaced+=("~/.agents/skills (migrated to per-skill links)")
+  elif [[ ! -d "$skills_dest" ]]; then
+    if [[ -e "$skills_dest" || -L "$skills_dest" ]]; then
+      if [[ "$MODE" == "skip" ]]; then
+        skipped+=("~/.agents/skills")
+        success "~/.agents/skills skipped (conflict)"
+        return
+      elif [[ "$MODE" == "prompt" ]]; then
+        read -rp "  ~/.agents/skills already exists. Replace? [y/n]: " answer < /dev/tty
+        if [[ "$answer" != "y" ]]; then
+          skipped+=("~/.agents/skills")
+          success "~/.agents/skills skipped (user chose)"
+          return
+        fi
+      fi
+      if [[ -L "$skills_dest" ]]; then
+        rm "$skills_dest"
+        replaced+=("~/.agents/skills")
+      else
+        rm -rf "${skills_dest}.bak"
+        mv "$skills_dest" "${skills_dest}.bak"
+        replaced+=("~/.agents/skills (prior saved to ~/.agents/skills.bak)")
+      fi
+    fi
+    mkdir -p "$skills_dest"
+  fi
+
+  # Remove only links previously owned by this setup. This cleans deleted
+  # skills and removes the two Claude Workflow skills from Codex discovery.
+  while IFS= read -r skill; do
+    target="$(readlink "$skill")"
+    name="$(basename "$skill")"
+    if [[ "$target" == "$legacy_src/"* || "$target" == "$DOTFILES_DIR/.codex/skills/"* ]]; then
+      if [[ ! -e "$target" || "$name" == "comprehensive-code-review" || "$name" == "focused-code-review" ]]; then
+        rm "$skill"
+        info "Pruned Codex skill link: ${skill/#$HOME/~}"
+      fi
+    fi
+  done < <(find "$skills_dest" -mindepth 1 -maxdepth 1 -type l 2>/dev/null)
+
+  while IFS= read -r src; do
+    name="$(basename "$src")"
+    [[ "$name" == "comprehensive-code-review" || "$name" == "focused-code-review" ]] && continue
+    link_file "$src" "$skills_dest/$name" "~/.agents/skills/$name"
+  done < <(find "$legacy_src" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | sort)
+
+  link_file "$codex_src" "$skills_dest/code-review" "~/.agents/skills/code-review"
 }
 
 # --- Linux package lists (native, in-repo packages only) ---
@@ -300,6 +357,9 @@ done
 # knows what belongs to the repo — no hand-maintained exclusion lists.
 for prefix in .claude .codex .config; do
   while IFS= read -r -d '' path; do
+    # Codex-only skills are exposed through ~/.agents/skills, not duplicated
+    # under ~/.codex/skills by the path-for-path config linker.
+    [[ "$path" == .codex/skills/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     rel="${path#"$prefix"/}"
     dest="$HOME/$prefix/$rel"
@@ -323,14 +383,14 @@ if [[ ! -L "$codex_config_dest" || "$(readlink "$codex_config_dest")" != "$codex
   fi
 fi
 
-# Codex discovers user-authored skills under ~/.agents/skills. Keep Claude's
-# directory as the source of truth and expose the entire tree without copies.
+# Codex discovers user-authored skills under ~/.agents/skills. Setup owns its
+# individual links while preserving unrelated entries in the real directory.
 shared_skills_src="$DOTFILES_DIR/.claude/skills"
 shared_skills_dest="$HOME/.agents/skills"
-if [[ ! -L "$shared_skills_dest" || "$(readlink "$shared_skills_dest")" != "$shared_skills_src" ]]; then
-  if [[ -e "$shared_skills_dest" || -L "$shared_skills_dest" ]]; then
-    conflicts+=("~/.agents/skills")
-  fi
+if [[ -L "$shared_skills_dest" && "$(readlink "$shared_skills_dest")" == "$shared_skills_src" ]]; then
+  : # Legacy setup-owned link; migrate automatically.
+elif [[ -e "$shared_skills_dest" && ! -d "$shared_skills_dest" || -L "$shared_skills_dest" ]]; then
+  conflicts+=("~/.agents/skills")
 fi
 
 # DOTFILES_MODE=replace|skip|prompt skips the interactive conflict prompt
@@ -382,6 +442,7 @@ done
 for prefix in .claude .codex .config; do
   info "Creating ~/$prefix symlinks..."
   while IFS= read -r -d '' path; do
+    [[ "$path" == .codex/skills/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     rel="${path#"$prefix"/}"
     dest="$HOME/$prefix/$rel"
@@ -392,7 +453,7 @@ done
 
 link_codex_user_config
 
-link_claude_skills_for_codex
+link_skills_for_codex
 
 # Ensure hook scripts are executable (git may not preserve +x on all systems)
 find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true

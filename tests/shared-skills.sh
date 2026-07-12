@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # Variables are consumed by eval-loaded setup helpers.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -6,10 +7,9 @@ SETUP="$ROOT/setup.sh"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
-# Exercise the production helpers without running package installation or other
-# setup sections.
+# Exercise production helpers without running package installation.
 eval "$(sed -n '/^link_file() {/,/^}/p' "$SETUP")"
-eval "$(sed -n '/^link_claude_skills_for_codex() {/,/^}/p' "$SETUP")"
+eval "$(sed -n '/^link_skills_for_codex() {/,/^}/p' "$SETUP")"
 
 info() { :; }
 success() { :; }
@@ -18,69 +18,92 @@ warn() { :; }
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-linked=()
-replaced=()
-skipped=()
+reset_tracking() { linked=(); replaced=(); skipped=(); }
+
+DOTFILES_DIR="$tmp/fixture"
+mkdir -p \
+  "$DOTFILES_DIR/.claude/skills/shared/references" \
+  "$DOTFILES_DIR/.claude/skills/comprehensive-code-review" \
+  "$DOTFILES_DIR/.claude/skills/focused-code-review" \
+  "$DOTFILES_DIR/.codex/skills/code-review"
+touch \
+  "$DOTFILES_DIR/.claude/skills/shared/SKILL.md" \
+  "$DOTFILES_DIR/.claude/skills/shared/references/guide.md" \
+  "$DOTFILES_DIR/.claude/skills/comprehensive-code-review/SKILL.md" \
+  "$DOTFILES_DIR/.claude/skills/focused-code-review/SKILL.md" \
+  "$DOTFILES_DIR/.codex/skills/code-review/SKILL.md"
+
+# Fresh install creates a real root with individual links and exclusions.
+HOME="$tmp/fresh-home"
 MODE=replace
-
-# The real authored tree is exposed wholesale, including nested resources.
-DOTFILES_DIR="$ROOT"
-HOME="$tmp/real-home"
-link_claude_skills_for_codex
-[[ -L "$HOME/.agents/skills" ]] || fail 'shared skill root is not a symlink'
-[[ "$(readlink "$HOME/.agents/skills")" == "$ROOT/.claude/skills" ]] || fail 'shared skill root targets the wrong directory'
-
-while IFS= read -r skill; do
-  rel="${skill#"$ROOT/.claude/skills/"}"
-  [[ -f "$HOME/.agents/skills/$rel" ]] || fail "shared tree missing $rel"
-done < <(find "$ROOT/.claude/skills" -mindepth 2 -maxdepth 2 -name SKILL.md -type f | sort)
+reset_tracking
+link_skills_for_codex
+[[ -d "$HOME/.agents/skills" && ! -L "$HOME/.agents/skills" ]] || fail 'skill root is not a real directory'
+[[ "$(readlink "$HOME/.agents/skills/shared")" == "$DOTFILES_DIR/.claude/skills/shared" ]] || fail 'shared skill link is wrong'
+[[ -f "$HOME/.agents/skills/shared/references/guide.md" ]] || fail 'nested shared resource is unavailable'
+[[ "$(readlink "$HOME/.agents/skills/code-review")" == "$DOTFILES_DIR/.codex/skills/code-review" ]] || fail 'Codex-only skill link is wrong'
+[[ ! -e "$HOME/.agents/skills/comprehensive-code-review" ]] || fail 'comprehensive Claude skill was exposed'
+[[ ! -e "$HOME/.agents/skills/focused-code-review" ]] || fail 'focused Claude skill was exposed'
 
 # Re-running is idempotent.
-link_claude_skills_for_codex
-[[ ${#linked[@]} -eq 1 ]] || fail 'idempotent rerun recreated the symlink'
+link_skills_for_codex
+[[ ${#linked[@]} -eq 2 ]] || fail 'idempotent rerun recreated links'
 
-# A whole-tree link exposes later additions without setup reconciliation.
-DOTFILES_DIR="$tmp/fixture"
-HOME="$tmp/fixture-home"
-mkdir -p "$DOTFILES_DIR/.claude/skills/first"
-touch "$DOTFILES_DIR/.claude/skills/first/SKILL.md"
-link_claude_skills_for_codex
-mkdir -p "$DOTFILES_DIR/.claude/skills/later/references"
-touch "$DOTFILES_DIR/.claude/skills/later/SKILL.md"
-touch "$DOTFILES_DIR/.claude/skills/later/references/guide.md"
-[[ -f "$HOME/.agents/skills/later/SKILL.md" ]] || fail 'new skill is not visible through shared root'
-[[ -f "$HOME/.agents/skills/later/references/guide.md" ]] || fail 'nested skill resource is not visible'
+# A setup-owned legacy whole-tree link migrates without losing skill access.
+HOME="$tmp/legacy-home"
+mkdir -p "$HOME/.agents"
+ln -s "$DOTFILES_DIR/.claude/skills" "$HOME/.agents/skills"
+reset_tracking
+link_skills_for_codex
+[[ -d "$HOME/.agents/skills" && ! -L "$HOME/.agents/skills" ]] || fail 'legacy root link was not migrated'
+[[ -L "$HOME/.agents/skills/shared" ]] || fail 'migration omitted shared skill'
+[[ -L "$HOME/.agents/skills/code-review" ]] || fail 'migration omitted Codex skill'
 
-# Replace also repairs a symlink that points at another skill source.
-HOME="$tmp/wrong-link-home"
-mkdir -p "$HOME/.agents" "$tmp/other-skills"
-ln -s "$tmp/other-skills" "$HOME/.agents/skills"
-MODE=replace
-link_claude_skills_for_codex
-[[ "$(readlink "$HOME/.agents/skills")" == "$DOTFILES_DIR/.claude/skills" ]] || fail 'replace mode did not repair a wrong symlink'
+# Existing real directories and unrelated contents are preserved.
+HOME="$tmp/preserve-home"
+mkdir -p "$HOME/.agents/skills/unowned"
+touch "$HOME/.agents/skills/unowned/keep"
+reset_tracking
+link_skills_for_codex
+[[ -f "$HOME/.agents/skills/unowned/keep" ]] || fail 'unowned content was removed'
 
-# Replace preserves an existing real directory as the standard backup.
+# Replace handles per-skill conflicts while preserving the prior entry.
 HOME="$tmp/replace-home"
-mkdir -p "$HOME/.agents/skills"
-touch "$HOME/.agents/skills/existing"
+mkdir -p "$HOME/.agents/skills/shared"
+touch "$HOME/.agents/skills/shared/existing"
 MODE=replace
-link_claude_skills_for_codex
-[[ -L "$HOME/.agents/skills" ]] || fail 'replace mode did not install the shared link'
-[[ -f "$HOME/.agents/skills.bak/existing" ]] || fail 'replace mode did not preserve prior content'
+reset_tracking
+link_skills_for_codex
+[[ -L "$HOME/.agents/skills/shared" ]] || fail 'replace did not install shared link'
+[[ -f "$HOME/.agents/skills/shared.bak/existing" ]] || fail 'replace did not back up conflict'
 
-# Skip leaves an existing real directory untouched.
+# Skip leaves a per-skill conflict untouched but installs other links.
 HOME="$tmp/skip-home"
-mkdir -p "$HOME/.agents/skills"
-touch "$HOME/.agents/skills/existing"
+mkdir -p "$HOME/.agents/skills/shared"
+touch "$HOME/.agents/skills/shared/existing"
 MODE=skip
-link_claude_skills_for_codex
-[[ ! -L "$HOME/.agents/skills" ]] || fail 'skip mode replaced existing content'
-[[ -f "$HOME/.agents/skills/existing" ]] || fail 'skip mode removed existing content'
+reset_tracking
+link_skills_for_codex
+[[ ! -L "$HOME/.agents/skills/shared" && -f "$HOME/.agents/skills/shared/existing" ]] || fail 'skip replaced shared conflict'
+[[ -L "$HOME/.agents/skills/code-review" ]] || fail 'skip prevented unrelated Codex skill link'
+
+# Only setup-owned stale/excluded links are pruned.
+HOME="$tmp/prune-home"
+mkdir -p "$HOME/.agents/skills" "$tmp/unowned"
+ln -s "$DOTFILES_DIR/.claude/skills/comprehensive-code-review" "$HOME/.agents/skills/comprehensive-code-review"
+ln -s "$DOTFILES_DIR/.claude/skills/deleted" "$HOME/.agents/skills/deleted"
+ln -s "$tmp/unowned" "$HOME/.agents/skills/unowned"
+MODE=replace
+reset_tracking
+link_skills_for_codex
+[[ ! -e "$HOME/.agents/skills/comprehensive-code-review" ]] || fail 'excluded owned link was retained'
+[[ ! -e "$HOME/.agents/skills/deleted" ]] || fail 'stale owned link was retained'
+[[ -L "$HOME/.agents/skills/unowned" ]] || fail 'unowned link was pruned'
 
 [[ ! -e "$ROOT/.agents/skills" ]] || fail 'repo contains a duplicate .agents skill tree'
-[[ "$(grep -c '^link_claude_skills_for_codex$' "$SETUP")" -eq 1 ]] || fail 'setup does not invoke shared skill linking exactly once'
-if grep -Eq '(cp|rsync).*(\.claude/skills|\.agents/skills)' "$SETUP"; then
-  fail 'setup copies skills instead of sharing the directory'
+[[ "$(grep -c '^link_skills_for_codex$' "$SETUP")" -eq 1 ]] || fail 'setup does not invoke skill linking exactly once'
+if grep -Eq '(cp|rsync).*(\.claude/skills|\.codex/skills|\.agents/skills)' "$SETUP"; then
+  fail 'setup copies skills'
 fi
 
 printf 'OK\n'

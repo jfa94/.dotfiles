@@ -270,6 +270,23 @@ test("excluded paths dropped: dist/ segment and lockfile", (t) => {
   );
 });
 
+test("review artifacts are always excluded from findings", (t) => {
+  const out = run(t, {
+    files: { ".code-review/runs/example/report.md": "generated review report" },
+    reviewers: [
+      reviewer("quality", [
+        finding({
+          file: ".code-review/runs/example/report.md",
+          line: 1,
+          verbatim: "generated review report",
+        }),
+      ]),
+    ],
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.dropped[0].verification, "dropped_excluded_build_output");
+});
+
 test("dedup: nearby findings merge, highest severity wins, also_flagged_by set", (t) => {
   const out = run(t, {
     files: { "src/a.js": SRC },

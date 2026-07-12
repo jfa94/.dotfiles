@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Run focused or comprehensive native reviews"
+  default_prompt: "Use $code-review focused to review my current changes."

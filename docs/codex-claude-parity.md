@@ -28,6 +28,22 @@ Audited against `.claude/settings.json` and Codex 0.144.1. Status-line behavior 
 | SessionStart startup | Dotfiles symlink-integrity warning | Intentional replacement for Claude model mutation |
 | SessionStart compact | First/latest genuine rollout `event_msg.user_message`, capped with rollout pointer | Approximate; visible warning on unreadable/schema-changed rollouts |
 | Read-once | Dormant | Exact: inactive in Claude |
+| Code review | Codex-only `.codex/skills/code-review` router references Claude's canonical specialist prompts | Equivalent reviewer roles; runtime orchestration differs |
+
+## Code-review skills and artifacts
+
+Claude retains `/focused-code-review` and `/comprehensive-code-review` under `.claude/skills/`. Codex exposes its own `$code-review` router from `.codex/skills/code-review`; this keeps the Codex interface out of Claude Code while avoiding copied reviewer prompts. Claude-owned agents, prompts, and verification assets remain canonical under `.claude/skills/comprehensive-code-review/` and the Codex router references them directly.
+
+Both runtimes write each review to a unique directory:
+
+```text
+.code-review/runs/<UTC timestamp>-<profile>-<nonce>/
+├── report.md
+├── run.json
+└── raw/
+```
+
+The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and `.focused-code-review/` ignore entries remain for historical artifacts; new runs must not use them.
 
 ## Intentional gaps
 

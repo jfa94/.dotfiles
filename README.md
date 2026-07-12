@@ -25,7 +25,7 @@ chmod +x ~/.dotfiles/setup.sh && ~/.dotfiles/setup.sh
 The script:
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
-- Symlinks Claude Code config into `~/.claude/` (settings, hooks, skills, agents, statusline), exposes the same skill tree to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
+- Symlinks Claude Code config into `~/.claude/` (settings, hooks, skills, agents, statusline), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
 - Symlinks the authored `.codex/user-config.toml` to `~/.codex/config.toml`, including native TUI status-line settings.
 - Installs Homebrew (if missing) and the `Brewfile` packages.
 - Installs the Claude Code CLI and the plugins/marketplaces listed in `.claude/plugins.txt`.
@@ -36,11 +36,15 @@ It is idempotent — re-running skips anything already linked. If conflicts are 
 
 ### Shared Claude and Codex skills
 
-`.claude/skills` is the only authored skill tree. Setup links the whole directory
-to `~/.agents/skills`, Codex's user-level discovery location, so new or removed
-skills are visible to both tools without copies or per-skill link maintenance.
-This reserves `~/.agents/skills` for the shared tree; existing content follows
-setup's normal replace, skip, or prompt conflict policy.
+Setup maintains a real `~/.agents/skills` directory containing individual
+symlinks. Compatible shared skills link from `.claude/skills`; the Codex-only
+`code-review` skill links from `.codex/skills/code-review`. Claude's
+`comprehensive-code-review` and `focused-code-review` skills are deliberately
+excluded because they depend on Claude Workflow APIs. Nothing is copied.
+
+Unrelated entries in `~/.agents/skills` are preserved. Per-skill name conflicts
+follow setup's replace, skip, or prompt policy. Setup also migrates its legacy
+whole-tree symlink automatically and prunes only stale links it owns.
 
 Codex normally detects skill changes automatically. Restart it if an update does
 not appear. Discovery does not translate Claude-specific tools or metadata, so

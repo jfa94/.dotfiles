@@ -3,8 +3,9 @@
 ## File locations
 
 ```
-.comprehensive-code-review/
-├── report-<UTC-iso>.md              # final consolidated report (this format) — the only human render
+<runDir>/                            # .code-review/runs/<runId>/
+├── report.md                        # final consolidated report (this format) — the only human render
+├── run.json                         # runtime/profile/run identity + lifecycle status
 └── raw/                             # machine record; no per-reviewer or Codex .md renders
     ├── workflow-result.json         # reviewer fan-out output (persisted by the workflow)
     ├── codex-adversarial.json       # Codex structured machine output (source of truth)
@@ -26,10 +27,10 @@
 - Agent scope: <e.g., "ENTIRE CODEBASE (current state)" | "abc123...HEAD" | "working tree vs HEAD">
 - Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~30...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
 - Files reviewed: <N>
-- Excluded build outputs: dist, build, out, .next, .nuxt, .svelte-kit, .output, coverage, _.min.js, _.min.css, \*.map
+- Excluded local/generated outputs: .code-review, dist, build, out, .next, .nuxt, .svelte-kit, .output, coverage, _.min.js, _.min.css, \*.map
 - Lines changed: +<M> -<K> (omit for --full)
 - Coverage note: <only when applicable — `--full`: "hotspot-prioritized sampling, not exhaustive";
-  diff modes with >2000-line diff: "manifest mode: full diff at .comprehensive-code-review/raw/full-diff.patch,
+  diff modes with >2000-line diff: "manifest mode: full diff at <runDir>/raw/full-diff.patch,
   reviewers instructed to read all of it in risk order"; add "partial coverage — diff exceeds a single
   reviewer's context, highest-risk files prioritized" only if the pathological fallback triggered>
 
@@ -235,7 +236,7 @@ production data shapes or volumes. Absence of findings here is not evidence of a
 
 ## Raw Outputs
 
-Full reviewer outputs are in `.comprehensive-code-review/raw/`.
+Full reviewer outputs are in `<runDir>/raw/`.
 ```
 
 ## Severity mapping
