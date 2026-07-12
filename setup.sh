@@ -17,6 +17,11 @@ DOTFILES=(
   .tmux.conf
 )
 
+# This tracked file is user-level Codex config, not project-local config.
+# Its non-standard source name prevents Codex loading it twice in this repo.
+CODEX_USER_CONFIG=".codex/user-config.toml"
+CODEX_LEGACY_CONFIG=".codex/config.toml"
+
 # --- Helpers ---
 info()    { printf '[INFO] %s\n' "$1"; }
 success() { printf '[OK]   %s\n' "$1"; }
@@ -72,6 +77,22 @@ link_file() {
   ln -s "$src" "$dest"
   linked+=("$label")
   success "$label linked"
+}
+
+link_codex_user_config() {
+  local src="$DOTFILES_DIR/$CODEX_USER_CONFIG"
+  local dest="$HOME/.codex/config.toml"
+  local legacy_src="$DOTFILES_DIR/$CODEX_LEGACY_CONFIG"
+
+  mkdir -p "$(dirname "$dest")"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$legacy_src" ]]; then
+    rm -f "$dest"
+    ln -s "$src" "$dest"
+    replaced+=("~/.codex/config.toml (legacy link migrated)")
+    success "~/.codex/config.toml legacy link migrated"
+    return
+  fi
+  link_file "$src" "$dest" "~/.codex/config.toml"
 }
 
 link_claude_skills_for_codex() {
@@ -279,6 +300,7 @@ done
 # knows what belongs to the repo — no hand-maintained exclusion lists.
 for prefix in .claude .codex .config; do
   while IFS= read -r -d '' path; do
+    [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     rel="${path#"$prefix"/}"
     dest="$HOME/$prefix/$rel"
     if [[ -L "$dest" && "$(readlink "$dest")" == "$DOTFILES_DIR/$path" ]]; then
@@ -289,6 +311,17 @@ for prefix in .claude .codex .config; do
     fi
   done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
 done
+
+codex_config_src="$DOTFILES_DIR/$CODEX_USER_CONFIG"
+codex_config_dest="$HOME/.codex/config.toml"
+codex_legacy_config_src="$DOTFILES_DIR/$CODEX_LEGACY_CONFIG"
+if [[ ! -L "$codex_config_dest" || "$(readlink "$codex_config_dest")" != "$codex_config_src" ]]; then
+  if [[ ! -L "$codex_config_dest" || "$(readlink "$codex_config_dest")" != "$codex_legacy_config_src" ]]; then
+    if [[ -e "$codex_config_dest" || -L "$codex_config_dest" ]]; then
+      conflicts+=("~/.codex/config.toml")
+    fi
+  fi
+fi
 
 # Codex discovers user-authored skills under ~/.agents/skills. Keep Claude's
 # directory as the source of truth and expose the entire tree without copies.
@@ -349,12 +382,15 @@ done
 for prefix in .claude .codex .config; do
   info "Creating ~/$prefix symlinks..."
   while IFS= read -r -d '' path; do
+    [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     rel="${path#"$prefix"/}"
     dest="$HOME/$prefix/$rel"
     mkdir -p "$(dirname "$dest")"
     link_file "$DOTFILES_DIR/$path" "$dest" "~/$prefix/$rel"
   done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
 done
+
+link_codex_user_config
 
 link_claude_skills_for_codex
 
@@ -377,7 +413,8 @@ done
 find "$HOME/.codex/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # Register the git clean filter that strips Codex-managed [hooks.state] from
-# .codex/config.toml on commit. The working file (symlinked into ~/.codex) keeps
+# .codex/user-config.toml on commit. The working file (symlinked to
+# ~/.codex/config.toml) keeps
 # the section so hook-trust survives; git just never sees the machine-specific
 # churn. Filter definitions live in git config (not .gitattributes) for security.
 if command -v git >/dev/null 2>&1 && [[ -d "$DOTFILES_DIR/.git" ]]; then

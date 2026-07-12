@@ -1,1 +1,1 @@
-.codex/config.toml filter=codex-strip-hooks-state
+.codex/user-config.toml filter=codex-strip-hooks-state

@@ -26,7 +26,7 @@ The script:
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
 - Symlinks Claude Code config into `~/.claude/` (settings, hooks, skills, agents, statusline), exposes the same skill tree to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
-- Symlinks Codex config into `~/.codex/`, including native TUI status-line settings from `.codex/config.toml`.
+- Symlinks the authored `.codex/user-config.toml` to `~/.codex/config.toml`, including native TUI status-line settings.
 - Installs Homebrew (if missing) and the `Brewfile` packages.
 - Installs the Claude Code CLI and the plugins/marketplaces listed in `.claude/plugins.txt`.
 - Installs Codex CLI with OpenAI's standalone installer, then installs the plugins listed in `.codex/plugins.txt`.

@@ -15,7 +15,7 @@ Audited against `.claude/settings.json` and Codex 0.144.1. Status-line behavior 
 | Auto-compaction | `model_auto_compact_token_limit = 200000` | Approximate; Claude's five-minute window has no mapping |
 | Fullscreen | `tui.alternate_screen = "always"` | Exact native equivalent |
 | Unfocused notifications | Native TUI notifications with `notification_condition = "unfocused"` | Exact native equivalent |
-| Alt/Ctrl+Enter newline | `tui.keymap.editor.insert_newline` | Exact |
+| Shift/Ctrl+Enter newline | `tui.keymap.editor.insert_newline` | Exact |
 | Config/protected file hooks | Codex PreToolUse scripts | Approximate; current workspace `.codex` uses native sandbox approval, cross-workspace writes deny |
 | SQL read-only | Supabase `execute_sql` matcher plus SQL parser | Approximate parser; fail closed on recognized mutation forms |
 | Compound/dangerous commands | Bash hooks plus exec-policy hard denies | Approximate; unified-exec hook interception is incomplete |
@@ -50,4 +50,4 @@ codex execpolicy check --rules .codex/rules/default.rules '<command>'
 codex --strict-config doctor
 ```
 
-Fresh startup, resume, manual compaction, and automatic compaction at 200,000 tokens require interactive smoke testing. The clean filter must preserve authored configuration above trailing `[hooks.state]` while stripping only trusted hashes.
+Fresh startup, resume, manual compaction, and automatic compaction at 200,000 tokens require interactive smoke testing. User config is authored at `.codex/user-config.toml` and linked to `~/.codex/config.toml` so Codex does not also load it as project-local config. The clean filter must preserve authored configuration above trailing `[hooks.state]` while stripping only trusted hashes.

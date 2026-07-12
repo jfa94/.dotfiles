@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+CODEX_CONFIG="$ROOT/.codex/user-config.toml"
 PASS=0
 
 run_hook() {
@@ -67,8 +68,14 @@ OUT=$(run_hook sessionstart-compact-restore.sh '{"rollout_path":"/missing/rollou
 printf '%s' "$OUT" | jq -e '.hookSpecificOutput.additionalContext | contains("warning")' >/dev/null
 PASS=$((PASS + 1))
 
-STATUS=$(sed -n '/^status_line = \[/,/^]/p' "$ROOT/.codex/config.toml")
+STATUS=$(sed -n '/^status_line = \[/,/^]/p' "$CODEX_CONFIG")
 [[ "$STATUS" == *'"model-with-reasoning"'* && "$STATUS" == *'"five-hour-limit"'* ]]
+NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
+[[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
+FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
+[[ "$FILTERED_CONFIG" == *'notify = '* && "$FILTERED_CONFIG" != *'[hooks.state'* ]]
+[[ ! -e "$ROOT/.codex/config.toml" ]]
+grep -q 'CODEX_USER_CONFIG=".codex/user-config.toml"' "$ROOT/setup.sh"
 ! GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$ROOT" diff --name-only -- '.codex/plugins.txt' '.claude/hooks/superpowers-compact-reinject.sh' | grep -q .
 PASS=$((PASS + 1))
 

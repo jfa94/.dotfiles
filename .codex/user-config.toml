@@ -109,7 +109,7 @@ status_line = [
 status_line_use_colors = true
 
 [tui.keymap.editor]
-insert_newline = ["alt-enter", "ctrl-enter"]
+insert_newline = ["shift-enter", "ctrl-enter"]
 
 [tui.model_availability_nux]
 "gpt-5.5" = 4

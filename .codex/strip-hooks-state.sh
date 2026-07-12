@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# git clean filter: strip Codex-managed [hooks.state] section from config.toml
-# before it enters the index. The working file (symlinked to ~/.codex/config.toml)
+# git clean filter: strip Codex-managed [hooks.state] from user-config.toml
+# before it enters the index. The working file (linked to ~/.codex/config.toml)
 # keeps the section so Codex's hook-trust state survives; only git ignores it.
 #
 # [hooks.state] is always the trailing section Codex appends, so we print
