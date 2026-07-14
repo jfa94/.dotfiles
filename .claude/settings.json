@@ -336,7 +336,7 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opusplan",
+  "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -469,6 +469,15 @@
         ]
       },
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionstart-keep-awake.sh",
+            "statusMessage": "Preventing Windows sleep for this session"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {
@@ -482,6 +491,17 @@
             "command": "~/.claude/hooks/superpowers-compact-reinject.sh",
             "timeout": 10,
             "statusMessage": "Re-arming superpowers after compaction"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionend-keep-awake.sh",
+            "statusMessage": "Releasing Windows sleep-prevention"
           }
         ]
       }

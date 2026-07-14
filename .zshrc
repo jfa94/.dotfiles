@@ -22,3 +22,12 @@ PROMPT='%F{208}%n%f in %F{247}${PWD/#HOME/~}%f ${vcs_info_msg_0_}> '
 
 # Created by `pipx` on 2025-02-17 10:52:55
 export PATH="$PATH:/Users/Javier/.local/bin"
+
+# Ctrl+Left/Right word-jump. Windows Terminal sends the native Ctrl-arrow
+# CSI sequence (1;5D/C) normally, and the Alt-arrow one (1;3D/C) once Ctrl+Left/
+# Right is remapped to it in WT settings.json (done for Claude Code, which has
+# no rebindable word-motion action). Bind both so word-jump works either way.
+bindkey '^[[1;5D' backward-word
+bindkey '^[[1;5C' forward-word
+bindkey '^[[1;3D' backward-word
+bindkey '^[[1;3C' forward-word
