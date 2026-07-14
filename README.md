@@ -57,8 +57,11 @@ The script also runs on Linux (`apt` on Ubuntu/Debian, `pacman` on Arch/CachyOS)
 — no `xcode-select` step, but `sudo` and `curl` are required. Packages install
 via the native package manager instead of Homebrew; a few tools not in the
 default repos (`deno`, `pnpm`, `trufflehog`, `semgrep`, `supabase`) use their
-official install scripts on both distros. Docker is **not** managed on Linux —
-install it yourself (Docker Desktop's WSL integration, or natively on Arch).
+official install scripts on both distros. Docker is installed from Docker's
+official apt repo (Ubuntu/Debian/WSL2) or via `pacman` (Arch/CachyOS); setup
+also adds the current user to the `docker` group (re-login required) and
+starts the daemon (`systemctl`, or `service` when systemd is off, as on
+default WSL2).
 
 ## Codex CLI
 

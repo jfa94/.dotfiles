@@ -15,7 +15,11 @@ fi
 
 # Optional-tool install dirs (Linux / WSL) - deno/pnpm/supabase land here;
 # setup.sh installs them with rc-writing disabled, so this is their only PATH.
-for _d in "$HOME/.deno/bin" "$HOME/.local/share/pnpm" "$HOME/.supabase/bin"; do
+# PNPM_HOME export also matters on Homebrew-pnpm Mac: pnpm needs it set or
+# `pnpm add -g` errors. pnpm v11 moved shims to $PNPM_HOME/bin (was $PNPM_HOME
+# itself pre-v11) - same layout on both platforms.
+export PNPM_HOME="$HOME/.local/share/pnpm"
+for _d in "$HOME/.deno/bin" "$PNPM_HOME/bin" "$HOME/.supabase/bin"; do
   [[ -d "$_d" ]] && export PATH="$PATH:$_d"
 done
 unset _d

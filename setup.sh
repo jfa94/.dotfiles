@@ -268,6 +268,40 @@ install_codex() {
   codex_status="freshly installed"
 }
 
+install_docker() {
+  command -v docker &>/dev/null && return
+  info "Installing Docker..."
+  if [[ "$PKG" == "apt" ]]; then
+    # Docker's official apt repo (download.docker.com), same keyring pattern as
+    # install_gh_apt/install_node_apt above. Distro id/codename from /etc/os-release.
+    local distro codename
+    distro="$(. /etc/os-release && echo "${ID}")"
+    codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"
+    if sudo install -m 0755 -d /etc/apt/keyrings \
+      && curl -fsSL "https://download.docker.com/linux/${distro}/gpg" | sudo tee /etc/apt/keyrings/docker.asc >/dev/null \
+      && sudo chmod a+r /etc/apt/keyrings/docker.asc \
+      && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${distro} ${codename} stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null \
+      && sudo apt-get update \
+      && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+      :
+    else
+      warn "Docker apt repo setup failed; cleaning up partial state"
+      sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
+      return 1
+    fi
+  else
+    sudo pacman -S --needed --noconfirm docker   # Docker has no Arch repo
+  fi
+  command -v docker &>/dev/null || { warn "docker install failed"; return 1; }
+  sudo usermod -aG docker "$(id -un)" || warn "usermod -aG docker failed"
+  # systemd running (normal distros, Arch, WSL2+systemd) -> systemctl; else SysV (WSL2 no systemd).
+  if [[ -d /run/systemd/system ]]; then
+    sudo systemctl enable --now docker || warn "systemctl enable docker failed"
+  else
+    sudo service docker start || warn "service docker start failed"
+  fi
+}
+
 install_packages_linux() {
   if [[ "$PKG" == "apt" ]]; then
     info "Installing packages via apt..."
@@ -279,6 +313,8 @@ install_packages_linux() {
     info "Installing packages via pacman..."
     sudo pacman -Syu --needed --noconfirm "${PACMAN_PACKAGES[@]}"
   fi
+
+  install_docker || warn "docker install failed"
 
   optional_status=""
   for tool in deno pnpm trufflehog semgrep supabase; do
@@ -497,10 +533,10 @@ mkdir -p ~/.vim/plugged
 
 # Each tool's install dir, put on PATH now so presence checks later in this
 # run see it (mirrors what .zprofile does for future login shells:
-# pipx/Claude/Codex->~/.local/bin, deno->~/.deno/bin, pnpm->~/.local/share/pnpm,
-# supabase->~/.supabase/bin; trufflehog installs straight to /usr/local/bin,
-# already on PATH).
-export PATH="$HOME/.local/bin:$HOME/.deno/bin:$HOME/.local/share/pnpm:$HOME/.supabase/bin:$PATH"
+# pipx/Claude/Codex->~/.local/bin, deno->~/.deno/bin, pnpm->~/.local/share/pnpm/bin
+# (v11 shim layout), supabase->~/.supabase/bin; trufflehog installs straight to
+# /usr/local/bin, already on PATH).
+export PATH="$HOME/.local/bin:$HOME/.deno/bin:$HOME/.local/share/pnpm/bin:$HOME/.supabase/bin:$PATH"
 
 if [[ "$OS" == "macos" ]]; then
   brew_status="already installed"
