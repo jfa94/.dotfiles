@@ -28,6 +28,8 @@
 .claude-plugin-data/
 .code-review/
 .code-reviews/
+.comprehensive-code-review/
+.focused-code-review/
 .claude/read-once/session-*.jsonl
 .claude/read-once/snapshots/
 .claude/read-once/stats.jsonl

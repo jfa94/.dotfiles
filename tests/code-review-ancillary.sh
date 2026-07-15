@@ -19,11 +19,42 @@ assert_line .gitignore '.code-review/'
 assert_line .gitignore '.comprehensive-code-review/'
 assert_line .gitignore '.focused-code-review/'
 
-for operation in Read Edit Write; do
-  jq -e --arg rule "${operation}(//Users/Javier/**/.code-review/**)" \
-    '.permissions.allow | index($rule) != null' .claude/settings.json >/dev/null \
-    || fail ".claude/settings.json missing $operation permission"
+SETTINGS=.claude/settings.json
+
+for directory in \
+  .code-review \
+  .comprehensive-code-review \
+  .focused-code-review \
+  .claude-plugin-data \
+  .worktrees; do
+  for operation in Read Edit; do
+    jq -e --arg rule "${operation}(//Users/Javier/**/$directory/**)" \
+      '.permissions.allow | index($rule) != null' "$SETTINGS" >/dev/null \
+      || fail "$SETTINGS missing $operation permission for $directory"
+  done
 done
+
+jq -e '.permissions.allow | index("Write") != null' "$SETTINGS" >/dev/null \
+  || fail "$SETTINGS missing bare Write permission"
+
+if jq -e '.permissions.allow[] | select(startswith("Write("))' "$SETTINGS" >/dev/null; then
+  fail "$SETTINGS contains unsupported scoped Write permission"
+fi
+
+for path in \
+  '//tmp/**' \
+  '//private/tmp/**' \
+  '//var/tmp/**' \
+  '//private/var/tmp/**' \
+  '//var/folders/**' \
+  '//private/var/folders/**'; do
+  jq -e --arg rule "Edit($path)" '.permissions.allow | index($rule) != null' "$SETTINGS" >/dev/null \
+    || fail "$SETTINGS missing absolute $path Edit permission"
+done
+
+if jq -e '.permissions.allow[] | select(test("^Edit\\(/(?:private/)?(?:tmp|var/)"))' "$SETTINGS" >/dev/null; then
+  fail "$SETTINGS contains project-relative temp Edit permission"
+fi
 
 grep -Fq '.codex/skills/code-review' docs/codex-claude-parity.md \
   || fail 'parity doc missing Codex-only skill location'
