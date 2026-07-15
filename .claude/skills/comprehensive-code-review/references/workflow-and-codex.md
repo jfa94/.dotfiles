@@ -9,7 +9,9 @@ contract for all of them.
 After the changed-files empty guard and before any diff, seed, or workflow artifact is written, the
 orchestrator calls `scripts/review-run.mjs init` to atomically create a unique
 `.code-review/runs/<UTC YYYYMMDDTHHMMSSZ>-<profile>-<6 alphanumeric nonce>/raw/` directory. It immediately
-writes `run.json` with `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, `startedAt`, and
+writes `run.json` with `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, `passNumber` (from
+`init --pass-number <n>`, integer ≥1, default 1 — the review⇄fix loop iteration this run is),
+`startedAt`, and
 `status: "RUNNING"`; after report emission the orchestrator calls `review-run.mjs finish` to add
 `completedAt` and set `DONE` or `DONE_WITH_CONCERNS`. Early stops become `ABORTED` with a reason.
 Runs are never cleared or reused. `outDir` is mandatory; the workflow has no legacy/default output
@@ -36,6 +38,8 @@ Workflow({
     outDir: ".code-review/runs/<runId>",
     claudeMdPath: "<path to CLAUDE.md or 'not found'>",
     spec: null | { path: "<spec path>", content: "<spec file content>" },
+    dispositions:
+      null | "<pre-rendered 'Previously adjudicated claims' block (SKILL.md Phase 1) — spliced verbatim into every reviewer prompt; never sent to refuters or Codex>",
     codex: null | {
       cmd: "<absolute path to codex-companion.mjs (CODEX_CMD)>",
       targetFlags: "--base <ref>" | "--scope working-tree",
@@ -121,6 +125,12 @@ Five behaviors live inside the workflow, not the skill:
   withholds the diff from it (it gets the changed-files list only) to avoid context dilution.
 - **Spec scoping**: `args.spec` (when provided) is included ONLY in implementation-reviewer's prompt —
   broadcasting it to every reviewer would cost spec × N tokens and duplicate the acceptance-criteria pass.
+- **Dispositions splicing**: `args.dispositions` (when non-empty) is spliced verbatim into every
+  reviewer prompt before the Output section. It is an INPUT DOCUMENT, not shared belief-state —
+  reviewers stay fresh on everything it doesn't list. Refuters and the Codex track never see it
+  (Codex re-raises are killed deterministically at citation verification instead). Reviewer prompts
+  also instruct that every critical/important finding set `reachability`
+  (direct/conditional/theoretical).
 - **Codex track**: when `args.codex` is set, a codex-runner agent (`general-purpose`, so Bash is
   guaranteed) runs the adversarial-review CLI per §3, applies the §6 validity/staleness gates and
   structured/degraded routing, and returns the track's terminal state — concurrent with the reviewer
@@ -152,6 +162,8 @@ Five behaviors live inside the workflow, not the skill:
       "title": "<one-line title>",
       "why": "<reasoning>",
       "fix_sketch": "<one sentence, optional>",
+      "reachability": "direct | conditional | theoretical (required on critical/important: direct = fails under normal operation; conditional = specific but plausible state; theoretical = improbable operational sequence — important+theoretical is downgraded to minor downstream)",
+      "challenges_disposition": "<ledger id, optional — ONLY to challenge a previously-adjudicated claim with NEW evidence>",
       "kind": "local | systemic (systemic-failure-reviewer only)",
       "failure_mode": "stuck-state | invariant-without-repair | unsafe-recovery | over-pinned-contract (systemic only)",
       "scenario": "<one-sentence trigger→stuck-state chain (systemic only)>",
@@ -434,8 +446,37 @@ changed-files list with `outside_diff: true` (diff modes only), maps Codex nativ
 standard scale (`critical→critical`, `high|medium→important`, `low→minor`, native kept as
 `codex_severity`), dedups across reviewers (same file AND same `kind` AND (lines ±3 OR identical
 collapsed verbatim); highest severity wins, others in `also_flagged_by`), and emits
-`stats.perReviewer` (verified / refuted / citation-dropped counts) + `stats.duplicatesMerged` for
-the report's Calibration line.
+`stats.perReviewer` (verified / refuted / adjudicated / citation-dropped counts) +
+`stats.duplicatesMerged` + `stats.previouslyAdjudicated` + `stats.blocking` for the report's
+Summary and Calibration lines.
+
+### Dispositions, reachability downgrade, blocking (anti-ratcheting)
+
+Between the refuted/citation drops and dedup, the script runs three deterministic passes over the
+verified findings (change the script and this spec together):
+
+1. **Reachability downgrade** — `severity === "important"` AND `reachability === "theoretical"` →
+   severity becomes `minor` with `downgraded_from: "important"`. Criticals never auto-downgrade;
+   a missing `reachability` leaves the severity untouched (conservative).
+2. **Adjudication split** — optional `--dispositions <path>` points at the cross-run ledger
+   `<repoRoot>/.code-review/dispositions.json` (written by `review-run.mjs disposition`). A missing
+   file is a no-op (fresh repo); an unreadable/invalid one sets `dispositionsError` in the output
+   and skips matching (fail-open, the `codexPayloadError` pattern). Entries with status
+   `overturned` never match. **Match** = same repo-relative `file` AND (exact normalized title OR
+   ≥2 fingerprint keywords all present in the normalized title+why), where normalization =
+   lowercase, strip non-alphanumerics, collapse whitespace. Codex findings arrive with
+   `why = body`, so the same matcher deterministically kills blind Codex re-raises. Matched
+   findings move to a separate `previouslyAdjudicated[]` output array (finding + `disposition_id`
+   / `disposition_status` / `disposition_reason`; per-reviewer `adjudicated` stat) — not in
+   `findings`, not in `dropped`, excluded from dedup and blocking. **Exception**: a finding with
+   `challenges_disposition === <matched id>` stays actionable (it already survived its own
+   refutation); a challenge whose id matches nothing (or a different entry) also stays, annotated
+   `challenge_unmatched: true` — surfaced, never silently dropped.
+3. **Blocking computation** (after dedup) — every surviving finding gets
+   `blocking: severity === "critical" || (severity === "important" && reviewer not in
+   NONBLOCKING_REVIEWERS)`, with `NONBLOCKING_REVIEWERS = { test-coverage-reviewer,
+   simplification-reviewer, comment-accuracy-reviewer, documentation-reviewer }`. `stats.blocking`
+   is the count; the report's Summary verdict is NEEDS-CHANGES iff it is > 0.
 
 **Harvest** — the workflow's codex-runner agent applies these gates and routing itself and reports
 the result in `workflow-result.json`'s `codex` key (the orchestrator re-applies them only in the

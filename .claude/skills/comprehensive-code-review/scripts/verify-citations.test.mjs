@@ -28,6 +28,9 @@ function run(
     codexMissing,
     codexVerify,
     codexVerifyRaw,
+    dispositions,
+    dispositionsRaw,
+    dispositionsMissing,
     mode = "working-tree",
     changed,
   },
@@ -72,6 +75,18 @@ function run(
     writeFileSync(p, changed.join("\n"));
     args.push("--changed-files", p);
   }
+  if (dispositions || dispositionsRaw !== undefined || dispositionsMissing) {
+    const p = path.join(dir, "dispositions.json");
+    if (!dispositionsMissing) {
+      writeFileSync(
+        p,
+        dispositionsRaw !== undefined
+          ? dispositionsRaw
+          : JSON.stringify({ version: 1, dispositions }),
+      );
+    }
+    args.push("--dispositions", p);
+  }
   execFileSync(process.execPath, args);
   return JSON.parse(readFileSync(path.join(dir, "out.json"), "utf8"));
 }
@@ -101,6 +116,14 @@ const reviewer = (name, findings, over = {}) => ({
   name,
   status: "DONE",
   findings,
+  ...over,
+});
+
+const dispo = (over = {}) => ({
+  id: 1,
+  status: "accepted-risk",
+  fingerprint: { file: "src/a.js", title: "t", keywords: [] },
+  reason: "single-writer topology",
   ...over,
 });
 
@@ -557,4 +580,234 @@ test("Calibration buckets: exclusion/existence drops land in droppedOther, not d
   assert.equal(out.stats.perReviewer.quality.droppedCitation, 0);
   assert.equal(out.stats.perReviewer.security.droppedCitation, 1);
   assert.equal(out.stats.perReviewer.security.droppedOther, 0);
+});
+
+// --- Disposition ledger (anti-ratcheting) ---
+
+test("disposition exact-title match is adjudicated, not actionable", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding()])],
+    dispositions: [dispo()],
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.previouslyAdjudicated.length, 1);
+  assert.equal(out.previouslyAdjudicated[0].disposition_id, 1);
+  assert.equal(out.previouslyAdjudicated[0].disposition_status, "accepted-risk");
+  assert.equal(
+    out.previouslyAdjudicated[0].disposition_reason,
+    "single-writer topology",
+  );
+  assert.equal(out.stats.previouslyAdjudicated, 1);
+  assert.equal(out.stats.blocking, 0);
+  assert.equal(out.stats.perReviewer.quality.adjudicated, 1);
+});
+
+test("disposition keyword match catches reworded title", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [
+        finding({ title: "Race: TOCTOU between stat and rename!" }),
+      ]),
+    ],
+    dispositions: [
+      dispo({
+        fingerprint: {
+          file: "src/a.js",
+          title: "completely different wording",
+          keywords: ["toctou", "rename"],
+        },
+      }),
+    ],
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.previouslyAdjudicated.length, 1);
+});
+
+test("single-keyword fingerprint and wrong-file fingerprint never match", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [finding({ title: "toctou in the finalizer" })]),
+    ],
+    dispositions: [
+      dispo({
+        fingerprint: { file: "src/a.js", title: "x", keywords: ["toctou"] },
+      }),
+      dispo({
+        id: 2,
+        fingerprint: { file: "src/other.js", title: "toctou in the finalizer" },
+      }),
+    ],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.previouslyAdjudicated.length, 0);
+});
+
+test("codex finding matching a refuted entry is adjudicated (blind re-raise regression)", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [],
+    codex: {
+      target: { mode: "working-tree", explicit: true },
+      result: {
+        verdict: "needs-attention",
+        summary: "s",
+        findings: [
+          {
+            severity: "high",
+            title: "unrelated title",
+            body: "possible TOCTOU: stat then rename may race",
+            file: "src/a.js",
+            line_start: 2,
+            line_end: 3,
+            confidence: 0.9,
+            recommendation: "R",
+          },
+        ],
+        next_steps: [],
+      },
+    },
+    dispositions: [
+      dispo({
+        status: "refuted",
+        fingerprint: {
+          file: "src/a.js",
+          title: "TOCTOU in finalizer",
+          keywords: ["toctou", "stat", "rename"],
+        },
+      }),
+    ],
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.previouslyAdjudicated.length, 1);
+  assert.equal(out.previouslyAdjudicated[0].reviewer, "codex-adversarial");
+  assert.equal(out.previouslyAdjudicated[0].disposition_status, "refuted");
+  assert.equal(out.stats.blocking, 0);
+});
+
+test("challenge with matching id stays actionable; unmatched id is annotated", (t) => {
+  const matched = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding({ challenges_disposition: 1 })])],
+    dispositions: [dispo()],
+  });
+  assert.equal(matched.findings.length, 1);
+  assert.equal(matched.findings[0].challenge_unmatched, undefined);
+  assert.equal(matched.previouslyAdjudicated.length, 0);
+  const unmatched = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding({ challenges_disposition: 99 })])],
+    dispositions: [dispo()],
+  });
+  assert.equal(unmatched.findings.length, 1);
+  assert.equal(unmatched.findings[0].challenge_unmatched, true);
+});
+
+test("overturned entries never suppress", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding()])],
+    dispositions: [dispo({ status: "overturned" })],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.previouslyAdjudicated.length, 0);
+});
+
+test("missing ledger file is a no-op; invalid ledger fails open with dispositionsError", (t) => {
+  const missing = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding()])],
+    dispositionsMissing: true,
+  });
+  assert.equal(missing.dispositionsError, null);
+  assert.equal(missing.findings.length, 1);
+  for (const raw of ["{ not json", JSON.stringify({ version: 1 })]) {
+    const bad = run(t, {
+      files: { "src/a.js": SRC },
+      reviewers: [reviewer("quality", [finding()])],
+      dispositionsRaw: raw,
+    });
+    assert.ok(bad.dispositionsError, raw);
+    assert.equal(bad.findings.length, 1);
+  }
+});
+
+test("adjudicated finding does not participate in dedup", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [finding()]), // title "t" matches ledger
+      reviewer("security", [
+        finding({ title: "other issue", line: 4, verbatim: "const total = add(1, 2);" }),
+      ]),
+    ],
+    dispositions: [dispo()],
+  });
+  assert.equal(out.previouslyAdjudicated.length, 1);
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.findings[0].reviewer, "security");
+  assert.equal(out.stats.duplicatesMerged, 0);
+  assert.ok(!out.findings[0].also_flagged_by);
+});
+
+// --- Reachability downgrade + blocking ---
+
+test("important+theoretical downgrades to minor; critical/conditional/missing unchanged", (t) => {
+  const out = run(t, {
+    files: {
+      "src/a.js": SRC,
+      "src/b.js": SRC,
+      "src/c.js": SRC,
+      "src/d.js": SRC,
+    },
+    reviewers: [
+      reviewer("quality", [
+        finding({ title: "theo", reachability: "theoretical" }),
+        finding({
+          title: "crit",
+          severity: "critical",
+          reachability: "theoretical",
+          file: "src/b.js",
+        }),
+      ]),
+      reviewer("security", [
+        finding({ title: "cond", reachability: "conditional", file: "src/c.js" }),
+        finding({ title: "none", file: "src/d.js" }),
+      ]),
+    ],
+  });
+  const byTitle = (title) => out.findings.find((f) => f.title === title);
+  assert.equal(byTitle("theo").severity, "minor");
+  assert.equal(byTitle("theo").downgraded_from, "important");
+  assert.equal(byTitle("theo").blocking, false);
+  assert.equal(byTitle("crit").severity, "critical");
+  assert.equal(byTitle("crit").blocking, true);
+  assert.equal(byTitle("cond").severity, "important");
+  assert.equal(byTitle("cond").blocking, true);
+  assert.equal(byTitle("none").severity, "important");
+  assert.equal(byTitle("none").blocking, true);
+  assert.equal(out.stats.blocking, 3);
+});
+
+test("blocking matrix: importants from nonblocking reviewers never block; criticals always do", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("test-coverage-reviewer", [finding({ title: "gap" })]),
+      reviewer("simplification-reviewer", [
+        finding({
+          title: "simplify",
+          severity: "critical",
+          line: 6,
+          verbatim: "console.log('big total');",
+        }),
+      ]),
+    ],
+  });
+  const byTitle = (title) => out.findings.find((f) => f.title === title);
+  assert.equal(byTitle("gap").blocking, false);
+  assert.equal(byTitle("simplify").blocking, true);
+  assert.equal(out.stats.blocking, 1);
 });

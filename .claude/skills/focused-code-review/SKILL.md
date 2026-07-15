@@ -2,14 +2,14 @@
 name: focused-code-review
 description: >
   Run several focused code reviews in parallel — five crucial specialist reviewers (security,
-  quality, test coverage, silent failures, systemic failures), each a narrow lens, plus a Codex
+  quality, simplification, silent failures, systemic failures), each a narrow lens, plus a Codex
   adversarial review. A lean subset of comprehensive-code-review: same rigor — every
   critical/important finding (including Codex's) is adversarially verified by a fresh refuter agent,
   and every finding is dropped unless it has a verified file:line citation — but fewer dimensions,
   so the report is tighter to triage. Reviews a diff (working tree by default, or `--base <ref>`).
   For a whole-codebase audit or spec-conformance, use comprehensive-code-review instead.
-  Usage: /focused-code-review [--base <ref>]
-argument-hint: "[--base <ref>]"
+  Usage: /focused-code-review [--base <ref>] [--pass <n>]
+argument-hint: "[--base <ref>] [--pass <n>]"
 ---
 
 # Focused Code Review
@@ -40,9 +40,12 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
 
 - `security-reviewer` — injection, auth/authz, secrets, PII-in-logs, insecure defaults (source→sink traced)
 - `quality-reviewer` — logic errors, edge cases, caller breakage, concurrency/async and statically-visible performance (it owns both dimensions)
-- `test-coverage-reviewer` — missing behavioral coverage for the change, over-pinned/brittle tests
+- `simplification-reviewer` — dead code, over-engineering, diff bloat, defenses against adjudicated ghosts (never blocks; its findings are counter-pressure against ratcheting fixes)
 - `silent-failure-hunter` — swallowed errors, empty catches, unjustified fallbacks masking failure, observability gaps
 - `systemic-failure-reviewer` — cross-file/cross-stage failure modes: stuck-states, invariants without repair, unsafe/no-op recovery, over-pinned contracts (self-skips when the diff has no stateful surface)
+
+(test-coverage-reviewer is deliberately NOT in this roster — in review⇄fix loops its
+test-symmetry importants drove non-converging passes; comprehensive-code-review still runs it.)
 
 ## Iron Laws
 
@@ -63,6 +66,13 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
    Do not hand-dispatch reviewer Task calls, and do not run Codex yourself with a Bash
    call. The Workflow owns reviewer fan-out, the Codex track, and the Codex-verify pass.
    You make NO direct background calls. No exceptions.
+
+5. REFUTED = DEAD EVERYWHERE.
+   A refuted or previously-adjudicated finding never re-enters the report body, Themes, or
+   fix guidance — including residuals, "weakened versions", or hardening suggestions derived
+   from it. A different concern at the same site is a NEW finding that must survive its own
+   refutation. Refuted critical/important findings are appended to the disposition ledger at
+   report time (Phase 7). No exceptions.
 ```
 
 ## Red Flags — STOP and re-read this prompt
@@ -82,6 +92,24 @@ This skill always runs exactly these five, read from `comprehensive-code-review/
 | "Codex findings ship as-is"                  | Critical/high/medium Codex findings are refuted inside the workflow's Codex-verify stage. |
 | "I'll hand-execute the citation checks"      | Run verify-citations.mjs (Phase 6) — hand-execution is the failure mode it removes. |
 | "This needs the whole codebase / a spec"     | That's comprehensive-code-review. This skill reviews a diff only.                   |
+| "The refuted finding still has a valid residual" | Iron Law 5. Refuted = dead everywhere; a residual is a new finding or nothing.  |
+| "This adjudicated finding looks real, I'll promote it" | Only via challenges_disposition with NEW evidence — never by re-including it. |
+
+## Convergence contract (for loop-callers)
+
+A review⇄fix loop that treats every NEEDS-CHANGES as "go again" ratchets: each pass adds guards,
+tests, and comments and removes nothing. When this skill is invoked inside a loop:
+
+- Default max **2 fix passes** per subject. Re-invoke with `--pass <n>` (pass 1 = first review).
+- Only a NEEDS-CHANGES verdict justifies another pass — and the verdict gates on `stats.blocking`
+  alone. Minors, test-hardening, simplification, and comment findings never trigger one.
+- Between passes, the caller records decisions on findings it declines to fix:
+  `node "<comprehensive-code-review skill dir>/scripts/review-run.mjs" disposition --repo-root <root> --file <f> --title "<t>" --status accepted-risk|wont-fix --reason "<why>" --decided-by caller [--keywords "a,b"]`
+  The next pass auto-suppresses matching re-raises into the Previously Adjudicated section.
+- Pass ≥3 with NEEDS-CHANGES renders **STOP-LOOPING** in the report: hand the remaining blockers
+  to a human. More passes add armor, not correctness.
+- Fixers act under the report's Fix-Scope Contract — smallest diff, deletion is a valid fix, no
+  out-of-scope hardening.
 
 ---
 
@@ -92,6 +120,7 @@ Parse the skill arguments (from `$ARGUMENTS`):
 ```
 --base <ref>   → mode = "base";  scope = git diff <ref>...HEAD
 (no args)      → mode = "working-tree"; scope = git diff HEAD (staged + unstaged) + untracked files
+--pass <n>     → review⇄fix loop iteration (default 1); recorded in run.json, drives STOP-LOOPING
 ```
 
 There is no `--full` and no `--spec` in this skill. If either is passed, tell the user this skill reviews
@@ -99,7 +128,8 @@ a diff only and to use `/comprehensive-code-review` for whole-codebase or spec-c
 proceed treating the rest of the args normally (ignore the unsupported flag).
 
 First gather `changedFiles` per mode and apply the empty guard without writing artifacts. Then create
-a unique run exactly as the shared reference specifies, with `PROFILE=focused`, before materializing
+a unique run exactly as the shared reference specifies, with `PROFILE=focused` and
+`--pass-number "${PASS:-1}"`, before materializing
 `reviewInput`, a manifest, or any workflow output. Only after writing the initial `<runDir>/run.json`
 may you build `reviewInput` or write review artifacts.
 
@@ -148,9 +178,32 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 #   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
-Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{security-reviewer,quality-reviewer,test-coverage-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
+Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{security-reviewer,quality-reviewer,simplification-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
 
-Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`, `claudeMdPath`.
+**Disposition ledger → DISPOSITIONS_BLOCK.** If `<repoRoot>/.code-review/dispositions.json`
+exists, render `DISPOSITIONS_BLOCK` for the reviewer prompts (else set it to `null`):
+
+- Include ONLY entries whose `fingerprint.file` is in `changedFiles` (diff-scoped injection —
+  the block can never outgrow the diff's relevance) AND whose file still exists; skip status
+  `overturned`.
+- Cap at the 20 most recent (by `decidedAt`); one line each:
+  `#<id> [<status>] <file> — "<title>" — <reason>`
+- Prefix with this header, verbatim:
+
+  ```
+  ## Previously adjudicated claims (input document — NOT shared belief-state)
+  The claims below were adjudicated in a prior pass. Re-filing one is auto-suppressed
+  downstream. ONLY with NEW evidence that a disposition is wrong, file the finding with
+  challenges_disposition: <id> and cite the new evidence in why. This list says nothing
+  about the rest of the code — review everything else with fresh eyes.
+  ```
+
+The FIRST time a disposition is recorded in a repo whose `.gitignore` ignores `.code-review/`,
+append `!.code-review/dispositions.json` to `.gitignore` (one line, once) — the ledger is
+committed; run artifacts stay ignored.
+
+Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`,
+`claudeMdPath`, `dispositions` (the rendered block, or null), `passNumber`.
 
 ## Phase 2 — Resolve Codex
 
@@ -203,6 +256,7 @@ Workflow({
   scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
   args: { runtime: "claude", profile: "focused", runId, scopeLabel, mode,
           reviewInput, changedFiles, repoRoot, claudeMdPath, outDir: runDir, reviewers,
+          dispositions: <the Phase 1 DISPOSITIONS_BLOCK, or null>,
           codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
 })
 ```
@@ -280,55 +334,83 @@ node "<comprehensive-code-review skill dir>/scripts/verify-citations.mjs" \
   --codex-verify "$RUN_DIR/raw/codex-verify-result.json" \
   --mode "$MODE" \
   --changed-files "$RUN_DIR/raw/changed-files.txt" \
+  --dispositions "$REPO_ROOT/.code-review/dispositions.json" \
   --repo-root "$REPO_ROOT" \
   --out "$RUN_DIR/raw/verified-findings.json"
 ```
 
 Omit `--codex` when Codex is SKIPPED/BLOCKED or took the degraded fallback (the script processes only
 structured payloads; on the degraded path use `codex.degraded_refs` from Phase 5). Omit
-`--codex-verify` when `codex.verifyRan` is false. If the script errors, fix the invocation
+`--codex-verify` when `codex.verifyRan` is false. Always pass `--dispositions` (a missing ledger is
+a no-op). If the script errors, fix the invocation
 and re-run — never fall back to hand-verification.
 
 The script never crashes on a bad Codex file — a missing/empty/invalid `--codex` or
 `--codex-verify` payload is surfaced in the output instead. After running it, check
 `verified-findings.json`: `codexPayloadError` set → report the Codex track BLOCKED with that reason;
 `codexVerifyError` set → keep the Codex findings and add the mandatory note "Codex findings not
-adversarially verified — verify pass failed".
+adversarially verified — verify pass failed"; `dispositionsError` set → adjudication matching was
+skipped this pass — add a report note ("disposition ledger unreadable — previously adjudicated
+claims may re-appear as findings").
 
 The script implements the full §6 procedure: EXCLUDES drop (incl. the Codex backstop), refuted drop,
 the systemic gate, the line±2 / grep-rescue citation check (`ok` / `relocated_ok`), outside-diff
-tagging, Codex existence checks + native→standard severity mapping, and cross-reviewer dedup.
+tagging, Codex existence checks + native→standard severity mapping, cross-reviewer dedup, the
+reachability downgrade (important+theoretical → minor), the adjudication split against the
+disposition ledger, and per-finding `blocking`.
 
-Read `verified-findings.json`: `findings` (verified, post-dedup), `dropped` (with per-finding
+Read `verified-findings.json`: `findings` (verified, post-dedup, each with `blocking`),
+`previouslyAdjudicated` (ledger-matched — render in the Previously Adjudicated section, exclude
+from verdict/Themes/fix scope), `dropped` (with per-finding
 `verification` reasons), `reviewers` (status pass-through), and `stats` (`perReviewer` +
-`duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations`, which feeds a
-Phase 7 warning line).
+`duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations` (Phase 7
+warning) + `previouslyAdjudicated` + `blocking`, which drives the Summary verdict).
 
 ## Phase 7 — Group, Sort, Emit
 
 1. Categorize each verified finding per `comprehensive-code-review/references/report-format.md`. With this
-   skill's five reviewers + Codex, only these categories will populate: **Security, Quality, Tests,
-   Silent Failures, Systemic, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.
+   skill's five reviewers + Codex, only these categories will populate: **Security, Quality,
+   Simplification, Silent Failures, Systemic, Adversarial-Codex, Other**. (Use the fixed set; never invent a category.
    The script already deduped, severity-mapped Codex findings — native severity + `confidence`
    preserved — and tagged `outside_diff`.)
 2. Sort within each category by severity DESC, then file ASC. For **Adversarial-Codex**, sort by severity
    DESC, then `confidence` DESC, then file ASC.
 3. Write the consolidated report to `<runDir>/report.md` using the skeleton in
-   `comprehensive-code-review/references/report-format.md`. In the Scope section, list the excluded
+   `comprehensive-code-review/references/report-format.md`. The **Summary verdict is deterministic**:
+   NEEDS-CHANGES iff `stats.blocking > 0`; INCOMPLETE on any BLOCKED track; else SHIP —
+   reviewer prose verdicts never gate. Render the **Fix-Scope Contract** section verbatim, the
+   **Previously Adjudicated** section (from `previouslyAdjudicated`; omit when empty), the
+   `Previously adjudicated: <n>` Summary line, and — when `passNumber ≥ 3` AND NEEDS-CHANGES —
+   the **STOP-LOOPING** recommendation. Findings with `challenges_disposition` render in their
+   category tagged "⚑ challenges disposition #<id>". In the Scope section, list the excluded
    build-output patterns and note this is a **focused review (5 reviewers + Codex)**, not the comprehensive
    one. The raw JSON files under `<runDir>/raw/` are the machine record — do NOT render
    per-reviewer or Codex `.md` files.
-4. Print the summary:
+4. **Ledger write-back (Iron Law 5).** For every dropped finding with
+   `verification: "refuted"` and severity critical/important, append it to the disposition
+   ledger so no later pass re-litigates it:
+
+   ```bash
+   node "<comprehensive-code-review skill dir>/scripts/review-run.mjs" disposition \
+     --repo-root "$REPO_ROOT" --file "<f.file>" --title "<f.title>" \
+     --status refuted --reason "<f.refute_reason>" --decided-by report --run-id "$RUN_ID"
+   ```
+
+   (Upsert semantics: re-refuting the same claim updates the existing entry, no duplicates.
+   Apply the Phase 1 `.gitignore` negation on first creation.)
+5. Print the summary:
 
    ```
    ## Focused Code Review complete
 
    Report: <runDir>/report.md
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
-   Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged)
+   Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged; <n> blocking)
+   Previously adjudicated: <n> suppressed via the disposition ledger   # only when > 0
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
    Calibration: <reviewer> <n> refuted, <n> citation-dropped; …        # from stats.perReviewer; only reviewers with non-zero counts; omit line if all zero
+   Recommendation: STOP-LOOPING                                        # only when passNumber >= 3 and verdict is NEEDS-CHANGES
    ⚠ Codex verify mismatch: <n> refutation(s) matched no finding — possible false-positive in report   # only when stats.unmatchedCodexRefutations > 0
    ```
 

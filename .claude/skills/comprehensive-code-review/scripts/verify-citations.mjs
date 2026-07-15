@@ -5,7 +5,8 @@
 //
 // Usage:
 //   node verify-citations.mjs --workflow-result <path> [--codex <path>]
-//     [--codex-verify <path>] --mode <full|base|working-tree>
+//     [--codex-verify <path>] [--dispositions <path>]
+//     --mode <full|base|working-tree>
 //     [--changed-files <path>] --repo-root <path> --out <path>
 //
 // --codex takes raw/codex-adversarial.json; only payload.result.findings
@@ -13,7 +14,7 @@
 // with the orchestrator. --codex-verify takes raw/codex-verify-result.json
 // (refuter annotations from the workflow's in-script Codex-verify stage).
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 const MIN_QUOTE = 10;
@@ -67,6 +68,11 @@ const collapseWs = (s) => String(s).replace(/\s+/g, " ").trim();
 function relKey(repoRoot, file) {
   return path.relative(repoRoot, path.resolve(repoRoot, file));
 }
+
+// Fingerprint normalization for disposition matching: lowercase, strip
+// punctuation, collapse whitespace — resilient to rewording, blind to lines.
+const normalizeClaim = (s) =>
+  collapseWs(String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, " "));
 
 function isExcluded(rel) {
   const segments = rel.split(path.sep);
@@ -148,6 +154,50 @@ function main() {
     : null;
   const diffMode = opts.mode !== "full";
 
+  // --- Disposition ledger (anti-ratcheting): previously adjudicated claims.
+  // Missing file = fresh repo, empty ledger. Invalid = fail-open like --codex.
+  let dispositions = [];
+  let dispositionsError = null;
+  if (opts.dispositions && existsSync(opts.dispositions)) {
+    const r = readJsonSafe(opts.dispositions, "--dispositions ledger");
+    if (r.error || !Array.isArray(r.value?.dispositions)) {
+      dispositionsError =
+        r.error || "--dispositions ledger has no dispositions array";
+      console.error(
+        "verify-citations: " +
+          dispositionsError +
+          " — adjudication matching skipped",
+      );
+    } else {
+      dispositions = r.value.dispositions.filter(
+        (d) =>
+          d &&
+          d.status !== "overturned" &&
+          Number.isInteger(d.id) &&
+          d.fingerprint &&
+          typeof d.fingerprint.file === "string" &&
+          typeof d.fingerprint.title === "string",
+      );
+    }
+  }
+  // Match = same repo-relative file AND (exact normalized title OR all of
+  // >=2 fingerprint keywords present in normalized title+why). No lines, no
+  // quotes — both churn under fixes.
+  const matchDisposition = (f) => {
+    if (!f.file) return undefined;
+    const fileKey = relKey(repoRoot, f.file);
+    const title = normalizeClaim(f.title || "");
+    const text = normalizeClaim([f.title, f.why].filter(Boolean).join(" "));
+    return dispositions.find((d) => {
+      if (d.fingerprint.file !== fileKey) return false;
+      if (title && title === normalizeClaim(d.fingerprint.title)) return true;
+      const kws = (d.fingerprint.keywords || [])
+        .map(normalizeClaim)
+        .filter(Boolean);
+      return kws.length >= 2 && kws.every((k) => text.includes(k));
+    });
+  };
+
   const verified = [];
   const dropped = [];
   let unmatchedCodexRefutations = 0;
@@ -156,6 +206,7 @@ function main() {
     perReviewer[name] ||= {
       verified: 0,
       refuted: 0,
+      adjudicated: 0,
       droppedCitation: 0,
       droppedOther: 0,
     };
@@ -198,7 +249,7 @@ function main() {
   // --- Reviewer findings (§6 order: excluded → refuted → systemic → citation) ---
   for (const reviewer of workflowResult.reviewers || []) {
     for (const raw of reviewer.findings || []) {
-      const f = Object.assign({}, raw, { reviewer: reviewer.name });
+      const f = { ...raw, reviewer: reviewer.name };
       if (f.file && isExcluded(relKey(repoRoot, f.file))) {
         drop(f, "dropped_excluded_build_output");
       } else if (f.refuted) {
@@ -341,10 +392,45 @@ function main() {
     }
   }
 
+  // --- Reachability downgrade: important + theoretical → minor. Criticals
+  // never auto-downgrade; missing reachability stays important (conservative).
+  for (const f of verified) {
+    if (f.severity === "important" && f.reachability === "theoretical") {
+      f.severity = "minor";
+      f.downgraded_from = "important";
+    }
+  }
+
+  // --- Adjudication split: a verified finding matching an active ledger entry
+  // was already decided in a prior pass — reported separately, never
+  // actionable — UNLESS it explicitly challenges that disposition by id.
+  const previouslyAdjudicated = [];
+  const actionable = [];
+  for (const f of verified) {
+    const d = matchDisposition(f);
+    if (f.challenges_disposition != null) {
+      // Challenges stay actionable (they survived their own refutation in the
+      // workflow); a challenge that matches nothing is surfaced, not dropped.
+      if (!d || d.id !== f.challenges_disposition) f.challenge_unmatched = true;
+      actionable.push(f);
+    } else if (d) {
+      previouslyAdjudicated.push(
+        Object.assign({}, f, {
+          disposition_id: d.id,
+          disposition_status: d.status,
+          disposition_reason: d.reason,
+        }),
+      );
+      bump(f.reviewer, "adjudicated");
+    } else {
+      actionable.push(f);
+    }
+  }
+
   // --- Dedup: same file AND same kind AND (lines ±3 OR identical collapsed verbatim) ---
   let duplicatesMerged = 0;
   const deduped = [];
-  for (const f of verified) {
+  for (const f of actionable) {
     const fKind = f.kind || "local";
     const twin = deduped.find(
       (k) =>
@@ -368,6 +454,22 @@ function main() {
     }
   }
 
+  // --- Blocking: verdict gates on criticals + importants from blocking
+  // reviewers only (NEEDS-CHANGES iff stats.blocking > 0).
+  const NONBLOCKING_REVIEWERS = new Set([
+    "test-coverage-reviewer",
+    "simplification-reviewer",
+    "comment-accuracy-reviewer",
+    "documentation-reviewer",
+  ]);
+  let blocking = 0;
+  for (const f of deduped) {
+    f.blocking =
+      f.severity === "critical" ||
+      (f.severity === "important" && !NONBLOCKING_REVIEWERS.has(f.reviewer));
+    if (f.blocking) blocking++;
+  }
+
   const output = {
     scopeLabel: workflowResult.scopeLabel ?? null,
     mode: opts.mode,
@@ -379,17 +481,26 @@ function main() {
       dropped_by_cap: r.dropped_by_cap,
     })),
     findings: deduped,
+    previouslyAdjudicated,
     dropped,
     codexPayloadError,
     codexVerifyError,
-    stats: { perReviewer, duplicatesMerged, unmatchedCodexRefutations },
+    dispositionsError,
+    stats: {
+      perReviewer,
+      duplicatesMerged,
+      unmatchedCodexRefutations,
+      previouslyAdjudicated: previouslyAdjudicated.length,
+      blocking,
+    },
   };
   mkdirSync(path.dirname(path.resolve(opts.out)), { recursive: true });
   writeFileSync(opts.out, JSON.stringify(output, null, 2));
   console.log(
-    `verified=${deduped.length} dropped=${dropped.length} duplicatesMerged=${duplicatesMerged}` +
+    `verified=${deduped.length} adjudicated=${previouslyAdjudicated.length} blocking=${blocking} dropped=${dropped.length} duplicatesMerged=${duplicatesMerged}` +
       (codexPayloadError ? ` codexPayloadError=${JSON.stringify(codexPayloadError)}` : "") +
       (codexVerifyError ? ` codexVerifyError=${JSON.stringify(codexVerifyError)}` : "") +
+      (dispositionsError ? ` dispositionsError=${JSON.stringify(dispositionsError)}` : "") +
       ` -> ${opts.out}`,
   );
 }

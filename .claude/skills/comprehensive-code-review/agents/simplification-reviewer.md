@@ -45,6 +45,13 @@ Violating the letter of this rule violates the spirit. No exceptions.
    - Dead code: functions or branches never reached
    - Tautological conditions: `if (x === true)`, `arr.filter(x => x !== undefined).map(...)` where undefined is impossible
 
+5. **Defenses against adjudicated ghosts**: when your prompt includes a "Previously adjudicated
+   claims" block, flag guards, retries, tests, or comments whose ONLY purpose is defending against
+   a scenario that block marks refuted or accepted-risk. The simplification is deletion — quote the
+   defensive code verbatim and name the disposition id in `why` (e.g. "guards against the TOCTOU
+   adjudicated accepted-risk in disposition #10"). Your findings never block; they are
+   deletion suggestions, not gate failures.
+
 ## Severity
 
 Use the standard scale (`critical | important | minor`):

@@ -11,7 +11,10 @@
     ├── codex-adversarial.json       # Codex structured machine output (source of truth)
     ├── codex-verify-result.json     # Codex refutation pass output (when Phase 6.5 ran)
     ├── changed-files.txt            # input to verify-citations.mjs
-    └── verified-findings.json       # verify-citations.mjs output (findings/dropped/stats)
+    └── verified-findings.json       # verify-citations.mjs output (findings/previouslyAdjudicated/dropped/stats)
+
+<repoRoot>/.code-review/dispositions.json   # cross-run adjudication ledger (committed to git;
+                                            # written by review-run.mjs disposition, read via --dispositions)
 ```
 
 ## Report skeleton
@@ -62,14 +65,24 @@ it discarded m candidate findings to respect its findings cap, so coverage below
 **Overall: SHIP | NEEDS-CHANGES | INCOMPLETE**
 
 _(deterministic rule — INCOMPLETE: ≥1 reviewer track BLOCKED (judge from what completed; name the
-missing tracks). NEEDS-CHANGES: ≥1 verified critical finding, OR security verdict BLOCKED, OR
-architecture verdict VIOLATION, OR quality verdict REQUEST_CHANGES. SHIP: none of the above.)_
+missing tracks). NEEDS-CHANGES: `stats.blocking > 0` in verified-findings.json — ≥1 verified
+critical, or ≥1 verified important from a blocking reviewer (test-coverage, simplification,
+comment-accuracy, and documentation findings never block; important+theoretical is already
+downgraded to minor upstream). SHIP: none of the above. Reviewer prose verdicts
+(REQUEST_CHANGES, VIOLATION, BLOCKED-as-verdict, …) are informational only and never gate.)_
 
 **Total findings: <N>** _(post-dedup; <n> duplicates merged across reviewers)_
 
 - critical: <n>
 - important: <n>
 - minor: <n>
+
+**Previously adjudicated: <n>** _(matched the disposition ledger; excluded from the verdict — see
+Previously Adjudicated below. Omit this line when 0.)_
+
+**Recommendation: STOP-LOOPING** _(render only when run.json `passNumber` ≥ 3 AND the verdict is
+NEEDS-CHANGES: three passes without convergence means a human should adjudicate the remaining
+blockers — further passes add armor, not correctness.)_
 
 By category:
 
@@ -90,7 +103,21 @@ By category:
 ## Themes
 
 _(≤3 bullets; only when ≥2 verified findings share a root cause — name the root cause and list the
-finding titles it explains. Omit the section when no shared root cause exists.)_
+finding titles it explains. Omit the section when no shared root cause exists. Themes may cite only
+findings present in the report body: refuted or previously-adjudicated findings and their residuals
+never seed or support a theme — Iron Law 5.)_
+
+## Fix-Scope Contract
+
+_(rendered verbatim into every report — binds any fixer or loop-caller acting on it)_
+
+- Fix ONLY what a verified finding explicitly cites; smallest diff that resolves it.
+- Deletion is a valid fix — prefer removing the defect over guarding around it.
+- No new tests, guards, or validation beyond a finding's explicit scope.
+- New comments: max 1 line, never narrating a refuted or adjudicated scenario.
+- Residuals of refuted findings are dead (Iron Law 5) — do not fix, soften, or "harden against" them.
+- Previously-adjudicated findings are out of scope; the only path back is a new finding with
+  `challenges_disposition: <id>` citing NEW evidence.
 
 ---
 
@@ -196,6 +223,19 @@ _(findings that don't fit above categories — reviewer name preserved)_
 
 ---
 
+## Previously Adjudicated
+
+_(verified findings whose fingerprint matched an active entry in `.code-review/dispositions.json` —
+already decided in a prior pass; excluded from the verdict, from Themes, and from fix scope. A
+finding that challenges its disposition stays in Findings by Category instead, tagged
+"⚑ challenges disposition #<id>". Omit the section when empty.)_
+
+| #   | Status        | File — claim                 | Re-raised by      | Adjudication reason    |
+| --- | ------------- | ---------------------------- | ----------------- | ---------------------- |
+| 10  | accepted-risk | src/upload.ts — "TOCTOU ..." | codex-adversarial | single-writer topology |
+
+---
+
 ## Dropped Findings
 
 _(findings that failed citation verification or were adversarially refuted — listed for
@@ -273,6 +313,11 @@ the 4→3 collapse loses no signal.
   "also_flagged_by": [
     "<reviewer names; only on findings deduped across reviewers>"
   ],
+  "reachability": "<direct|conditional|theoretical; reviewer-set on critical/important findings>",
+  "downgraded_from": "<'important'; only when important+theoretical was auto-downgraded to minor>",
+  "blocking": "<boolean; drives the Summary verdict — critical, or important from a blocking reviewer>",
+  "challenges_disposition": "<ledger id; only on findings challenging a prior disposition>",
+  "challenge_unmatched": "<true; the challenge id matched no active ledger entry — kept and surfaced>",
   "outside_diff": "<true; only on non-systemic findings citing a file outside changedFiles (diff modes)>",
   "refute_reason": "<refuter counter-evidence; only when verification is refuted>",
   "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|dropped_systemic_incomplete|dropped_systemic_anchor_unverified|codex_file_missing|codex_line_out_of_range"
@@ -281,6 +326,11 @@ the 4→3 collapse loses no signal.
 
 `relocated_ok` = the quote did not match at the claimed line but was found at exactly one other line
 in the file (line-number drift); the finding is kept with the corrected line.
+
+Entries in `verified-findings.json`'s `previouslyAdjudicated[]` array are the same finding shape
+plus `disposition_id`, `disposition_status` (`accepted-risk|wont-fix|refuted`), and
+`disposition_reason` — they render only in the Previously Adjudicated section, never in Findings
+by Category.
 
 ## Category assignment rules
 

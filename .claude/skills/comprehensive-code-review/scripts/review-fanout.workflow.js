@@ -61,6 +61,12 @@ const FINDINGS_SCHEMA = {
           title: { type: "string" },
           why: { type: "string" },
           fix_sketch: { type: "string" },
+          // Severity honesty: how the failure path is reached. Downstream,
+          // important+theoretical is downgraded to minor (verify-citations.mjs).
+          reachability: { enum: ["direct", "conditional", "theoretical"] },
+          // Set ONLY to challenge a previously-adjudicated claim (by ledger id)
+          // with NEW evidence; matching findings without it are auto-suppressed.
+          challenges_disposition: { type: "integer", minimum: 1 },
           // Systemic findings (systemic-failure-reviewer only) set the four fields below.
           // Local reviewers never emit `kind` and fall through as local — unchanged behaviour.
           // Intentionally NOT in `required` (same pattern as the `refuted`/`refute_reason`
@@ -140,6 +146,12 @@ function buildPrompt(reviewer, ctx) {
   const reviewInput = DIFFLESS_REVIEWERS.has(reviewer.name)
     ? "No diff provided for this role — audit the current state against the changed-files list above; Read files as needed."
     : ctx.reviewInput;
+  // Pre-rendered by the orchestrator from .code-review/dispositions.json
+  // (diff-scoped, capped). An input document, NOT shared belief-state — the
+  // reviewer stays fresh on everything it doesn't list.
+  const dispositionsBlock = ctx.dispositions
+    ? ["", ctx.dispositions, ""].join("\n")
+    : "";
   const parts = [
     "You are the " + reviewer.name + " for a comprehensive code review.",
     "",
@@ -160,6 +172,7 @@ function buildPrompt(reviewer, ctx) {
     "- Repo root: " + ctx.repoRoot,
     "- CLAUDE.md: " + ctx.claudeMdPath,
     specBlock,
+    dispositionsBlock,
     "## Output",
     "Return structured output matching the provided schema — do NOT emit a STATUS line or a prose verdict block.",
     'Set name to "' +
@@ -169,6 +182,7 @@ function buildPrompt(reviewer, ctx) {
     'If you genuinely cannot perform the review, return status "BLOCKED" with a one-line blocked_reason and an empty findings array. Otherwise return status "DONE".',
     "Respect your role's findings cap; drop the low-signal tail by likelihood x impact. If the cap forced you to discard candidate findings, set dropped_by_cap to the count discarded; omit it (or set 0) otherwise.",
     'Systemic findings (systemic-failure-reviewer only) additionally set kind="systemic", failure_mode, scenario, and anchors[] (≥2 entries, each with file+line+verbatim); all other reviewers leave these fields unset.',
+    "Every critical/important finding MUST set reachability: direct = fails under normal operation; conditional = requires a specific but plausible state; theoretical = requires an improbable operational sequence. Set the honest value — theoretical importants are downgraded downstream, and inflating reachability wastes a verification pass.",
   ];
   return parts.join("\n");
 }
@@ -715,6 +729,9 @@ if (!input.outDir.endsWith("/" + input.runId)) {
 }
 if (!["full", "base", "working-tree"].includes(input.mode)) {
   throw new Error('args.mode must be "full", "base", or "working-tree"');
+}
+if (input.dispositions != null && typeof input.dispositions !== "string") {
+  throw new Error("args.dispositions must be a string (pre-rendered ledger block) when provided");
 }
 
 const reviewers = Array.isArray(input.reviewers) ? input.reviewers : [];
