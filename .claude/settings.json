@@ -325,7 +325,7 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "opusplan",
   "hooks": {
     "PreToolUse": [
       {
