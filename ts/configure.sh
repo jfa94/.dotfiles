@@ -19,14 +19,21 @@ CONFIG_FILES=(
 # --- Help ---
 show_help() {
   cat <<'HELP'
-Usage: ./configure.sh <frontend|node> <target-project-directory>
+Usage: ./configure.sh <frontend|node> [target-project-directory]
 
 Bootstraps a JS/TS project with linting, formatting, and quality tooling
 from the dotfiles repo.
 
 Arguments:
   <frontend|node>               Which config bucket to install
-  <target-project-directory>   Path to the project to configure (must contain package.json)
+  [target-project-directory]   Path to the project to configure. Defaults to
+                               the current directory when omitted (refused if
+                               that is the script's own directory).
+
+If the target has no package.json, one is scaffolded: name from the dir,
+version 0.0.0, private, type "module", engines/packageManager from the
+installed node/pnpm versions, and the scaffold's scripts verbatim.
+If package.json exists, only its scripts are merged (see below).
 
 What gets copied:
   .prettierrc.json             Prettier config
@@ -66,8 +73,8 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 # --- Validate ---
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <frontend|node> <target-project-directory>"
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: $0 <frontend|node> [target-project-directory]"
   echo "Run with --help for more information."
   exit 1
 fi
@@ -80,7 +87,12 @@ if [[ "$STACK" != "frontend" && "$STACK" != "node" ]]; then
 fi
 
 SRC_DIR="$SCRIPT_DIR/$STACK"
-TARGET="$2"
+TARGET="${2:-$PWD}"
+
+if [[ $# -lt 2 && "$PWD" == "$SCRIPT_DIR" ]]; then
+  echo "Error: Running from the script's own directory; pass a target directory or run from your project."
+  exit 1
+fi
 
 if [[ ! -d "$TARGET" ]]; then
   echo "Error: Target directory does not exist: $TARGET"
@@ -90,8 +102,7 @@ fi
 TARGET="$(cd "$TARGET" && pwd)"
 
 if [[ ! -f "$TARGET/package.json" ]]; then
-  echo "Error: No package.json found in $TARGET"
-  exit 1
+  echo "No package.json in $TARGET — scaffolding a new project."
 fi
 
 for cmd in node pnpm; do
@@ -215,34 +226,51 @@ if [[ -e "$DOTFILES_DIR/.gitignore" ]]; then
   copy_file "$DOTFILES_DIR/.gitignore" "$TARGET/.gitignore" ".gitignore"
 fi
 
-# --- Merge scripts + install latest dev dependencies ---
-# Merge the scaffold's scripts into package.json and print its dev-dependency
-# names on stdout, then let pnpm resolve+install the latest versions (so new
-# projects never inherit stale pins). pnpm add also writes the lockfile.
-# The merge honors MODE: skip keeps existing script entries; replace/prompt
-# let the scaffold win and report which keys were overwritten.
+# --- Scaffold or merge package.json + install latest dev dependencies ---
+# New project (no package.json): write an opinionated one from scratch —
+# name from the dir, engines/packageManager from the installed node/pnpm,
+# scaffold scripts verbatim. Existing project: merge only the scaffold's
+# scripts, honoring MODE (skip keeps existing entries; replace/prompt let
+# the scaffold win and report overwritten keys). Either way, print the
+# scaffold's dev-dependency names on stdout and let pnpm resolve+install
+# the latest versions (so new projects never inherit stale pins).
 smoke_status="not run"
 if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
-  DEV_DEPS="$(TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" MERGE_MODE="$MODE" node -e "
+  DEV_DEPS="$(TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" MERGE_MODE="$MODE" PNPM_VERSION="$(pnpm --version)" node -e "
     const fs = require('fs');
+    const path = require('path');
     const target = process.env.TARGET_PATH + '/package.json';
-    const pkg = JSON.parse(fs.readFileSync(target, 'utf8'));
     const scaffold = JSON.parse(fs.readFileSync(process.env.SCAFFOLD_PATH + '/package.scaffold.json', 'utf8'));
-    const existing = pkg.scripts || {};
-    if (process.env.MERGE_MODE === 'skip') {
-      pkg.scripts = Object.assign({}, scaffold.scripts, existing);
-    } else {
-      const overwritten = Object.keys(scaffold.scripts)
-        .filter(k => k in existing && existing[k] !== scaffold.scripts[k]);
-      if (overwritten.length) {
-        process.stderr.write('Overwrote existing scripts: ' + overwritten.join(', ') + '\n');
+    let pkg;
+    if (fs.existsSync(target)) {
+      pkg = JSON.parse(fs.readFileSync(target, 'utf8'));
+      const existing = pkg.scripts || {};
+      if (process.env.MERGE_MODE === 'skip') {
+        pkg.scripts = Object.assign({}, scaffold.scripts, existing);
+      } else {
+        const overwritten = Object.keys(scaffold.scripts)
+          .filter(k => k in existing && existing[k] !== scaffold.scripts[k]);
+        if (overwritten.length) {
+          process.stderr.write('Overwrote existing scripts: ' + overwritten.join(', ') + '\n');
+        }
+        pkg.scripts = Object.assign({}, existing, scaffold.scripts);
       }
-      pkg.scripts = Object.assign({}, existing, scaffold.scripts);
+      process.stderr.write('Merged scripts into package.json\n');
+    } else {
+      pkg = {
+        name: path.basename(process.env.TARGET_PATH),
+        version: '0.0.0',
+        private: true,
+        type: 'module',
+        engines: { node: '>=' + process.version.slice(1).split('.')[0] },
+        packageManager: 'pnpm@' + process.env.PNPM_VERSION,
+        scripts: scaffold.scripts,
+      };
+      process.stderr.write('Created package.json\n');
     }
     fs.writeFileSync(target, JSON.stringify(pkg, null, 2) + '\n');
     process.stdout.write((scaffold.scaffoldDevDependencies || []).join(' '));
   ")"
-  echo "Merged scripts into package.json"
   if [[ -n "$DEV_DEPS" ]]; then
     echo "Installing latest dev dependencies with pnpm..."
     # shellcheck disable=SC2086 # intentional word-splitting: one arg per package
