@@ -325,7 +325,7 @@
       "Bash(yarn publish*)"
     ]
   },
-  "model": "opusplan",
+  "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -541,7 +541,7 @@
       }
     }
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
