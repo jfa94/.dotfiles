@@ -79,4 +79,8 @@ grep -q 'CODEX_USER_CONFIG=".codex/user-config.toml"' "$ROOT/setup.sh"
 ! GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$ROOT" diff --name-only -- '.codex/plugins.txt' '.claude/hooks/superpowers-compact-reinject.sh' | grep -q .
 PASS=$((PASS + 1))
 
+FILESYSTEM_PROFILE=$(sed -n '/^\[permissions\.workspace-net\.filesystem\]$/,/^\[permissions\.workspace-net\.filesystem\./p' "$CODEX_CONFIG" | sed '$d')
+[[ $(printf '%s\n' "$FILESYSTEM_PROFILE" | awk '$0 == "glob_scan_max_depth = 32" { count++ } END { print count + 0 }') -eq 1 ]]
+PASS=$((PASS + 1))
+
 echo "codex parity: $PASS checks passed"
