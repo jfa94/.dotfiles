@@ -101,6 +101,9 @@ trust_level = "trusted"
 [projects."/Users/Javier/Projects/goodbyespy"]
 trust_level = "trusted"
 
+[projects."/home/javier/.dotfiles"]
+trust_level = "trusted"
+
 [tui]
 alternate_screen = "always"
 notifications = true
