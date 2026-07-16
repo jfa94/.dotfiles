@@ -1,5 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateTasks } from './validate-tasks.mjs';
 
 const task = (over = {}) => ({
@@ -104,6 +109,25 @@ test('transitive dependency path satisfies shared-file rule', () => {
     task({ task_id: 'a-003', files: ['src/services/auth.ts'], depends_on: ['a-002'], risk_tier: 'low' }),
   ]);
   assert.deepEqual(errors, []);
+});
+
+test('CLI runs when invoked via a symlink (regression: silent no-op)', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'validate-tasks-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const link = join(dir, 'validate-tasks.mjs');
+  symlinkSync(fileURLToPath(new URL('./validate-tasks.mjs', import.meta.url)), link);
+
+  const bad = join(dir, 'bad-tasks.json');
+  writeFileSync(bad, JSON.stringify([task({ depends_on: ['ghost-999'] })]));
+  const fail = spawnSync(process.execPath, [link, bad], { encoding: 'utf8' });
+  assert.equal(fail.status, 1);
+  assert.match(fail.stdout, /ERROR: .*ghost-999/);
+
+  const good = join(dir, 'good-tasks.json');
+  writeFileSync(good, JSON.stringify([task()]));
+  const ok = spawnSync(process.execPath, [link, good], { encoding: 'utf8' });
+  assert.equal(ok.status, 0);
+  assert.match(ok.stdout, /OK: 1 tasks pass/);
 });
 
 test('blanket risk tier warns but does not fail', () => {

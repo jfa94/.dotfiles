@@ -3,7 +3,8 @@
 // Usage: node validate-tasks.mjs <path-to-tasks.json>
 // Exit 0 = clean (warnings allowed). Exit 1 = one ERROR line per finding.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const RISK_TIERS = ['low', 'medium', 'high'];
 const VAGUE_PHRASES = [
@@ -150,7 +151,8 @@ export function validateTasks(tasks) {
   return { errors, warnings };
 }
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+// realpath both sides: import.meta.url is symlink-resolved by the ESM loader, argv[1] is not
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   const path = process.argv[2];
   if (!path) {

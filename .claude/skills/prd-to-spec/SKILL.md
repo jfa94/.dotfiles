@@ -126,6 +126,11 @@ the quiz: it makes your judgment calls auditable instead of silent.
 
 ### 6. Write the spec files
 
+> Note: `specs/features/` is planning/review material for humans. The factory pipeline does NOT
+> read it — factory generates its own specs from the PRD issue into `$CLAUDE_PLUGIN_DATA`, and
+> `docs/factory/` is its write-only mirror (never hand-populate that). Do not flag the coexistence
+> of the two paths as a mismatch.
+
 Create `specs/features/` and the relevant subdirectory (e.g., `specs/features/user-onboarding`) if it doesn't exist.
 Write a spec for each phase as a Markdown file in the directory (e.g., `specs/features/user-onboarding/user-authentication.md`). Use the template below.
 
