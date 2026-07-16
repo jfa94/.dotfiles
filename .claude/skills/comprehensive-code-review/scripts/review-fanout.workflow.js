@@ -317,6 +317,11 @@ function buildCodexVerifyPrompt(f) {
 // does not) so the orchestrator makes exactly ONE launch — the old two-call
 // contract (backgrounded Codex Bash + Workflow in a single message) relied on
 // prose compliance and serialized whenever the model waited on Codex first.
+// Background-task completion notifications never reach workflow subagents, and
+// turn-end teardown kills their tracked background tasks — so the runner must
+// never use run_in_background. scripts/codex-launch.mjs spawns the CLI
+// OS-detached instead and gives the runner an idempotent foreground
+// attach-and-wait (re-running it never relaunches a review).
 const CODEX_RUNNER_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -368,6 +373,7 @@ function buildCodexRunnerPrompt(input) {
   const jsonPath = repoRoot + "/" + outDir + "/raw/codex-adversarial.json";
   const stderrPath =
     repoRoot + "/" + outDir + "/raw/codex-adversarial.stderr.log";
+  const pidPath = repoRoot + "/" + outDir + "/raw/codex.pid";
   const gateB =
     codex.expectedTarget && codex.expectedTarget.mode === "branch"
       ? [
@@ -384,18 +390,21 @@ function buildCodexRunnerPrompt(input) {
     "You run the Codex adversarial-review CLI for a code-review workflow, then gate-check its output. Repo root: " +
       repoRoot,
     "",
-    "Step 1 — run the CLI with the Bash tool, `run_in_background: true` (the review can exceed the 10-minute foreground cap):",
+    "Step 1 — run the launcher-waiter as a FOREGROUND Bash call with `timeout: 600000`. NEVER use `run_in_background` (workflow subagents receive no background-task completion notifications, and turn-end teardown kills tracked background tasks — ending your turn while the review runs kills it):",
     "",
-    '  node "' +
-      codex.cmd +
-      '" adversarial-review --json ' +
-      codex.targetFlags +
-      " \\",
-    "    >" + jsonPath + " \\",
-    "    2>" + stderrPath,
+    '  node "' + codex.launcher + '" \\',
+    '    --companion "' + codex.cmd + '" \\',
+    '    --json-out "' + jsonPath + '" \\',
+    '    --stderr-out "' + stderrPath + '" \\',
+    '    --pid-file "' + pidPath + '" \\',
+    "    -- " + renderCodexTargetFlags(codex.targetFlags),
     "",
-    "Do NOT pass --background (parsed but ignored — no job id is printed). Do NOT pass --model (the companion auto-defaults). Do NOT poll the companion's status/result subcommands.",
-    "Wait for the background task to terminate (you are notified when it finishes; if you must check sooner, check the Bash task's status). NEVER kill or re-run a live review.",
+    "The launcher spawns the review OS-detached exactly once (the pidfile makes every re-run attach-and-wait, never relaunch), then blocks until it prints one token:",
+    "- `EXITED` → the review process ended; go to Step 2.",
+    "- `STILL_RUNNING pid=<n>`, or the Bash call itself times out → run the EXACT same command again; repeat until EXITED.",
+    "- `TIMEOUT pid=<n>` (exit 2 — the ~40-minute deadline passed) → attempt Step 2's Gate A once anyway (the review may have finished behind a recycled pid); if Gate A fails, return BLOCKED quoting the first ~5 lines of the stderr log plus the pid. Do NOT kill the process.",
+    "- Any other output → return BLOCKED quoting it.",
+    "Never invoke codex-companion.mjs directly, never use run_in_background, never pass --background or --model, never poll the companion's status/result subcommands, and NEVER kill the review process. Re-running the launcher command is always safe — it never starts a second review.",
     "",
     "Step 2 — Gate A (validity/crash): Read " +
       jsonPath +
@@ -500,6 +509,13 @@ function validateCodexTargetFlags(targetFlags) {
   return null;
 }
 
+// targetFlags is pre-validated by validateCodexTargetFlags; quoting the ref
+// only suppresses shell expansion of allowlisted chars like ~ and {..}.
+function renderCodexTargetFlags(targetFlags) {
+  const m = /^--base (\S+)$/.exec(targetFlags);
+  return m ? '--base "' + m[1] + '"' : targetFlags;
+}
+
 async function runCodexTrack(input) {
   const flagErr = validateCodexTargetFlags(input.codex.targetFlags);
   if (flagErr) {
@@ -511,24 +527,56 @@ async function runCodexTrack(input) {
       verifyRan: false,
     };
   }
+  const launcherErr =
+    typeof input.codex.launcher !== "string" || !input.codex.launcher
+      ? "codex.launcher (absolute path to scripts/codex-launch.mjs) is required"
+      : input.codex.launcher.includes('"') ||
+          typeof input.codex.cmd !== "string" ||
+          input.codex.cmd.includes('"')
+        ? "codex.cmd/codex.launcher must be paths without double quotes"
+        : null;
+  if (launcherErr) {
+    return {
+      status: "BLOCKED",
+      outcome: null,
+      blocked_reason: launcherErr,
+      degraded_refs: [],
+      verifyRan: false,
+    };
+  }
   let threw = null;
-  const runner = await agent(buildCodexRunnerPrompt(input), {
-    label: "codex:adversarial",
-    phase: "Codex",
-    agentType: "general-purpose", // guarantees Bash for the CLI run
-    effort: "low", // mechanical: run, gate-check, transcribe
-    schema: CODEX_RUNNER_SCHEMA,
-  }).catch((e) => {
-    threw = e;
-    return null;
-  });
+  const spawnRunner = (label) =>
+    agent(buildCodexRunnerPrompt(input), {
+      label,
+      phase: "Codex",
+      agentType: "general-purpose", // guarantees Bash for the CLI run
+      effort: "low", // mechanical: run, gate-check, transcribe
+      schema: CODEX_RUNNER_SCHEMA,
+    }).catch((e) => {
+      threw = e;
+      return null;
+    });
+  let runner = await spawnRunner("codex:adversarial");
+  if (!runner) {
+    // The detached CLI survives runner death and codex-launch.mjs re-attaches
+    // via the pidfile, so one retry can still harvest the review. Distinct
+    // label — a resume must not replay a cached failure.
+    log(
+      "codex-runner died (" +
+        (threw ? String((threw && threw.message) || threw) : "no output") +
+        ") — retrying once; the detached CLI survives and the launcher re-attaches",
+    );
+    threw = null;
+    runner = await spawnRunner("codex:adversarial:retry");
+  }
   if (!runner) {
     return {
       status: "BLOCKED",
       outcome: null,
       blocked_reason: threw
-        ? "codex-runner agent failed: " + String((threw && threw.message) || threw)
-        : "codex-runner agent returned no output (skipped)",
+        ? "codex-runner agent failed twice: " +
+          String((threw && threw.message) || threw)
+        : "codex-runner agent returned no output twice (skipped)",
       verifyRan: false,
     };
   }

@@ -42,6 +42,7 @@ Workflow({
       null | "<pre-rendered 'Previously adjudicated claims' block (SKILL.md Phase 1) — spliced verbatim into every reviewer prompt; never sent to refuters or Codex>",
     codex: null | {
       cmd: "<absolute path to codex-companion.mjs (CODEX_CMD)>",
+      launcher: "<absolute path to this skill's scripts/codex-launch.mjs>",
       targetFlags: "--base <ref>" | "--scope working-tree",
       expectedTarget:
         { mode: "branch", baseSha: "<git rev-parse'd SHA of the trusted ref>" } |
@@ -198,15 +199,24 @@ echoes of the finding's location — journal-reconstruction aids, ignored by the
 
 ## 3. Codex invocation pattern (runs INSIDE the workflow's codex-runner agent)
 
-The orchestrator only resolves `CODEX_CMD` and the target flags (Phase 2/3) and passes them in
-`args.codex`; the workflow's codex-runner agent executes the CLI. These are the CLI facts that
-agent's prompt encodes:
+The orchestrator only resolves `CODEX_CMD`, the launcher path, and the target flags (Phase 2/3) and
+passes them in `args.codex`; the workflow's codex-runner agent executes the CLI. These are the CLI
+facts that agent's prompt encodes:
 
 `adversarial-review` has **no real backgrounding** — its `--background` flag is parsed but ignored
 (`handleReviewCommand` always runs foreground), it prints no `background as <id>` line, and there is
-no companion-level job to poll. The runner executes it **synchronously**, backgrounded with the
-**Bash tool's `run_in_background: true`** (the review can outlast the 10-minute foreground cap; the
-agent waits for the task's completion notification and never kills or re-runs a live review).
+no companion-level job to poll. The runner must also **never** use the Bash tool's
+`run_in_background: true`: background-task completion notifications never reach workflow subagents,
+and turn-end teardown kills a subagent's tracked background tasks — that combination deterministically
+killed the CLI mid-review with 0-byte output. Instead the runner invokes this skill's
+`scripts/codex-launch.mjs` as a **foreground** Bash call (`timeout: 600000`): the launcher spawns the
+companion **OS-detached** exactly once (pidfile at `<outDir>/raw/codex.pid`; every re-run
+attach-and-waits, never relaunches), self-limits each invocation (`--max-wait-ms`, default 9 min —
+under the 10-minute foreground cap) and owns the total deadline (`--deadline-ms`, default 40 min),
+and prints exactly one stdout token the runner branches on: `EXITED` (proceed to the gates),
+`STILL_RUNNING pid=<n>` or a Bash-call timeout (re-run the same command), `TIMEOUT pid=<n>` (attempt
+Gate A once — a recycled pid may hide a finished review — else BLOCKED quoting the stderr tail + pid;
+never kill the process). Re-running the launcher is always safe; the runner never kills a review.
 
 Pass `--json`: the companion then emits exactly one JSON object on stdout (`outputResult` →
 `console.log(JSON.stringify(payload))`) and routes progress to a job logfile instead of stderr
@@ -220,18 +230,22 @@ non-`--json` run; see §6.)
 # Orchestrator (Phase 2): resolve companion script (latest installed version)
 CODEX_CMD=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | sort -V | tail -1)
 
-# codex-runner agent (inside the workflow): $CODEX_TARGET is one of:
+# codex-runner agent (inside the workflow), FOREGROUND, timeout 600000, repeated until EXITED.
+# Target flags after -- are one of:
 #   --base "$CODEX_BASE"   (base / full modes)   |   --scope working-tree   (working-tree mode)
-node "$CODEX_CMD" adversarial-review --json $CODEX_TARGET \
-  ><runDir>/raw/codex-adversarial.json \
-  2><runDir>/raw/codex-adversarial.stderr.log
+node "<skill dir>/scripts/codex-launch.mjs" \
+  --companion "$CODEX_CMD" \
+  --json-out <runDir>/raw/codex-adversarial.json \
+  --stderr-out <runDir>/raw/codex-adversarial.stderr.log \
+  --pid-file <runDir>/raw/codex.pid \
+  -- $CODEX_TARGET
 ```
 
 No `--background`; no `--model` (let the companion auto-default to the best model); no
 `status`/`result` subcommand calls for reviews (those exist only for the `task` subcommand). Once the
-task terminates the runner reads `codex-adversarial.json`, `JSON.parse`s it, and applies the §6 gates
-and routing; the orchestrator consumes only the `codex` key of `workflow-result.json` plus the raw
-files on disk.
+launcher prints `EXITED` the runner reads `codex-adversarial.json`, `JSON.parse`s it, and applies the
+§6 gates and routing; the orchestrator consumes only the `codex` key of `workflow-result.json` plus
+the raw files on disk.
 
 `--base <ref>` makes Codex diff `merge-base(HEAD,<ref>)..HEAD`. Above 2 files / 256 KB the companion
 self-collects — it sends only a summary + commit log + file list and tells Codex to inspect the range

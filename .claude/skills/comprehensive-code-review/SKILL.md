@@ -303,7 +303,8 @@ EXPECTED_TARGET='{ "mode": "working-tree" }'
 Assemble the workflow's `codex` arg (or `null` when `CODEX_AVAILABLE=false`):
 
 ```
-codex = { cmd: <CODEX_CMD>, targetFlags: <CODEX_TARGET>, expectedTarget: <EXPECTED_TARGET as JSON> }
+codex = { cmd: <CODEX_CMD>, launcher: "<this skill's base directory>/scripts/codex-launch.mjs",
+          targetFlags: <CODEX_TARGET>, expectedTarget: <EXPECTED_TARGET as JSON> }
 ```
 
 ## Phase 4 — Implementation-Reviewer Eligibility
