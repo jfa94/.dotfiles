@@ -49,10 +49,16 @@ for PAT in \
 done
 
 # Backstop for shell writes that bypass the Edit/Write protected-files gate:
-# redirects, sed -i, tee, cp/mv onto .env* / credentials / secrets paths.
+# redirects, tee, sed -i, mv/cp/rm targeting .env* / credentials / secrets paths.
+# Target-anchored: the secret path must be the write op's operand, so reads with
+# incidental redirects (`source .env.e2e ... 2>&1 | tail`) pass silently.
 # Ask (not deny): mirrors protected-files' confirm flow; example/sample/template exempt.
-if printf '%s' "$CMD" | grep -qiE '(^|[[:space:]/=("'"'"'])\.env([.[:alnum:]_-]*)?|credentials|(^|[[:space:]/])secrets?/' \
-  && printf '%s' "$CMD" | grep -qE '>|[[:space:]]tee[[:space:]]|sed[[:space:]]+[^;&|]*-i|(^|[[:space:]])(mv|cp)[[:space:]]' \
+ENVBASE='\.env[.[:alnum:]_-]*'
+PFX='[^[:space:]|;&<>]*'
+SECRET="(${ENVBASE}|${PFX}/${ENVBASE}|secrets?/|${PFX}/secrets?/|${PFX}credentials)"
+GAP='([^;&|<>]*[[:space:]])?'
+if printf '%s' "$CMD" | grep -qiE \
+    ">>?[[:space:]]*${SECRET}|(^|[[:space:]|;&])tee[[:space:]]+${GAP}${SECRET}|(^|[[:space:]|;&])sed[[:space:]]+[^;&|<>]*-i${GAP}${SECRET}|(^|[[:space:]|;&])(mv|cp|rm)[[:space:]]+${GAP}${SECRET}" \
   && ! printf '%s' "$CMD" | grep -qiE '\.env[^[:space:]]*\.(example|sample|template)'; then
   jq -cn --arg r 'shell write touching .env/credentials/secrets — confirm (protected-files backstop)' \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":$r}}'
