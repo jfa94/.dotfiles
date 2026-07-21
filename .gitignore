@@ -1,11 +1,74 @@
-# MacOS
+# =============================================================================
+# Operating System
+# =============================================================================
 .DS_Store
 
-# Git worktrees
-.worktrees/
-*.worktrees
+# =============================================================================
+# Secrets & Environment
+# =============================================================================
+.env
+.env.test
+.env.production
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+env.bak/
+venv.bak/
 
-# Claude Code
+# =============================================================================
+# Temporary files
+# =============================================================================
+.temp/
+
+# =============================================================================
+# Editors & IDEs
+# =============================================================================
+# JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm, Rider
+# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+.idea/**/aws.xml
+.idea/**/contentModel.xml
+.idea/**/dataSources/
+.idea/**/dataSources.ids
+.idea/**/dataSources.local.xml
+.idea/**/sqlDataSources.xml
+.idea/**/dynamic.xml
+.idea/**/uiDesigner.xml
+.idea/**/dbnavigator.xml
+.idea/**/gradle.xml
+.idea/**/libraries
+.idea/**/mongoSettings.xml
+.idea/caches/build_file_checksums.ser
+.idea/replstate.xml
+.idea/httpRequests
+.idea/
+# Gradle/Maven with auto-import — uncomment if needed:
+# .idea/artifacts
+# .idea/compiler.xml
+# .idea/jarRepositories.xml
+# .idea/modules.xml
+# .idea/*.iml
+# .idea/modules
+# *.iml
+# *.ipr
+*.iws
+.vscode-test
+cmake-build-*/
+.idea_modules/
+atlassian-ide-plugin.xml
+com_crashlytics_export_strings.xml
+crashlytics.properties
+crashlytics-build.properties
+fabric.properties
+
+# =============================================================================
+# Claude Code & AI tooling
+# =============================================================================
 .claude/worktrees/
 .claude/plugins/
 .claude/file-history/
@@ -25,114 +88,66 @@
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 .claude/tool-audit.jsonl
+.claude/read-once/session-*.jsonl
+.claude/read-once/snapshots/
+.claude/read-once/stats.jsonl
+.claude/read-once/.last-cleanup
 .claude-plugin-data/
 .code-review/
 .code-reviews/
 .comprehensive-code-review/
 .focused-code-review/
-.claude/read-once/session-*.jsonl
-.claude/read-once/snapshots/
-.claude/read-once/stats.jsonl
-.claude/read-once/.last-cleanup
 docs/superpowers/
 CLAUDE.local.md
 
-# Temporary files
-.temp/
+# Factory Plugin
+.claude-progress.json
+.feature-status.json
+.state/
 
-# Reports (mutation testing, coverage)
-reports/
+# =============================================================================
+# Git worktrees
+# =============================================================================
+.worktrees/
+*.worktrees
 
-# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
-# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
-.idea/
-*.db
+# =============================================================================
+# Dependencies
+# =============================================================================
+node_modules/
+jspm_packages/
+bower_components
+web_modules/
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+.npm
 
-# User-specific stuff
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/usage.statistics.xml
-.idea/**/dictionaries
-.idea/**/shelf
-
-# AWS User-specific
-.idea/**/aws.xml
-
-# Generated files
-.idea/**/contentModel.xml
-
-# Sensitive or high-churn files
-.idea/**/dataSources/
-.idea/**/dataSources.ids
-.idea/**/dataSources.local.xml
-.idea/**/sqlDataSources.xml
-.idea/**/dynamic.xml
-.idea/**/uiDesigner.xml
-.idea/**/dbnavigator.xml
-
-# Gradle
-.idea/**/gradle.xml
-.idea/**/libraries
-
-# Gradle and Maven with auto-import
-# When using Gradle or Maven with auto-import, you should exclude module files,
-# since they will be recreated, and may cause churn.  Uncomment if using
-# auto-import.
-# .idea/artifacts
-# .idea/compiler.xml
-# .idea/jarRepositories.xml
-# .idea/modules.xml
-# .idea/*.iml
-# .idea/modules
-# *.iml
-# *.ipr
-
-# CMake
-cmake-build-*/
-
-# Mongo Explorer plugin
-.idea/**/mongoSettings.xml
-
-# File-based project format
-*.iws
-
-# IntelliJ
-out/
-
-# mpeltonen/sbt-idea plugin
-.idea_modules/
-
-# JIRA plugin
-atlassian-ide-plugin.xml
-
-# Cursive Clojure plugin
-.idea/replstate.xml
-
-# Crashlytics plugin (for Android Studio and IntelliJ)
-com_crashlytics_export_strings.xml
-crashlytics.properties
-crashlytics-build.properties
-fabric.properties
-
-# Editor-based Rest Client
-.idea/httpRequests
-
-# Android studio 3.1+ serialized cache file
-.idea/caches/build_file_checksums.ser
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
+# Python environments
+.venv
+env/
+venv/
+ENV/
 .Python
+__pypackages__/
+
+# Deno
+.deno/
+
+# =============================================================================
+# Build output
+# =============================================================================
+dist
 build/
+out
+target/
+.aws-sam/
+.installed.cfg
+
+# Python packaging
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -143,255 +158,162 @@ var/
 wheels/
 share/python-wheels/
 *.egg-info/
-.aws-sam/
-.installed.cfg
 *.egg
 MANIFEST
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Framework build output
+.next
+.nuxt
+.vercel
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
+# =============================================================================
+# Caches
+# =============================================================================
 .cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-*.lcov
+.eslintcache
+.parcel-cache
+*.tsbuildinfo
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.grunt
+.lock-wscript
+lib-cov
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.env.test
-.env.production
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
+# Python caches
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Pyre type checker
 .pyre/
-
-# pytype static type analyzer
 .pytype/
-
-# Cython debug symbols
 cython_debug/
+.ropeproject
+.spyderproject
+.spyproject
 
-### Node ###
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Directory for instrumented libs generated by jscoverage/JSCover
-lib-cov
-
-# Coverage directory used by tools like istanbul
-coverage
-
-# Grunt intermediate storage (http://gruntjs.com/creating-plugins#storing-task-files)
-.grunt
-
-# node-waf configuration
-.lock-wscript
-
-# Compiled binary addons (http://nodejs.org/api/addons.html)
-build/Release
-
+# =============================================================================
 # Logs
-logs/
-logs
+# =============================================================================
 *.log
+logs
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
-
-# Diagnostic reports (https://nodejs.org/api/report.html)
+pip-log.txt
+pip-delete-this-directory.txt
+pids
+*.pid
+*.seed
+*.pid.lock
+celerybeat-schedule
+celerybeat.pid
+# Node diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# nyc test coverage
+# =============================================================================
+# Test, Coverage & Reports
+# =============================================================================
+# Coverage
+coverage
+htmlcov/
 .nyc_output
+.coverage
+.coverage.*
+coverage.xml
+*.lcov
+*.cover
+*.py,cover
+nosetests.xml
+cover/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
 
-# Bower dependency directory (https://bower.io/)
-bower_components
+# E2E
+playwright-report/
+test-results/
+.playwright-mcp/
 
-# Dependency directories
-node_modules/
-jspm_packages/
-
-# Snowpack dependency directory (https://snowpack.dev/)
-web_modules/
-
-# TypeScript
-*.tsbuildinfo
-
-# Optional npm cache directory
-.npm
-
-# Deno
-.deno/
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.parcel-cache
-
-# Next.js
-next-env.d.ts
-.next
-out
-.vercel
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Gatsby files
-.cache/
-# Comment in the public line in if your project uses Gatsby and not Next.js
-# https://nextjs.org/blog/next-9-1#public-directory-support
-# public
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless/
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
-
-# yarn v2
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
-
-# Supabase
-supabase/.temp/
-
-# Mutation testing
+# Mutation testing (Stryker → reports/mutation/)
+reports/
 .stryker-tmp/
 
-# Factory Plugin
-.claude-progress.json
-.feature-status.json
-.state/
-.playwright-mcp/
+# =============================================================================
+# Databases
+# =============================================================================
+*.db
+db.sqlite3
+db.sqlite3-journal
+
+# =============================================================================
+# Language: Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.mo
+*.pot
+# SageMath parsed files
+*.sage.py
+# pyenv — uncomment for a library/package to pin the interpreter version
+# .python-version
+# pipenv — Pipfile.lock is normally checked in; uncomment if not desired here
+# Pipfile.lock
+
+# =============================================================================
+# Language: Node/JS
+# =============================================================================
+*.tgz
+.yarn-integrity
+.node_repl_history
+next-env.d.ts
+
+# =============================================================================
+# Frameworks
+# =============================================================================
+# Django
+local_settings.py
+instance/
+
+# Flask
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Sphinx
+docs/_build/
+
+# mkdocs
+/site
+
+# PyBuilder
+.pybuilder/
+
+# Jupyter / IPython
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# Gatsby (uncomment `public` below if the project doesn't also use Next.js)
+# public
+
+# vuepress
+.vuepress/dist
+
+# =============================================================================
+# Services
+# =============================================================================
+supabase/.temp/
