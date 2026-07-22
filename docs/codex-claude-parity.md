@@ -1,20 +1,22 @@
 # Claude Code → Codex CLI parity
 
-Audited against `.claude/settings.json` and Codex 0.144.4. Status-line behavior and all Superpowers state/hooks are excluded.
+Audited against `.claude/settings.json` and Codex 0.144.4. All Superpowers state/hooks are excluded.
 
 ## Mapping
 
 | Claude behavior              | Codex implementation                                                                                         | Parity                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | Read broadly                 | `workspace-net` filesystem `/ = read`                                                                        | Exact                                                                                             |
-| Write trusted repos/temp     | Explicit dotfiles, Projects, workspace roots, `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/tmp` writes           | Exact                                                                                             |
+| Write trusted repos/temp     | Explicit dotfiles, Projects, workspace roots (including `.git`), `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/tmp` writes | Exact                                                                                      |
 | Protect credentials/secrets  | Filesystem denies plus protected-files and pre-commit hooks; Linux recursive deny snapshots scan to depth 32 | Approximate; filename patterns cannot identify every secret                                       |
 | Bash allowlist               | `.codex/rules/default.rules` exact argv prefixes                                                             | Approximate; wildcard `git -C` and AWS verbs prompt                                               |
 | Web search                   | `web_search = "live"`; limited trusted-domain network profile                                                | Exact for search; shell networking remains allowlisted                                            |
 | Default/high planning effort | Low normal reasoning, high Plan-mode override                                                                | Exact                                                                                             |
+| Approval review              | `approval_policy = "on-request"` with `approvals_reviewer = "auto_review"`                                  | Codex-native persisted "accept for me" behavior                                                   |
 | Auto-compaction              | `model_auto_compact_token_limit = 200000`                                                                    | Approximate; Claude's five-minute window has no mapping                                           |
 | Fullscreen                   | `tui.alternate_screen = "always"`                                                                            | Exact native equivalent                                                                           |
 | Unfocused notifications      | Native TUI notifications with `notification_condition = "unfocused"`                                         | Exact native equivalent                                                                           |
+| Status line                  | Native model, project, Git state, context, and usage-limit items                                              | Codex-native persisted selection                                                                  |
 | Shift/Ctrl+Enter newline     | `tui.keymap.editor.insert_newline`                                                                           | Exact                                                                                             |
 | Config/protected file hooks  | Codex PreToolUse scripts                                                                                     | Approximate; current workspace `.codex` uses native sandbox approval, cross-workspace writes deny |
 | SQL read-only                | Supabase `execute_sql` matcher plus SQL parser                                                               | Approximate parser; fail closed on recognized mutation forms                                      |
@@ -50,7 +52,7 @@ The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and
 - No Codex model pin or startup model-lock mutation; static reasoning settings are authoritative.
 - No Claude mobile-push semantics, automatic remote-control startup, away summaries, workflow-warning suppression, or five-minute compaction window.
 - Dynamic Claude `ask` hooks use native sandbox/exec-policy prompts where expressible; unsupported dynamic cases deny with manual retry guidance.
-- Status-line colors/items, model-availability NUX, plugins, and all Superpowers files/state remain untouched.
+- Model-availability NUX, plugins, and all Superpowers files/state remain untouched.
 - Newline-containing filenames are an acknowledged limitation in changed-file scanner lists.
 - Linux/WSL expands recursive filesystem deny globs to depth 32 before starting `bubblewrap`. Deeper matches are outside the shell-level snapshot, while raising the cap increases startup scanning work.
 

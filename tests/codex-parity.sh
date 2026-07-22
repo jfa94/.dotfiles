@@ -68,8 +68,9 @@ OUT=$(run_hook sessionstart-compact-restore.sh '{"rollout_path":"/missing/rollou
 printf '%s' "$OUT" | jq -e '.hookSpecificOutput.additionalContext | contains("warning")' >/dev/null
 PASS=$((PASS + 1))
 
-STATUS=$(sed -n '/^status_line = \[/,/^]/p' "$CODEX_CONFIG")
-[[ "$STATUS" == *'"model-with-reasoning"'* && "$STATUS" == *'"five-hour-limit"'* ]]
+EXPECTED_STATUS='status_line = ["model", "project-name", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
+grep -Fxq "$EXPECTED_STATUS" "$CODEX_CONFIG"
+grep -Fxq 'approvals_reviewer = "auto_review"' "$CODEX_CONFIG"
 NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
 FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
@@ -81,6 +82,8 @@ PASS=$((PASS + 1))
 
 FILESYSTEM_PROFILE=$(sed -n '/^\[permissions\.workspace-net\.filesystem\]$/,/^\[permissions\.workspace-net\.filesystem\./p' "$CODEX_CONFIG" | sed '$d')
 [[ $(printf '%s\n' "$FILESYSTEM_PROFILE" | awk '$0 == "glob_scan_max_depth = 32" { count++ } END { print count + 0 }') -eq 1 ]]
+WORKSPACE_PROFILE=$(sed -n '/^\[permissions\.workspace-net\.filesystem\.\":workspace_roots"\]$/,/^\[/p' "$CODEX_CONFIG")
+[[ "$WORKSPACE_PROFILE" == *'".git" = "write"'* ]]
 PASS=$((PASS + 1))
 
 echo "codex parity: $PASS checks passed"
