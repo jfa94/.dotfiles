@@ -110,7 +110,7 @@ trust_level = "trusted"
 alternate_screen = "always"
 notifications = true
 notification_condition = "unfocused"
-status_line = ["model", "project-name", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]
+status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]
 status_line_use_colors = true
 
 [tui.keymap.editor]
