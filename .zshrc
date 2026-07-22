@@ -20,8 +20,10 @@ zstyle ':vcs_info:*' formats '(%b%u%c)'
 setopt PROMPT_SUBST
 PROMPT='%F{208}%n%f in %F{247}${PWD/#HOME/~}%f ${vcs_info_msg_0_}> '
 
-# Created by `pipx` on 2025-02-17 10:52:55
-export PATH="$PATH:/Users/Javier/.local/bin"
+# User-local binaries take precedence over system-wide installs.
+export PATH="$HOME/.local/bin:$PATH"
+
+command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
 # Ctrl+Left/Right word-jump. Windows Terminal sends the native Ctrl-arrow
 # CSI sequence (1;5D/C) normally, and the Alt-arrow one (1;3D/C) once Ctrl+Left/

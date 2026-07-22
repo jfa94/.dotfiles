@@ -29,6 +29,7 @@ python3-dev|-|python3-dev|-
 pipx|-|pipx|python-pipx
 unzip|-|unzip|unzip
 tmux|tmux|tmux|tmux
+direnv|direnv|direnv|direnv
 jq|jq|jq|jq
 graphviz|graphviz|graphviz|graphviz
 gh|gh|bootstrap|github-cli
