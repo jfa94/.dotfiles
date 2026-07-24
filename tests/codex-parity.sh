@@ -146,7 +146,38 @@ FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
 [[ "$FILTERED_CONFIG" == *'notify = '* && "$FILTERED_CONFIG" != *'[hooks.state'* ]]
 [[ ! -e "$ROOT/.codex/config.toml" ]]
 grep -q 'CODEX_USER_CONFIG=".codex/user-config.toml"' "$ROOT/setup.sh"
-! GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$ROOT" diff --name-only -- '.codex/plugins.txt' '.claude/hooks/superpowers-compact-reinject.sh' | grep -q .
+grep -Fxq 'aws-core@agent-toolkit-for-aws' "$ROOT/.codex/plugins.txt"
+if grep -Eq '^(superpowers|codex-security|ponytail)@' "$ROOT/.codex/plugins.txt"; then
+  exit 1
+fi
+for plugin in \
+  stripe@openai-curated \
+  supabase@openai-curated \
+  posthog@openai-curated \
+  aws-core@agent-toolkit-for-aws \
+  visualize@openai-bundled \
+  computer-use@openai-bundled \
+  sites@openai-bundled \
+  browser@openai-bundled
+do
+  [[ $(grep -A1 "^\[plugins\\.\"$plugin\"\]$" "$CODEX_CONFIG" | tail -1) == "enabled = true" ]]
+done
+for plugin in \
+  superpowers@openai-curated \
+  codex-security@openai-curated \
+  ponytail@ponytail \
+  documents@openai-primary-runtime \
+  pdf@openai-primary-runtime \
+  spreadsheets@openai-primary-runtime \
+  presentations@openai-primary-runtime \
+  template-creator@openai-primary-runtime \
+  github@openai-curated-remote
+do
+  if grep -qF "[plugins.\"$plugin\"]" "$CODEX_CONFIG"; then
+    exit 1
+  fi
+done
+[[ -f "$ROOT/.claude/hooks/superpowers-compact-reinject.sh" ]]
 PASS=$((PASS + 1))
 
 FILESYSTEM_PROFILE=$(sed -n '/^\[permissions\.workspace-net\.filesystem\]$/,/^\[permissions\.workspace-net\.filesystem\./p' "$CODEX_CONFIG" | sed '$d')

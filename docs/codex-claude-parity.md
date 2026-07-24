@@ -41,13 +41,13 @@ Claude's inventory contains 19 plugins. Codex requirements intentionally include
 | --- | --- | --- | --- |
 | `typescript-lsp@claude-plugins-official` | Enabled | No plugin | Gap; use project-native type checking |
 | `commit-commands@claude-plugins-official` | Enabled | No plugin | Gap; `gh` is not a commit-command replacement |
-| `security-guidance@claude-plugins-official` | Enabled | Codex Security plus repository hooks | Approximate; no automatic per-turn LLM diff review |
+| `security-guidance@claude-plugins-official` | Enabled | Repository hooks plus `$code-review` | Approximate; dedicated Codex Security workflows are intentionally not installed |
 | `claude-md-management@claude-plugins-official` | Enabled | No plugin | Gap |
 | `playground@claude-plugins-official` | Enabled | No plugin | Gap; Visualize has different output semantics |
-| `superpowers@claude-plugins-official` | Enabled | `superpowers@openai-curated` | Direct |
+| `superpowers@claude-plugins-official` | Enabled | None | Intentionally not mirrored; native Plan mode and global instructions cover the workflow |
 | `codex@openai-codex` | Enabled | None | Not applicable inside Codex |
 | `factory@jfa94` | Enabled | No plugin | Gap; Claude-only packaging |
-| `ponytail@ponytail` | Enabled | `ponytail@ponytail` | Direct skills; plugin hooks remain inactive |
+| `ponytail@ponytail` | Enabled | None | Intentionally not mirrored; global instructions already require minimal solutions |
 | `agent-sdk-dev@claude-plugins-official` | Disabled | None | Intentionally not mirrored |
 | `plugin-dev@claude-plugins-official` | Disabled | Built-in plugin/skill creation tools | Native workflow, not a required installed plugin |
 | `frontend-design@claude-plugins-official` | Disabled | None | Intentionally not mirrored |
@@ -59,7 +59,9 @@ Claude's inventory contains 19 plugins. Codex requirements intentionally include
 | `resend@claude-plugins-official` | Inventory-only | None | Not explicitly enabled in Claude and not required in Codex |
 | `aws-core@agent-toolkit-for-aws` | Disabled | `aws-core@agent-toolkit-for-aws` | Required in Codex; official successor to legacy `aws-serverless` |
 
-GitHub is deliberately CLI-only through `gh`; the GitHub Codex plugin is disabled. Stripe, Supabase, and PostHog connector authentication remains interactive. PostHog must connect to Outsidey project `107700`, with writes configured to ask.
+GitHub is deliberately CLI-only through `gh`; the local GitHub plugin is disabled and the account connector is not installed. Stripe, Supabase, and PostHog connector authentication remains interactive. PostHog must connect to Outsidey project `107700`, with writes configured to ask.
+
+Codex keeps Browser, Computer Use, Sites, and Visualize globally available. Document, PDF, spreadsheet, presentation, and artifact-template plugins are intentionally omitted and can be installed when needed.
 
 AWS setup registers `aws/agent-toolkit-for-aws`, installs `aws-core`, `uv`/`uvx`, and an official user-local AWS CLI version at least 2.35.0. It never edits AWS credentials or profiles. Codex permits AWS knowledge, documentation, skill, and region tools but repository hooks deny authenticated MCP `call_aws`, `run_script`, and presigned-URL operations.
 

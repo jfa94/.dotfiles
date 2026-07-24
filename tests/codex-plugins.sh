@@ -18,12 +18,10 @@ printf '%s\n' "$*" >> "$state/calls"
 
 if [[ "$*" == "plugin marketplace list --json" ]]; then
   extra=""
-  [[ -f "$state/ponytail-market" ]] && extra="$extra,{\"name\":\"ponytail\"}"
   [[ -f "$state/aws-market" ]] && extra="$extra,{\"name\":\"agent-toolkit-for-aws\"}"
   printf '{"marketplaces":[{"name":"openai-curated"}%s]}\n' "$extra"
 elif [[ "$1 $2 $3" == "plugin marketplace add" ]]; then
   case "$4" in
-    DietrichGebert/ponytail) touch "$state/ponytail-market" ;;
     aws/agent-toolkit-for-aws) touch "$state/aws-market" ;;
     *) exit 2 ;;
   esac
@@ -59,14 +57,12 @@ export MOCK_STATE="$tmp/state"
 export MOCK_MANIFEST="$tmp/repo/.codex/plugins.txt"
 
 bash "$INSTALLER" "$tmp/repo"
-grep -Fq 'plugin marketplace add DietrichGebert/ponytail --json' "$tmp/state/calls"
 grep -Fq 'plugin marketplace add aws/agent-toolkit-for-aws --json' "$tmp/state/calls"
 
 first_adds=$(grep -c '^plugin add ' "$tmp/state/calls")
 bash "$INSTALLER" "$tmp/repo"
 second_adds=$(grep -c '^plugin add ' "$tmp/state/calls")
 [[ "$first_adds" -eq "$second_adds" ]]
-grep -Fq 'plugin marketplace upgrade ponytail --json' "$tmp/state/calls"
 grep -Fq 'plugin marketplace upgrade agent-toolkit-for-aws --json' "$tmp/state/calls"
 
 rm -f "$tmp/state/plugin-posthog_openai-curated"
@@ -76,12 +72,9 @@ if bash "$INSTALLER" "$tmp/repo" >/dev/null 2>&1; then
   exit 1
 fi
 
-grep -Fxq 'posthog@openai-curated' "$ROOT/.codex/plugins.txt"
-grep -Fxq 'aws-core@agent-toolkit-for-aws' "$ROOT/.codex/plugins.txt"
-grep -Fxq 'ponytail@ponytail' "$ROOT/.codex/plugins.txt"
-if grep -Eq '^(github|figma)@' "$ROOT/.codex/plugins.txt"; then
-  echo "FAIL: GitHub/Figma remain in the required Codex plugin manifest" >&2
-  exit 1
-fi
+expected_plugins=$'stripe@openai-curated\nsupabase@openai-curated\nposthog@openai-curated\naws-core@agent-toolkit-for-aws'
+[[ $(grep -Ev '^(#|$)' "$ROOT/.codex/plugins.txt") == "$expected_plugins" ]]
+expected_marketplace='agent-toolkit-for-aws aws/agent-toolkit-for-aws'
+[[ $(grep -Ev '^(#|$)' "$ROOT/.codex/plugin-marketplaces.txt") == "$expected_marketplace" ]]
 
 echo "OK"

@@ -750,6 +750,7 @@ fi
 # Section 9b: Install Codex Plugins
 # =============================================================================
 
+# Plugin selection is declarative: .codex/plugins.txt is authoritative.
 codex_plugins_status="skipped (codex CLI not found)"
 
 if command -v codex &>/dev/null && [[ -f "$DOTFILES_DIR/.codex/plugins.txt" ]]; then

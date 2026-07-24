@@ -92,7 +92,9 @@ assert_shell_command "cat $ROOT/.env.local" allow
 assert_shell_command "printf value > $ROOT/.env.local" deny
 
 [[ $(grep -A1 '^\[plugins\."github@openai-curated"\]$' "$CONFIG" | tail -1) == "enabled = false" ]]
-[[ $(grep -A1 '^\[plugins\."github@openai-curated-remote"\]$' "$CONFIG" | tail -1) == "enabled = false" ]]
+if grep -q '^\[plugins\."github@openai-curated-remote"\]$' "$CONFIG"; then
+  exit 1
+fi
 PASS=$((PASS + 2))
 
 jq -e '.hooks.PreToolUse[] | select(.matcher == "mcp__.*[Aa][Ww][Ss].*") |

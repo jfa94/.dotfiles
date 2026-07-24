@@ -1,3 +1,2 @@
 # marketplace-name source
-ponytail DietrichGebert/ponytail
 agent-toolkit-for-aws aws/agent-toolkit-for-aws

@@ -2,7 +2,7 @@ approval_policy = "on-request"
 approvals_reviewer = "user"
 default_permissions = "workspace-net"
 model_reasoning_effort = "medium"
-plan_mode_reasoning_effort = "high"
+plan_mode_reasoning_effort = "xhigh"
 model_auto_compact_token_limit = 200000
 web_search = "live"
 model = "gpt-5.6-sol"
@@ -133,34 +133,10 @@ enabled = true
 [plugins."posthog@openai-curated"]
 enabled = true
 
-[plugins."superpowers@openai-curated"]
-enabled = true
-
-[plugins."codex-security@openai-curated"]
-enabled = true
-
-[plugins."ponytail@ponytail"]
-enabled = true
-
 [plugins."aws-core@agent-toolkit-for-aws"]
 enabled = true
 
 [plugins."visualize@openai-bundled"]
-enabled = true
-
-[plugins."documents@openai-primary-runtime"]
-enabled = true
-
-[plugins."pdf@openai-primary-runtime"]
-enabled = true
-
-[plugins."spreadsheets@openai-primary-runtime"]
-enabled = true
-
-[plugins."presentations@openai-primary-runtime"]
-enabled = true
-
-[plugins."template-creator@openai-primary-runtime"]
 enabled = true
 
 [plugins."computer-use@openai-bundled"]
@@ -171,6 +147,3 @@ enabled = true
 
 [plugins."browser@openai-bundled"]
 enabled = true
-
-[plugins."github@openai-curated-remote"]
-enabled = false
