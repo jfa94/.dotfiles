@@ -36,7 +36,38 @@ git bypass|dangerous-patterns-check.sh|git -C /tmp/repo commit -n -m bad|deny
 package publish|dangerous-patterns-check.sh|pnpm publish|deny
 aws mutation|aws-readonly-check.sh|aws ec2 terminate-instances --instance-ids i-1|deny
 aws read|aws-readonly-check.sh|aws ec2 describe-instances|allow
+aws cost explorer read|aws-readonly-check.sh|aws ce get-cost-and-usage --time-period Start=2026-07-01,End=2026-07-24|allow
+aws cost explorer mutation|aws-readonly-check.sh|aws ce delete-anomaly-monitor --monitor-arn arn|deny
+aws logs tail|aws-readonly-check.sh|aws logs tail /aws/lambda/fn|allow
+aws configure read|aws-readonly-check.sh|aws configure list|allow
+aws configure write|aws-readonly-check.sh|aws configure set region us-east-1|deny
+aws secret value|aws-readonly-check.sh|aws secretsmanager get-secret-value --secret-id id|deny
+aws s3 stream to stdout|aws-readonly-check.sh|aws s3 cp s3://bucket/key -|allow
+aws s3 copy to disk|aws-readonly-check.sh|aws s3 cp s3://bucket/key /tmp/out|deny
+aws global flags before service|aws-readonly-check.sh|aws --profile prod --region us-east-1 ce get-cost-forecast|allow
 CASES
+
+# Every AWS command Claude auto-allows must also be auto-allowed by Codex:
+# the rules layer must not prompt, and the read-only hook must not deny.
+if command -v codex >/dev/null 2>&1; then
+  while IFS= read -r entry; do
+    concrete=${entry#Bash(}
+    concrete=${concrete%)}
+    concrete=${concrete//-\*/-something}
+    concrete=${concrete// \*/ ARG}
+    concrete=${concrete//\*/X}
+    # shellcheck disable=SC2086
+    decision=$(codex execpolicy check --rules "$ROOT/.codex/rules/default.rules" $concrete 2>/dev/null |
+      jq -r '.decision // "no-match"')
+    [[ "$decision" == "allow" ]] || {
+      echo "FAIL aws rules parity: '$concrete' is '$decision' in Codex but allowed in Claude" >&2
+      exit 1
+    }
+    assert_decision "aws hook parity: $concrete" aws-readonly-check.sh "$concrete" allow
+  done < <(jq -r '.permissions.allow[] | select(startswith("Bash(aws "))' "$ROOT/.claude/settings.json")
+else
+  echo "codex binary absent: skipped AWS rules-layer parity sweep" >&2
+fi
 
 assert_sql() {
   local name=$1 sql=$2 expected=$3 output decision
@@ -68,9 +99,9 @@ OUT=$(run_hook sessionstart-compact-restore.sh '{"rollout_path":"/missing/rollou
 printf '%s' "$OUT" | jq -e '.hookSpecificOutput.additionalContext | contains("warning")' >/dev/null
 PASS=$((PASS + 1))
 
-EXPECTED_STATUS='status_line = ["model", "project-name", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
+EXPECTED_STATUS='status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
 grep -Fxq "$EXPECTED_STATUS" "$CODEX_CONFIG"
-grep -Fxq 'approvals_reviewer = "auto_review"' "$CODEX_CONFIG"
+grep -Fxq 'approvals_reviewer = "user"' "$CODEX_CONFIG"
 NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
 FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
