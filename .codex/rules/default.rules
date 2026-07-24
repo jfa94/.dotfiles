@@ -113,15 +113,44 @@ PNPM_COMMANDS = [
     "format",
 ]
 
-AWS_LOGS_READ_OPS = [
-    "describe-log-groups",
-    "describe-log-streams",
-    "filter-log-events",
-    "get-log-events",
-    "get-query-results",
-    "start-query",
-    "list-tags-log-group",
-    "list-tags-for-resource",
+# Services whose read ops Claude auto-allows. Write protection is delegated to
+# the aws-readonly-check hook, which denies every non-read verb; compound-check
+# runs before it, so chained commands can't slip past.
+AWS_READONLY_SERVICES = [
+    "account",
+    "acm",
+    "amplify",
+    "apigateway",
+    "apigatewayv2",
+    "ce",
+    "cloudformation",
+    "cloudfront",
+    "cloudwatch",
+    "cognito-idp",
+    "configservice",
+    "configure",
+    "dynamodb",
+    "ec2",
+    "ecs",
+    "elasticache",
+    "events",
+    "iam",
+    "kms",
+    "lambda",
+    "logs",
+    "rds",
+    "route53",
+    "route53domains",
+    "s3api",
+    "secretsmanager",
+    "ses",
+    "sesv2",
+    "sns",
+    "sqs",
+    "ssm",
+    "stepfunctions",
+    "sts",
+    "wafv2",
 ]
 
 # Hard policy denies. Prefix rules can't match a +refspec force-push
@@ -362,7 +391,9 @@ prefix_rule(
 )
 
 # Read-oriented AWS CLI commands. Codex cannot wildcard describe-*/list-*/get-*,
-# so this enumerates common read verbs and the exact logs operations Claude used.
+# so services are allowed at the service level and the aws-readonly-check hook
+# rejects any non-read verb. s3 is deliberately excluded — the hook restricts it
+# to `ls` and streaming reads, and `cp` still prompts here.
 prefix_rule(
     pattern = ["aws", "help"],
     decision = "allow",
@@ -370,10 +401,10 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["aws", "logs", AWS_LOGS_READ_OPS],
+    pattern = ["aws", AWS_READONLY_SERVICES],
     decision = "allow",
-    justification = "CloudWatch Logs read/query commands mirror Claude's allowlist.",
-    match = ["aws logs describe-log-groups"],
+    justification = "Read parity with Claude's allowlist; aws-readonly-check hook denies write verbs.",
+    match = ["aws ec2 describe-instances"],
 )
 
 prefix_rule(
@@ -385,15 +416,9 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["aws", "s3", "cp"],
-    decision = "prompt",
-    justification = "S3 copy can write locally or remotely; review direction and target before running.",
-    match = ["aws s3 cp s3://bucket/key -"],
-)
-
-prefix_rule(
-    pattern = ["aws", "sts", "get-caller-identity"],
     decision = "allow",
-    justification = "Caller identity inspection is read-only.",
+    justification = "Claude allows streaming s3:// objects to stdout; prefix rules can't express the '-' destination, so aws-readonly-check denies every other cp form.",
+    match = ["aws s3 cp s3://bucket/key -"],
 )
 prefix_rule(pattern=["pnpm", "test:pg"], decision="allow")
 prefix_rule(pattern=["gh", "auth", "status"], decision="allow")

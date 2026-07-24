@@ -287,6 +287,9 @@
       "Bash(aws configservice list-*)",
       "Bash(aws configservice select-*)",
       "Bash(aws configservice batch-get-*)",
+      "Bash(aws ce get-*)",
+      "Bash(aws ce list-*)",
+      "Bash(aws ce describe-*)",
       "Bash(aws configure list)",
       "Bash(aws configure list-profiles)",
       "Bash(aws configure get *)",
@@ -579,7 +582,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,

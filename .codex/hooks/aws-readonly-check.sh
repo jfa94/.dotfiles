@@ -54,9 +54,18 @@ case "$SERVICE" in
     ;;
   logs)
     case "$OP" in
-      describe-*|filter-log-events|get-log-events|get-query-results|start-query|list-*) exit 0 ;;
+      describe-*|filter-log-events|get-log-events|get-query-results|start-query|stop-query|tail|list-*) exit 0 ;;
       *)
         deny "AWS CloudWatch Logs is restricted to read/query operations."
+        exit 0
+        ;;
+    esac
+    ;;
+  configure)
+    case "$OP" in
+      list|list-profiles|get) exit 0 ;;
+      *)
+        deny "aws configure is restricted to list, list-profiles, and get."
         exit 0
         ;;
     esac
@@ -64,10 +73,10 @@ case "$SERVICE" in
 esac
 
 case "$OP" in
-  describe-*|list-*|get-*|head-*|scan|query)
+  describe-*|list-*|get-*|head-*|scan|query|batch-get-*|transact-get-*|search-*|select-*|simulate-*|check-*|test-dns-answer|view-billing|decode-authorization-message|download-db-log-file-portion)
     exit 0
     ;;
   *)
-    deny "AWS command is not read-oriented. Allowed operations are describe-*, list-*, get-*, head-*, scan, and query, with service-specific restrictions for s3, logs, and secretsmanager."
+    deny "AWS command is not read-oriented. Allowed operations are describe-*, list-*, get-*, head-*, batch-get-*, transact-get-*, search-*, select-*, simulate-*, check-*, scan, and query, with service-specific restrictions for s3, logs, secretsmanager, and configure."
     ;;
 esac
