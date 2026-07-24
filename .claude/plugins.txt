@@ -8,7 +8,6 @@ playground@claude-plugins-official
 playwright@claude-plugins-official
 plugin-dev@claude-plugins-official
 posthog@claude-plugins-official
-resend@claude-plugins-official
 security-guidance@claude-plugins-official
 stripe@claude-plugins-official
 supabase@claude-plugins-official
