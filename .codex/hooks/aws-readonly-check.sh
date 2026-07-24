@@ -29,54 +29,15 @@ SERVICE="${ARGS[$i]:-}"
 OP="${ARGS[$((i + 1))]:-}"
 [[ -n "$SERVICE" ]] || exit 0
 
-case "$SERVICE" in
-  help)
-    exit 0
-    ;;
-  s3)
-    if [[ "$OP" == "ls" ]]; then
-      exit 0
-    fi
-    if [[ "$OP" == "cp" && "${ARGS[$((i + 2))]:-}" == s3://* && "${ARGS[$((i + 3))]:-}" == "-" ]]; then
-      exit 0
-    fi
-    deny "AWS s3 is restricted to ls and streaming s3:// objects to stdout."
-    exit 0
-    ;;
-  secretsmanager)
-    case "$OP" in
-      list-*|describe-*) exit 0 ;;
-      *)
-        deny "AWS Secrets Manager is restricted to list-* and describe-* operations."
-        exit 0
-        ;;
-    esac
-    ;;
-  logs)
-    case "$OP" in
-      describe-*|filter-log-events|get-log-events|get-query-results|start-query|stop-query|tail|list-*) exit 0 ;;
-      *)
-        deny "AWS CloudWatch Logs is restricted to read/query operations."
-        exit 0
-        ;;
-    esac
-    ;;
-  configure)
-    case "$OP" in
-      list|list-profiles|get) exit 0 ;;
-      *)
-        deny "aws configure is restricted to list, list-profiles, and get."
-        exit 0
-        ;;
-    esac
-    ;;
-esac
-
-case "$OP" in
-  describe-*|list-*|get-*|head-*|scan|query|batch-get-*|transact-get-*|search-*|select-*|simulate-*|check-*|test-dns-answer|view-billing|decode-authorization-message|download-db-log-file-portion)
-    exit 0
-    ;;
-  *)
-    deny "AWS command is not read-oriented. Allowed operations are describe-*, list-*, get-*, head-*, batch-get-*, transact-get-*, search-*, select-*, simulate-*, check-*, scan, and query, with service-specific restrictions for s3, logs, secretsmanager, and configure."
-    ;;
-esac
+# Approval routing lives in the execpolicy rules (aws-read.rules auto-allows
+# enumerated reads; everything else prompts). This hook only enforces the
+# secret-safety invariant: secret values must never enter the model context,
+# so approving the prompt is not an option.
+if [[ "$SERVICE" == "secretsmanager" ]]; then
+  case "$OP" in
+    get-secret-value|batch-get-secret-value)
+      deny "Secret values must never enter the context. Use asm-exec with {{resolve:secretsmanager:secret-id:SecretString:json-key}} so the secret resolves at runtime."
+      ;;
+  esac
+fi
+exit 0

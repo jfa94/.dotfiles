@@ -10,7 +10,7 @@ Audited against `.claude/settings.json` and Codex 0.144.4. All Superpowers state
 | Write trusted repos/temp     | Explicit dotfiles, Projects, workspace roots (including `.git`), `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/tmp` writes | Exact                                                                                      |
 | Protect credentials/secrets  | Filesystem denies plus protected-files and pre-commit hooks; Linux recursive deny snapshots scan to depth 32 | Approximate; filename patterns cannot identify every secret                                       |
 | Bash allowlist               | `.codex/rules/default.rules` exact argv prefixes                                                             | Approximate; wildcard `git -C` prompts                                                            |
-| AWS read-only allowlist      | Service-level allow rules in `.codex/rules/default.rules` plus `aws-readonly-check.sh` verb filtering        | Exact for reads; asserted per-entry by `tests/codex-parity.sh`. Writes deny where Claude prompts   |
+| AWS allowlist                | Generated per-op allow rules in `.codex/rules/aws-read.rules` (regen: `generate-aws-read.sh`); writes and unlisted services prompt; `aws-readonly-check.sh` hard-denies secret-value reads only | Exact reads for actively used services, asserted per-op by `tests/codex-parity.sh`; other services prompt on reads too |
 | Web search                   | `web_search = "live"`; limited trusted-domain network profile                                                | Exact for search; shell networking remains allowlisted                                            |
 | Default/high planning effort | Low normal reasoning, high Plan-mode override                                                                | Exact                                                                                             |
 | Approval review              | `approval_policy = "on-request"` with `approvals_reviewer = "user"`                                          | Codex-native persisted reviewer selection                                                         |
@@ -50,6 +50,7 @@ The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and
 
 ## Intentional gaps
 
+- AWS read auto-allow is scoped to actively used services (see `SERVICES` in `.codex/rules/generate-aws-read.sh`); Claude-allowed reads for other services prompt in Codex. `aws s3 cp s3://key -` also prompts — prefix rules cannot see the `-` destination that makes it a read. Codex hooks cannot express Claude's per-call "ask", so AWS writes prompt via the rules layer default rather than via hook.
 - No Codex model pin or startup model-lock mutation; static reasoning settings are authoritative.
 - No Claude mobile-push semantics, automatic remote-control startup, away summaries, workflow-warning suppression, or five-minute compaction window.
 - Dynamic Claude `ask` hooks use native sandbox/exec-policy prompts where expressible; unsupported dynamic cases deny with manual retry guidance.

@@ -34,37 +34,75 @@ force arbitrary position|dangerous-patterns-check.sh|git push origin main --forc
 force refspec|dangerous-patterns-check.sh|git push origin +main|deny
 git bypass|dangerous-patterns-check.sh|git -C /tmp/repo commit -n -m bad|deny
 package publish|dangerous-patterns-check.sh|pnpm publish|deny
-aws mutation|aws-readonly-check.sh|aws ec2 terminate-instances --instance-ids i-1|deny
-aws read|aws-readonly-check.sh|aws ec2 describe-instances|allow
-aws cost explorer read|aws-readonly-check.sh|aws ce get-cost-and-usage --time-period Start=2026-07-01,End=2026-07-24|allow
-aws cost explorer mutation|aws-readonly-check.sh|aws ce delete-anomaly-monitor --monitor-arn arn|deny
-aws logs tail|aws-readonly-check.sh|aws logs tail /aws/lambda/fn|allow
-aws configure read|aws-readonly-check.sh|aws configure list|allow
-aws configure write|aws-readonly-check.sh|aws configure set region us-east-1|deny
 aws secret value|aws-readonly-check.sh|aws secretsmanager get-secret-value --secret-id id|deny
-aws s3 stream to stdout|aws-readonly-check.sh|aws s3 cp s3://bucket/key -|allow
-aws s3 copy to disk|aws-readonly-check.sh|aws s3 cp s3://bucket/key /tmp/out|deny
-aws global flags before service|aws-readonly-check.sh|aws --profile prod --region us-east-1 ce get-cost-forecast|allow
+aws secret value batch|aws-readonly-check.sh|aws secretsmanager batch-get-secret-value --secret-id-list id|deny
+aws secret value with flags|aws-readonly-check.sh|aws --profile prod secretsmanager get-secret-value --secret-id id|deny
+aws secret metadata passes hook|aws-readonly-check.sh|aws secretsmanager list-secrets|allow
+aws write passes hook to rules prompt|aws-readonly-check.sh|aws ec2 terminate-instances --instance-ids i-1|allow
 CASES
 
-# Every AWS command Claude auto-allows must also be auto-allowed by Codex:
-# the rules layer must not prompt, and the read-only hook must not deny.
+# AWS approval routing: reads for actively used services auto-allow via the
+# generated aws-read.rules; writes and unlisted services fall to Codex's
+# prompt. Claude entries for services outside aws-read.rules intentionally
+# prompt, as does `aws s3 cp s3://* -` (prefix rules can't see the '-' target).
 if command -v codex >/dev/null 2>&1; then
-  while IFS= read -r entry; do
-    concrete=${entry#Bash(}
-    concrete=${concrete%)}
-    concrete=${concrete//-\*/-something}
-    concrete=${concrete// \*/ ARG}
-    concrete=${concrete//\*/X}
+  RULES=(--rules "$ROOT/.codex/rules/default.rules" --rules "$ROOT/.codex/rules/aws-read.rules")
+  rules_decision() {
     # shellcheck disable=SC2086
-    decision=$(codex execpolicy check --rules "$ROOT/.codex/rules/default.rules" $concrete 2>/dev/null |
-      jq -r '.decision // "no-match"')
-    [[ "$decision" == "allow" ]] || {
-      echo "FAIL aws rules parity: '$concrete' is '$decision' in Codex but allowed in Claude" >&2
+    codex execpolicy check "${RULES[@]}" $1 2>/dev/null | jq -r '.decision // "prompt"'
+  }
+  USED_SERVICES=$(grep -oE 'pattern = \["aws", "[a-z0-9-]+"' "$ROOT/.codex/rules/aws-read.rules" | grep -oE '"[a-z0-9-]+"$' | tr -d '"')
+  service_ops() {
+    local var
+    var="AWS_$(echo "$1" | tr '[:lower:]-' '[:upper:]_')_READ_OPS"
+    awk -v v="$var = [" '$0 == v {f=1; next} f && /^\]/ {exit} f {gsub(/[", ]/, ""); print}' "$ROOT/.codex/rules/aws-read.rules"
+  }
+
+  while IFS= read -r entry; do
+    cmd=${entry#Bash(}
+    cmd=${cmd%)}
+    service=$(printf '%s' "$cmd" | awk '{print $2}')
+    op=$(printf '%s' "$cmd" | awk '{print $3}')
+    grep -qx "$service" <<< "$USED_SERVICES" || continue
+    [[ "$cmd" == "aws s3 cp"* ]] && continue
+    if [[ "$op" == *-\* ]]; then
+      # Wildcard verb: every real op with that prefix must be enumerated.
+      candidates=$(service_ops "$service" | grep -E "^${op%\*}" || true)
+      [[ -n "$candidates" ]] || {
+        echo "FAIL aws read parity: no enumerated ops match Claude entry '$entry'" >&2
+        exit 1
+      }
+    else
+      candidates=$op
+    fi
+    while IFS= read -r candidate; do
+      concrete="aws $service $candidate"
+      decision=$(rules_decision "$concrete")
+      [[ "$decision" == "allow" ]] || {
+        echo "FAIL aws read parity: '$concrete' is '$decision' in Codex but allowed in Claude ($entry)" >&2
+        exit 1
+      }
+      assert_decision "aws hook passes read: $concrete" aws-readonly-check.sh "$concrete" allow
+    done <<< "$candidates"
+  done < <(jq -r '.permissions.allow[] | select(startswith("Bash(aws "))' "$ROOT/.claude/settings.json")
+
+  while IFS='|' read -r name command; do
+    decision=$(rules_decision "$command")
+    [[ "$decision" != "allow" ]] || {
+      echo "FAIL aws write must prompt: '$command' is auto-allowed" >&2
       exit 1
     }
-    assert_decision "aws hook parity: $concrete" aws-readonly-check.sh "$concrete" allow
-  done < <(jq -r '.permissions.allow[] | select(startswith("Bash(aws "))' "$ROOT/.claude/settings.json")
+    PASS=$((PASS + 1))
+  done <<'WRITES'
+ce write|aws ce delete-anomaly-monitor --monitor-arn arn
+iam write|aws iam create-user --user-name x
+logs write|aws logs delete-log-group --log-group-name x
+configure write|aws configure set region us-east-1
+sts session token mints credentials|aws sts get-session-token
+sts federation token mints credentials|aws sts get-federation-token
+s3 upload|aws s3 cp local.txt s3://bucket/key
+amplify write|aws amplify delete-app --app-id x
+WRITES
 else
   echo "codex binary absent: skipped AWS rules-layer parity sweep" >&2
 fi
