@@ -79,6 +79,16 @@
             "statusMessage": "Running PR mutation gate"
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*[Aa][Ww][Ss].*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.codex/hooks/aws-mcp-readonly-check.sh",
+            "statusMessage": "Checking AWS MCP tool is read-only"
+          }
+        ]
       }
     ],
     "PostToolUse": [

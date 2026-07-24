@@ -40,6 +40,8 @@ pnpm|pnpm|optional|optional
 trufflehog|trufflehog|optional|optional
 semgrep|semgrep|optional|optional
 supabase|supabase/tap/supabase|optional|optional
+aws|direct|direct|direct
+uv|direct|direct|direct
 docker|docker|direct|direct
 docker-desktop|docker-desktop|-|-
 codex|direct|direct|direct

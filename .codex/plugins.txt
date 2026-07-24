@@ -1,6 +1,7 @@
-github@openai-curated
-figma@openai-curated
 stripe@openai-curated
 supabase@openai-curated
+posthog@openai-curated
 superpowers@openai-curated
 codex-security@openai-curated
+ponytail@ponytail
+aws-core@agent-toolkit-for-aws

@@ -556,11 +556,10 @@
     "stripe@claude-plugins-official": false,
     "posthog@claude-plugins-official": false,
     "figma@claude-plugins-official": false,
-    "resend@claude-plugins-official": false,
     "codex@openai-codex": true,
     "factory@jfa94": true,
     "ponytail@ponytail": true,
-    "aws-serverless@claude-plugins-official": false
+    "aws-core@agent-toolkit-for-aws": false
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
@@ -579,6 +578,12 @@
       "source": {
         "source": "github",
         "repo": "DietrichGebert/ponytail"
+      }
+    },
+    "agent-toolkit-for-aws": {
+      "source": {
+        "source": "github",
+        "repo": "aws/agent-toolkit-for-aws"
       }
     }
   },

@@ -7,9 +7,12 @@ model_auto_compact_token_limit = 200000
 web_search = "live"
 model = "gpt-5.6-sol"
 
-notify = ["/Users/Javier/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
 service_tier = "default"
-sandbox_mode = "workspace-write"
+
+notify = ["/Users/Javier/.codex/plugins/cache/openai-bundled/computer-use/1.0.1000451/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
+
+[shell_environment_policy]
+ignore_default_excludes = false
 
 [features]
 hooks = true
@@ -26,16 +29,12 @@ glob_scan_max_depth = 32
 "~/.config/gh/hosts.yml" = "read"
 "~/.dotfiles" = "write"
 "~/Projects" = "write"
-"~/.dotfiles/**/.env" = "deny"
-"~/.dotfiles/**/.env.*" = "deny"
 "~/.dotfiles/**/secrets" = "deny"
 "~/.dotfiles/**/secrets/**" = "deny"
 "~/.dotfiles/**/*.pem" = "deny"
 "~/.dotfiles/**/*.key" = "deny"
 "~/.dotfiles/**/*.p12" = "deny"
 "~/.dotfiles/**/*.pfx" = "deny"
-"~/Projects/**/.env" = "deny"
-"~/Projects/**/.env.*" = "deny"
 "~/Projects/**/secrets" = "deny"
 "~/Projects/**/secrets/**" = "deny"
 "~/Projects/**/*.pem" = "deny"
@@ -49,8 +48,6 @@ glob_scan_max_depth = 32
 [permissions.workspace-net.filesystem.":workspace_roots"]
 "." = "write"
 ".git" = "write"
-"**/.env" = "deny"
-"**/.env.*" = "deny"
 "**/secrets" = "deny"
 "**/secrets/**" = "deny"
 "**/*.pem" = "deny"
@@ -125,15 +122,15 @@ insert_newline = ["shift-enter", "ctrl-enter"]
 "gpt-5.6-sol" = 4
 
 [plugins."github@openai-curated"]
-enabled = true
-
-[plugins."figma@openai-curated"]
-enabled = true
+enabled = false
 
 [plugins."stripe@openai-curated"]
 enabled = true
 
 [plugins."supabase@openai-curated"]
+enabled = true
+
+[plugins."posthog@openai-curated"]
 enabled = true
 
 [plugins."superpowers@openai-curated"]
@@ -142,10 +139,10 @@ enabled = true
 [plugins."codex-security@openai-curated"]
 enabled = true
 
-[plugins."google-calendar@openai-curated"]
+[plugins."ponytail@ponytail"]
 enabled = true
 
-[plugins."slack@openai-curated"]
+[plugins."aws-core@agent-toolkit-for-aws"]
 enabled = true
 
 [plugins."visualize@openai-bundled"]
@@ -174,3 +171,6 @@ enabled = true
 
 [plugins."browser@openai-bundled"]
 enabled = true
+
+[plugins."github@openai-curated-remote"]
+enabled = false

@@ -233,6 +233,87 @@ install_supabase() {
   SUPABASE_INSTALL_DIR="$HOME/.supabase/bin" bash -c "$(curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install)" -- --no-modify-path
 }
 
+version_at_least() {
+  local actual="$1" minimum="$2"
+  awk -v actual="$actual" -v minimum="$minimum" '
+    BEGIN {
+      actual_count = split(actual, a, ".")
+      minimum_count = split(minimum, m, ".")
+      count = actual_count > minimum_count ? actual_count : minimum_count
+      for (i = 1; i <= count; i++) {
+        av = (i <= actual_count ? a[i] : 0) + 0
+        mv = (i <= minimum_count ? m[i] : 0) + 0
+        if (av > mv) exit 0
+        if (av < mv) exit 1
+      }
+      exit 0
+    }
+  '
+}
+
+install_aws() {
+  local minimum="2.35.0" actual="" installer=""
+  if command -v aws &>/dev/null; then
+    actual=$(aws --version 2>&1 | sed -nE 's#aws-cli/([0-9]+\.[0-9]+\.[0-9]+).*#\1#p' | head -1)
+    if [[ -n "$actual" ]] && version_at_least "$actual" "$minimum"; then
+      success "AWS CLI $actual satisfies >= $minimum"
+      return 0
+    fi
+    info "AWS CLI ${actual:-unknown} is below $minimum; upgrading..."
+  else
+    info "Installing AWS CLI >= $minimum..."
+  fi
+
+  installer=$(mktemp)
+  if ! curl -fsSL https://awscli.amazonaws.com/v2/install.sh -o "$installer"; then
+    rm -f "$installer"
+    error "AWS CLI installer download failed"
+    return 1
+  fi
+  if ! bash "$installer"; then
+    rm -f "$installer"
+    error "AWS CLI installer failed"
+    return 1
+  fi
+  rm -f "$installer"
+  hash -r
+
+  actual=$(aws --version 2>&1 | sed -nE 's#aws-cli/([0-9]+\.[0-9]+\.[0-9]+).*#\1#p' | head -1)
+  if [[ -z "$actual" ]] || ! version_at_least "$actual" "$minimum"; then
+    error "AWS CLI verification failed; expected >= $minimum, got ${actual:-missing}"
+    return 1
+  fi
+  success "AWS CLI $actual installed"
+}
+
+install_uv() {
+  local installer=""
+  if command -v uvx &>/dev/null; then
+    success "uvx already installed"
+    return 0
+  fi
+
+  info "Installing uv/uvx..."
+  installer=$(mktemp)
+  if ! curl -fsSL https://astral.sh/uv/install.sh -o "$installer"; then
+    rm -f "$installer"
+    error "uv installer download failed"
+    return 1
+  fi
+  if ! UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh "$installer"; then
+    rm -f "$installer"
+    error "uv installer failed"
+    return 1
+  fi
+  rm -f "$installer"
+  hash -r
+  command -v uvx &>/dev/null || {
+    error "uvx verification failed"
+    return 1
+  }
+  success "uv/uvx installed"
+}
+
 install_codex() {
   local codex_path="" resolved_path=""
   local managed_root="$HOME/.codex/packages/standalone"
@@ -566,6 +647,18 @@ else
   pkg_summary="Packages ($PKG): installed"
 fi
 
+aws_status="installed"
+if ! install_aws; then
+  aws_status="FAILED"
+  setup_failed=1
+fi
+
+uv_status="installed"
+if ! install_uv; then
+  uv_status="FAILED"
+  setup_failed=1
+fi
+
 # Codex must use OpenAI's managed standalone layout. Install after package
 # setup (curl is now available) and before Codex plugin installation.
 codex_status="not installed"
@@ -620,6 +713,7 @@ if command -v claude &>/dev/null; then
   claude plugin marketplace add github:openai/codex-plugin-cc 2>/dev/null || true
   claude plugin marketplace add github:jfa94/factory 2>/dev/null || true
   claude plugin marketplace add github:DietrichGebert/ponytail 2>/dev/null || true
+  claude plugin marketplace add github:aws/agent-toolkit-for-aws 2>/dev/null || true
 
   info "Installing Claude Code plugins..."
   plugins_status="installed"
@@ -659,21 +753,14 @@ fi
 codex_plugins_status="skipped (codex CLI not found)"
 
 if command -v codex &>/dev/null && [[ -f "$DOTFILES_DIR/.codex/plugins.txt" ]]; then
-  info "Installing Codex plugins..."
-  codex_plugins_status="installed"
-  available_plugins=$(codex plugin list 2>/dev/null | awk 'NF {print $1}' || true)
-  while IFS= read -r line; do
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    if ! printf '%s\n' "$available_plugins" | grep -qx "$line"; then
-      warn "Codex plugin not in marketplace snapshot: $line"
-      continue
-    fi
-    if codex plugin add "$line" 2>/dev/null; then
-      success "Codex plugin: $line"
-    else
-      warn "Codex plugin already installed or failed: $line"
-    fi
-  done < "$DOTFILES_DIR/.codex/plugins.txt"
+  info "Installing and verifying Codex plugins..."
+  if bash "$DOTFILES_DIR/.codex/install-plugins.sh" "$DOTFILES_DIR"; then
+    codex_plugins_status="installed"
+    info "Stripe, Supabase, and PostHog may require interactive connector OAuth."
+  else
+    codex_plugins_status="FAILED"
+    setup_failed=1
+  fi
 fi
 
 # =============================================================================
@@ -702,9 +789,23 @@ echo "$pkg_summary"
 [[ -n "${optional_status:-}" ]] && echo "Optional tools:$optional_status"
 echo "Claude Code: $claude_status"
 echo "Codex CLI: $codex_status"
+echo "AWS CLI: $aws_status"
+echo "uv/uvx: $uv_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
 echo "Claude plugins: $plugins_status"
 echo "Codex plugins: $codex_plugins_status"
 echo ""
+if [[ "$aws_status" == "installed" ]]; then
+  echo "AWS authentication remains manual. For Outsidey:"
+  echo "  aws login --profile Outsidey --region eu-west-1"
+  echo "  AWS_PROFILE=Outsidey aws sts get-caller-identity"
+fi
+if [[ "$codex_plugins_status" == "installed" ]]; then
+  echo "Open Codex /plugins to complete Stripe, Supabase, and PostHog OAuth."
+  echo "Set PostHog permissions to 'Any changes' and select Outsidey project 107700."
+fi
+echo "Open Codex /hooks to review the new AWS MCP read-only hook by exact hash."
 echo "Done."
+
+exit "${setup_failed:-0}"
