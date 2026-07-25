@@ -15,9 +15,18 @@ QUAL=0
 if grep -q '"quality"' package.json; then
   { pnpm quality 2>&1; } | tail -30 || QUAL=1
 else
-  TC=0; { pnpm typecheck 2>&1; } | tail -10 || TC=1
-  LN=0; { pnpm lint 2>&1; } | tail -10 || LN=1
-  TS=0; { pnpm test 2>&1; } | tail -20 || TS=1
+  TC=0
+  if grep -q '"typecheck"' package.json; then
+    { pnpm typecheck 2>&1; } | tail -10 || TC=1
+  fi
+  LN=0
+  if grep -q '"lint"' package.json; then
+    { pnpm lint 2>&1; } | tail -10 || LN=1
+  fi
+  TS=0
+  if grep -q '"test"' package.json; then
+    { pnpm test 2>&1; } | tail -20 || TS=1
+  fi
   DV=0
   if grep -q '"deps:validate"' package.json; then
     { pnpm deps:validate 2>&1; } | tail -10 || DV=1
