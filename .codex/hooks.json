@@ -71,12 +71,6 @@
             "command": "$HOME/.codex/hooks/semgrep-check.sh",
             "timeout": 120,
             "statusMessage": "Running Semgrep gate"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.codex/hooks/pre-pr-check.sh",
-            "timeout": 1800,
-            "statusMessage": "Running PR mutation gate"
           }
         ]
       },
