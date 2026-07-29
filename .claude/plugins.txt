@@ -19,3 +19,4 @@ aws-core@agent-toolkit-for-aws
 codex@openai-codex
 factory@jfa94
 ponytail@ponytail
+web-designer@javier-plugins

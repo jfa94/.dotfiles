@@ -548,7 +548,8 @@
     "codex@openai-codex": true,
     "factory@jfa94": true,
     "ponytail@ponytail": true,
-    "aws-core@agent-toolkit-for-aws": false
+    "aws-core@agent-toolkit-for-aws": false,
+    "web-designer@javier-plugins": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
@@ -574,9 +575,15 @@
         "source": "github",
         "repo": "aws/agent-toolkit-for-aws"
       }
+    },
+    "javier-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "jfa94/web-designer"
+      }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,

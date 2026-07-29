@@ -714,6 +714,7 @@ if command -v claude &>/dev/null; then
   claude plugin marketplace add github:jfa94/factory 2>/dev/null || true
   claude plugin marketplace add github:DietrichGebert/ponytail 2>/dev/null || true
   claude plugin marketplace add github:aws/agent-toolkit-for-aws 2>/dev/null || true
+  claude plugin marketplace add jfa94/web-designer 2>/dev/null || true
 
   info "Installing Claude Code plugins..."
   plugins_status="installed"
