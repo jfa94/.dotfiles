@@ -40,12 +40,29 @@ fi
 
 # --- 3. Regex sweep (catches unverified/offline secrets trufflehog skips) ---
 # Added lines only: a commit that REMOVES a secret must not be blocked.
+# Split in two: vendor-prefixed/high-signal patterns scan every staged file;
+# the generic password/secret_key patterns skip test files, which routinely
+# contain fixtures like password: 'Password1' that aren't secrets.
 SECRETS=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null \
   | grep -E '^\+' \
-  | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|password\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|secret_?key\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' \
+  | grep -iE '(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC |DSA )?PRIVATE KEY)' \
   || true)
 if [ -n "$SECRETS" ]; then
   jq -cn --arg r 'Potential secrets detected in staged changes.' \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
+fi
+
+NON_TEST=$(printf '%s\n' "$STAGED" | grep -vE '\.(test|spec)\.[jt]sx?$|(^|/)(tests?|__tests__)/' || true)
+if [ -n "$NON_TEST" ]; then
+  SECRETS=$(printf '%s\n' "$NON_TEST" | tr '\n' '\0' \
+    | xargs -0 git diff --cached --diff-filter=ACMR -U0 -- 2>/dev/null \
+    | grep -E '^\+' \
+    | grep -iE '(password\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`]|secret_?key\s*[:=]\s*["'"'"'`][^"'"'"'`]+["'"'"'`])' \
+    || true)
+  if [ -n "$SECRETS" ]; then
+    jq -cn --arg r 'Potential secrets detected in staged changes.' \
+      '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
+    exit 0
+  fi
 fi
