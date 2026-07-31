@@ -300,7 +300,6 @@
       "mcp__supabase__list_extensions",
       "mcp__supabase__list_organizations",
       "mcp__supabase__get_cost",
-      "mcp__supabase__execute_sql",
       "mcp__supabase__search_docs",
       "mcp__supabase__get_advisors",
       "mcp__supabase__get_project_url",

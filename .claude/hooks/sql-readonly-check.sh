@@ -9,6 +9,16 @@ ask() {
   exit 0
 }
 
+# Sole arbiter for execute_sql: the tool is deliberately NOT in permissions.allow
+# (an allow rule beats a hook's ask — verified empirically + docs). Reads get an
+# explicit allow here; anything ambiguous falls to ask, and if this hook errors
+# out entirely the tool is unlisted so the default prompt fires. No silent path.
+allow() {
+  jq -cn \
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Read-only SQL verified by sql-readonly-check.sh."}}'
+  exit 0
+}
+
 # Normalize before judging. Order matters: strings before line comments
 # (`'a--b'; DELETE` must keep the DELETE), line comments per-line before
 # flattening (`-- c\nDELETE` must keep the DELETE), block comments after
@@ -38,3 +48,5 @@ EOF
 if printf '%s' "$SQL" | grep -qwE 'INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|MERGE|CALL|COPY|REFRESH|VACUUM|LOCK|DO'; then
   ask 'This statement has a write/DDL keyword inside a read-leading form (CTE write, EXPLAIN ANALYZE write, or FOR UPDATE lock) — run it anyway?'
 fi
+
+allow
