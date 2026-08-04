@@ -63,6 +63,16 @@ also adds the current user to the `docker` group (re-login required) and
 starts the daemon (`systemctl`, or `service` when systemd is off, as on
 default WSL2).
 
+## Claude Code cloud environments
+
+`cloud-setup.sh` replicates the full Claude Code workflow (CLAUDE.md, skills,
+hooks, plugins, Codex/Supabase CLIs + MCP) on claude.ai/code cloud VMs. Paste
+the tiny shim from [docs/cloud-environments.md](docs/cloud-environments.md)
+into each project's environment setup script and set that project's
+`SUPABASE_ACCESS_TOKEN` (plus optional `SUPABASE_MCP_TOKEN` /
+`SUPABASE_PROJECT_REF`) as environment variables. AWS CLI is deliberately
+excluded; Codex re-auths per session via `codex login --device-auth`.
+
 ## Codex CLI
 
 Codex uses OpenAI's standalone installer on macOS and Linux. It installs managed
