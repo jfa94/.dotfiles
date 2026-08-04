@@ -183,6 +183,9 @@ fi
 
 settings_file="$DOTFILES_DIR/.claude/settings.json"
 if command -v claude &>/dev/null && command -v jq &>/dev/null && [[ -f "$settings_file" ]]; then
+  # official marketplace is auto-known at session time but NOT at build time
+  env -u SKIP_PLUGIN_MARKETPLACE claude plugin marketplace add anthropics/claude-plugins-official >>"$LOG" 2>&1 || true
+
   # plain owner/repo — the CLI rejects the github: prefix ("Invalid marketplace source format")
   while IFS= read -r repo; do
     env -u SKIP_PLUGIN_MARKETPLACE claude plugin marketplace add "$repo" >>"$LOG" 2>&1 || true
