@@ -7,6 +7,7 @@ DESC=$(printf '%s' "$INPUT" | jq -r '.tool_input.description // empty' 2>/dev/nu
 [[ -z "$CMD" ]] && exit 0
 
 NEW=$(printf '%s' "$CMD" | perl -pe '
+  s{(^|(?<=[;&|])\s*)npm\s+init\s+(?:-y|--yes)\b}{${1}pnpm init}g;
   s{(^|(?<=[;&|])\s*)npm\s+ci\b}{${1}pnpm install --frozen-lockfile}g;
   s{(^|(?<=[;&|])\s*)npm\s+(i|install)\b}{${1}pnpm install}g;
   s{(^|(?<=[;&|])\s*)npm\s+(t|test)\b}{${1}pnpm test}g;
