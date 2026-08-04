@@ -163,7 +163,11 @@ fi
 # =============================================================================
 
 if ! command -v claude &>/dev/null; then
-  curl -fsSL https://claude.ai/install.sh | bash &>/dev/null || true
+  claude_installer="$(mktemp)"
+  if curl -fsSL https://claude.ai/install.sh -o "$claude_installer"; then
+    bash "$claude_installer" &>/dev/null || true
+  fi
+  rm -f "$claude_installer"
   hash -r
 fi
 
