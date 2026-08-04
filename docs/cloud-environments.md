@@ -38,8 +38,12 @@ Key facts (spike-verified 2026-08):
   `/root/.dotfiles`; the dotfiles clone is config-delivery only.
 - Fresh VM per session: nothing persists mid-session → Codex auth repeats per
   session; env vars are the only durable per-environment state.
-- Preinstalled: node, npm, pnpm, uvx, gh (auth injected via proxy), git, jq,
-  claude (`/opt/node22/bin/claude`).
+- Preinstalled: node, npm, pnpm, uvx, git, jq, claude
+  (`/opt/node22/bin/claude`). No `gh` — GitHub access goes through the
+  session-injected github MCP server instead.
+- Sessions reuse the cached env snapshot — a dotfiles push does NOT reach
+  cloud sessions until the env rebuilds. Force a rebuild by editing the
+  environment config (e.g. bump the cache-bust comment in the shim).
 - Hook `systemMessage` output is not rendered by the cloud UI (cosmetic only —
   the npm→pnpm rewrite itself works; verify via `npm --version` printing
   pnpm's version).
@@ -113,8 +117,8 @@ On claude.ai → Code → your repo → environment settings:
 3. `supabase projects list` works; `/mcp` shows supabase connected;
    `mcp__supabase__list_projects` allowed silently; `execute_sql` gated by
    `sql-readonly-check.sh`.
-4. Tool sweep:
-   `for t in jq perl pnpm trufflehog semgrep supabase uvx shellcheck node gh codex; do command -v $t || echo MISSING $t; done`
+4. Tool sweep (`gh` intentionally absent — GitHub via MCP):
+   `for t in jq perl pnpm trufflehog semgrep supabase uvx shellcheck node codex; do command -v $t || echo MISSING $t; done`
 5. `codex login --device-auth` end-to-end, then a codex-backed review skill.
 
 ## Maintenance
