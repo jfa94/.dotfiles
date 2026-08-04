@@ -74,8 +74,10 @@ On claude.ai → Code → your repo → environment settings:
 
 3. **Network access** — Trusted covers everything except Codex. For Codex,
    switch to Custom and allow at least: `chatgpt.com`, `auth.openai.com`,
-   `raw.githubusercontent.com`, `astral.sh`, `claude.ai`, `mcp.supabase.com`,
-   `api.supabase.com`, `github.com`, `release-assets.githubusercontent.com`,
+   `releases.openai.com` (codex binary host — without it the installer falls
+   back to rate-limited api.github.com and 403s), `raw.githubusercontent.com`,
+   `astral.sh`, `claude.ai`, `mcp.supabase.com`, `api.supabase.com`,
+   `github.com`, `release-assets.githubusercontent.com`,
    `objects.githubusercontent.com`.
 
 ## One-time account steps

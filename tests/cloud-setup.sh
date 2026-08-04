@@ -79,7 +79,8 @@ jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp?project_ref=abc
 jq -e '.mcpServers.supabase.headersHelper | contains("SUPABASE_MCP_TOKEN:-$SUPABASE_ACCESS_TOKEN")' \
   "$home/.claude.json" >/dev/null || fail "headersHelper wrong"
 
-grep -q 'plugin marketplace add github:acme/mp' "$tmp/claude.log" || fail "marketplace not added"
+grep -q 'plugin marketplace add acme/mp' "$tmp/claude.log" || fail "marketplace not added"
+grep -q 'github:acme/mp' "$tmp/claude.log" && fail "github: prefix rejected by CLI, must be plain owner/repo"
 grep -q 'plugin install good@acme --scope user' "$tmp/claude.log" || fail "enabled plugin not installed"
 grep -q 'disabled@acme' "$tmp/claude.log" && fail "disabled plugin should be skipped"
 grep -q 'cloud-setup finished clean' <<< "$out" || fail "expected clean summary, got: $out"

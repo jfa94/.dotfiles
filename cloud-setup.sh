@@ -183,8 +183,9 @@ fi
 
 settings_file="$DOTFILES_DIR/.claude/settings.json"
 if command -v claude &>/dev/null && command -v jq &>/dev/null && [[ -f "$settings_file" ]]; then
+  # plain owner/repo — the CLI rejects the github: prefix ("Invalid marketplace source format")
   while IFS= read -r repo; do
-    env -u SKIP_PLUGIN_MARKETPLACE claude plugin marketplace add "github:$repo" >>"$LOG" 2>&1 || true
+    env -u SKIP_PLUGIN_MARKETPLACE claude plugin marketplace add "$repo" >>"$LOG" 2>&1 || true
   done < <(jq -r '.extraKnownMarketplaces // {} | to_entries[] | .value.source.repo' "$settings_file")
 
   plugin_fail=0
@@ -195,7 +196,7 @@ if command -v claude &>/dev/null && command -v jq &>/dev/null && [[ -f "$setting
       warn "Plugin failed: $plugin"
       ((plugin_fail++))
     fi
-    printf '--- plugin install %s ---\n%s\n' "$plugin" "$out" >> "$LOG"
+    printf -- '--- plugin install %s ---\n%s\n' "$plugin" "$out" >> "$LOG"
   done < <(jq -r '.enabledPlugins // {} | to_entries[] | select(.value) | .key' "$settings_file")
   ((plugin_fail)) && note_fail "$plugin_fail plugin install(s) failed"
   # ground truth for the session to inspect: what actually landed on disk
