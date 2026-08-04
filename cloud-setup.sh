@@ -10,6 +10,13 @@ set -uo pipefail
 DOTFILES_DIR="$HOME/.dotfiles"
 FAILURES=()
 
+# Everything below is mirrored to $LOG so failures survive into the session
+# (the harness does not persist setup-script stdout). Verbose installer output
+# goes to $LOG only, keeping the build UI readable.
+LOG="${CLOUD_SETUP_LOG:-/tmp/cloud-setup.log}"
+: > "$LOG"
+exec > >(tee -a "$LOG") 2>&1
+
 # keep in sync with setup.sh helpers
 info() { printf '\033[34m[INFO]\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m[WARN]\033[0m %s\n' "$1"; }
@@ -44,7 +51,7 @@ for pkg in jq shellcheck; do
   command -v "$pkg" &>/dev/null || apt_missing+=("$pkg")
 done
 if ((${#apt_missing[@]})); then
-  apt-get install -y "${apt_missing[@]}" &>/dev/null \
+  apt-get install -y "${apt_missing[@]}" >>"$LOG" 2>&1 \
     || note_fail "apt install failed: ${apt_missing[*]}"
 fi
 
@@ -82,35 +89,40 @@ fi
 # =============================================================================
 
 if ! command -v pnpm &>/dev/null; then
-  npm install -g pnpm &>/dev/null || note_fail "pnpm install failed"
+  npm install -g pnpm >>"$LOG" 2>&1 || note_fail "pnpm install failed"
 fi
 
-# keep in sync with setup.sh install_supabase (install dir differs: session PATH)
-# post-checked: `bash -c "$(curl ...)"` succeeds vacuously when curl fails
+# Pinned direct download, NOT the official installer (setup.sh install_supabase):
+# the installer resolves the latest tag via anonymous api.github.com, which is
+# rate-limited (403) from shared cloud egress IPs.
+SUPABASE_VERSION=2.109.1
 if ! command -v supabase &>/dev/null; then
-  SUPABASE_INSTALL_DIR="$HOME/.local/bin" bash -c \
-    "$(curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install)" -- --no-modify-path \
-    &>/dev/null
+  case "$(uname -m)" in
+    aarch64 | arm64) sb_arch=arm64 ;;
+    *) sb_arch=amd64 ;;
+  esac
+  curl -fsSL "https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}/supabase_linux_${sb_arch}.tar.gz" \
+    | tar -xz -C "$HOME/.local/bin" supabase 2>>"$LOG"
   command -v supabase &>/dev/null || note_fail "supabase CLI install failed"
 fi
 
 # keep in sync with setup.sh install_trufflehog (no sudo: we are root)
 if ! command -v trufflehog &>/dev/null; then
   curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
-    | sh -s -- -b /usr/local/bin &>/dev/null || note_fail "trufflehog install failed"
+    | sh -s -- -b /usr/local/bin >>"$LOG" 2>&1 || note_fail "trufflehog install failed"
 fi
 
 # keep in sync with setup.sh install_uv
 if ! command -v uv &>/dev/null; then
   curl -fsSL https://astral.sh/uv/install.sh \
     | UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh \
-    &>/dev/null || note_fail "uv install failed"
+    >>"$LOG" 2>&1 || note_fail "uv install failed"
 fi
 
 # semgrep via uv (setup.sh uses pipx); capped — the semgrep hook degrades gracefully
 if ! command -v semgrep &>/dev/null; then
   if command -v uv &>/dev/null; then
-    timeout 150 uv tool install semgrep &>/dev/null || note_fail "semgrep install failed/timed out"
+    timeout 150 uv tool install semgrep >>"$LOG" 2>&1 || note_fail "semgrep install failed/timed out"
   else
     note_fail "semgrep skipped (no uv)"
   fi
@@ -118,7 +130,7 @@ fi
 
 # keep in sync with setup.sh install_codex (auth is per-session: codex login --device-auth)
 if ! command -v codex &>/dev/null; then
-  CODEX_NON_INTERACTIVE=1 sh -c "$(curl -fsSL https://chatgpt.com/codex/install.sh)" &>/dev/null
+  CODEX_NON_INTERACTIVE=1 sh -c "$(curl -fsSL https://chatgpt.com/codex/install.sh)" >>"$LOG" 2>&1
   hash -r
   command -v codex &>/dev/null || note_fail "codex CLI install failed"
 fi
@@ -129,31 +141,29 @@ hash -r
 # Section 5: Supabase MCP (user scope, env-var token via headersHelper)
 # =============================================================================
 
-# Session env provides SUPABASE_ACCESS_TOKEN (CLI auth) and optionally
-# SUPABASE_MCP_TOKEN / SUPABASE_PROJECT_REF. The helper reads the env var at
-# request time, so nothing secret is written to disk here.
-if [[ -n "${SUPABASE_MCP_TOKEN:-}${SUPABASE_ACCESS_TOKEN:-}" ]]; then
-  if command -v jq &>/dev/null; then
-    mcp_url="https://mcp.supabase.com/mcp"
-    [[ -n "${SUPABASE_PROJECT_REF:-}" ]] && mcp_url="$mcp_url?project_ref=$SUPABASE_PROJECT_REF"
-    # shellcheck disable=SC2016  # helper expands at MCP request time, not here
-    helper='printf '\''{"Authorization":"Bearer %s"}'\'' "${SUPABASE_MCP_TOKEN:-$SUPABASE_ACCESS_TOKEN}"'
-    claude_json="$HOME/.claude.json"
-    [[ -s "$claude_json" ]] || echo '{}' > "$claude_json"
-    if jq --arg url "$mcp_url" --arg h "$helper" \
-        '.mcpServers.supabase = {type: "http", url: $url, headersHelper: $h}' \
-        "$claude_json" > "$claude_json.tmp"; then
-      mv "$claude_json.tmp" "$claude_json"
-      success "Supabase MCP configured ($mcp_url)"
-    else
-      rm -f "$claude_json.tmp"
-      note_fail "Supabase MCP config merge failed"
-    fi
+# Written unconditionally: environment UI vars reach the Claude Code session
+# but NOT this setup script, and the helper reads the env var at request time
+# anyway — nothing secret is written to disk here. Without a token in the
+# session env the server just fails auth; the harness-injected Supabase
+# connector (if any) is unaffected.
+if command -v jq &>/dev/null; then
+  mcp_url="https://mcp.supabase.com/mcp"
+  [[ -n "${SUPABASE_PROJECT_REF:-}" ]] && mcp_url="$mcp_url?project_ref=$SUPABASE_PROJECT_REF"
+  # shellcheck disable=SC2016  # helper expands at MCP request time, not here
+  helper='printf '\''{"Authorization":"Bearer %s"}'\'' "${SUPABASE_MCP_TOKEN:-$SUPABASE_ACCESS_TOKEN}"'
+  claude_json="$HOME/.claude.json"
+  [[ -s "$claude_json" ]] || echo '{}' > "$claude_json"
+  if jq --arg url "$mcp_url" --arg h "$helper" \
+      '.mcpServers.supabase = {type: "http", url: $url, headersHelper: $h}' \
+      "$claude_json" > "$claude_json.tmp"; then
+    mv "$claude_json.tmp" "$claude_json"
+    success "Supabase MCP configured ($mcp_url)"
   else
-    note_fail "Supabase MCP skipped (no jq)"
+    rm -f "$claude_json.tmp"
+    note_fail "Supabase MCP config merge failed"
   fi
 else
-  info "Supabase MCP skipped (no SUPABASE_MCP_TOKEN/SUPABASE_ACCESS_TOKEN in env)"
+  note_fail "Supabase MCP skipped (no jq)"
 fi
 
 # =============================================================================
@@ -165,7 +175,7 @@ fi
 if ! command -v claude &>/dev/null; then
   claude_installer="$(mktemp)"
   if curl -fsSL https://claude.ai/install.sh -o "$claude_installer"; then
-    bash "$claude_installer" &>/dev/null || true
+    bash "$claude_installer" >>"$LOG" 2>&1 || true
   fi
   rm -f "$claude_installer"
   hash -r
@@ -174,19 +184,22 @@ fi
 settings_file="$DOTFILES_DIR/.claude/settings.json"
 if command -v claude &>/dev/null && command -v jq &>/dev/null && [[ -f "$settings_file" ]]; then
   while IFS= read -r repo; do
-    env -u SKIP_PLUGIN_MARKETPLACE claude plugin marketplace add "github:$repo" &>/dev/null || true
+    env -u SKIP_PLUGIN_MARKETPLACE claude plugin marketplace add "github:$repo" >>"$LOG" 2>&1 || true
   done < <(jq -r '.extraKnownMarketplaces // {} | to_entries[] | .value.source.repo' "$settings_file")
 
   plugin_fail=0
   while IFS= read -r plugin; do
-    if env -u SKIP_PLUGIN_MARKETPLACE claude plugin install "$plugin" --scope user &>/dev/null; then
+    if out=$(env -u SKIP_PLUGIN_MARKETPLACE claude plugin install "$plugin" --scope user 2>&1); then
       success "Plugin: $plugin"
     else
       warn "Plugin failed: $plugin"
       ((plugin_fail++))
     fi
+    printf '--- plugin install %s ---\n%s\n' "$plugin" "$out" >> "$LOG"
   done < <(jq -r '.enabledPlugins // {} | to_entries[] | select(.value) | .key' "$settings_file")
   ((plugin_fail)) && note_fail "$plugin_fail plugin install(s) failed"
+  # ground truth for the session to inspect: what actually landed on disk
+  { echo '--- claude plugin list ---'; env -u SKIP_PLUGIN_MARKETPLACE claude plugin list; } >> "$LOG" 2>&1
 else
   note_fail "plugin install skipped (claude/jq/settings.json missing)"
 fi

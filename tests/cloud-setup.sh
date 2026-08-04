@@ -57,7 +57,8 @@ printf '#!/bin/bash\necho "$@" >> "$CLAUDE_LOG"\n' > "$stubs/claude"
 chmod +x "$stubs"/*
 
 run_setup() {
-  HOME="$home" PATH="$stubs:$PATH" CLAUDE_LOG="$tmp/claude.log" "$@" bash "$SCRIPT"
+  HOME="$home" PATH="$stubs:$PATH" CLAUDE_LOG="$tmp/claude.log" \
+    CLOUD_SETUP_LOG="$tmp/setup.log" "$@" bash "$SCRIPT"
 }
 
 # --- happy path -------------------------------------------------------------
@@ -91,11 +92,12 @@ jq -e '.existing == true' "$home/.claude.json" >/dev/null || fail "existing keys
 jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp"' \
   "$home/.claude.json" >/dev/null || fail "MCP url without project_ref wrong"
 
-# --- no token: MCP section skipped ------------------------------------------
+# --- no token: MCP still written (env vars only reach the session, not setup)
 
 rm -f "$home/.claude.json"
 run_setup >/dev/null 2>&1 || fail "no-token run exited nonzero"
-[[ ! -e "$home/.claude.json" ]] || fail "claude.json written without token"
+jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp"' \
+  "$home/.claude.json" >/dev/null || fail "MCP not written without token"
 
 # --- degraded: tools missing + network dead -> reports issues, exits 0 ------
 # restricted PATH so the host's real CLIs can't satisfy the command -v guards
@@ -103,16 +105,18 @@ run_setup >/dev/null 2>&1 || fail "no-token run exited nonzero"
 realbin="$tmp/realbin"
 mkdir -p "$realbin"
 for c in bash sh git jq ln mkdir dirname basename find chmod uname whoami env \
-         mv rm cat grep sed timeout printf echo; do
+         mv rm cat grep sed timeout printf echo tee mktemp; do
   p="$(command -v "$c" 2>/dev/null)" || continue
   [[ "$p" == /* ]] && ln -s "$p" "$realbin/$c"
 done
 
 for t in supabase trufflehog uv semgrep codex claude; do rm "$stubs/$t"; done
-out="$(HOME="$home" PATH="$stubs:$realbin" CLAUDE_LOG="$tmp/claude.log" bash "$SCRIPT" 2>&1)" \
+out="$(HOME="$home" PATH="$stubs:$realbin" CLAUDE_LOG="$tmp/claude.log" \
+  CLOUD_SETUP_LOG="$tmp/setup-degraded.log" bash "$SCRIPT" 2>&1)" \
   || fail "degraded run exited nonzero"
 grep -q 'issue(s)' <<< "$out" || fail "degraded run should report issues"
 grep -q 'supabase CLI install failed' <<< "$out" || fail "vacuous curl not caught (supabase)"
 grep -q 'codex CLI install failed' <<< "$out" || fail "vacuous curl not caught (codex)"
+grep -q 'issue(s)' "$tmp/setup-degraded.log" || fail "failures not mirrored to log file"
 
 echo 'PASS: cloud-setup tests'

@@ -16,11 +16,33 @@ Key facts (spike-verified 2026-08):
   at build time is fully honored (CLAUDE.md, skills, hooks, settings).
 - The session harness sets `SKIP_PLUGIN_MARKETPLACE=true`, so plugins **must**
   be installed at build time — session-start auto-install never happens.
+- **Environment UI env vars reach the session only, NOT the setup script.**
+  Anything needing a token at build time can't have it; `cloud-setup.sh`
+  therefore writes the Supabase MCP entry unconditionally with a
+  `headersHelper` that reads the env var at request time. Consequence:
+  `SUPABASE_PROJECT_REF` (read at setup time) currently has no effect in cloud.
+- Setup-script stdout is **not persisted** anywhere on the VM — the script
+  tees everything to `/tmp/cloud-setup.log`; read that in-session to diagnose
+  build failures.
+- Anonymous `api.github.com` is rate-limited (403) from shared cloud egress
+  IPs — installers that resolve "latest" via the API fail. Direct
+  `github.com/.../releases/download/...` URLs work fine, hence the pinned
+  supabase version in `cloud-setup.sh`.
+- Under Trusted network access, `chatgpt.com` is blocked at the gateway
+  (CONNECT 403) → **Codex CLI cannot install** unless the environment uses a
+  Custom allowlist including `chatgpt.com` (and `auth.openai.com` for login).
+- The session injects its own MCP servers (github, Supabase connector scoped
+  to the claude.ai project, PostHog, Google suite) from a per-session config;
+  the user-scope `supabase` entry in `~/.claude.json` coexists with these.
 - The session repo checkout (`/home/user/<repo>`) is separate from
   `/root/.dotfiles`; the dotfiles clone is config-delivery only.
 - Fresh VM per session: nothing persists mid-session → Codex auth repeats per
   session; env vars are the only durable per-environment state.
-- Preinstalled: node, npm, pnpm, uvx, gh (auth injected via proxy), git, jq.
+- Preinstalled: node, npm, pnpm, uvx, gh (auth injected via proxy), git, jq,
+  claude (`/opt/node22/bin/claude`).
+- Hook `systemMessage` output is not rendered by the cloud UI (cosmetic only —
+  the npm→pnpm rewrite itself works; verify via `npm --version` printing
+  pnpm's version).
 
 ## One-time setup per project
 
@@ -45,15 +67,16 @@ On claude.ai → Code → your repo → environment settings:
    |----------------------|----------|--------------------------------------------------|
    | `SUPABASE_ACCESS_TOKEN` | yes* | Scoped PAT for the right Supabase account; auths the CLI and (fallback) the MCP |
    | `SUPABASE_MCP_TOKEN` | no | Separate token for the MCP server, if you want it distinct from the CLI's |
-   | `SUPABASE_PROJECT_REF` | no | Scopes the MCP to one project via `?project_ref=` |
+   | `SUPABASE_PROJECT_REF` | no | Intended to scope the MCP via `?project_ref=` — currently inert: env vars don't reach the setup script (see Key facts) |
 
-   *Omit both tokens and the Supabase MCP/CLI are simply skipped.
+   *The MCP entry is written regardless (env vars are session-only); without a
+   token the server just fails auth when called.
 
-3. **Network access** — Trusted. If the build log shows blocked installs,
-   switch to Custom and allow: `raw.githubusercontent.com`, `astral.sh`,
-   `chatgpt.com`, `claude.ai`, `mcp.supabase.com`, `api.supabase.com`,
-   `github.com`, plus the supabase/trufflehog GitHub release hosts
-   (`objects.githubusercontent.com`).
+3. **Network access** — Trusted covers everything except Codex. For Codex,
+   switch to Custom and allow at least: `chatgpt.com`, `auth.openai.com`,
+   `raw.githubusercontent.com`, `astral.sh`, `claude.ai`, `mcp.supabase.com`,
+   `api.supabase.com`, `github.com`, `release-assets.githubusercontent.com`,
+   `objects.githubusercontent.com`.
 
 ## One-time account steps
 
@@ -79,6 +102,8 @@ On claude.ai → Code → your repo → environment settings:
 
 ## Verification checklist (first session after changes)
 
+0. `cat /tmp/cloud-setup.log` — full build output, per-plugin install results,
+   `claude plugin list` ground truth, and the failure summary.
 1. `ls -la ~/.claude` shows symlinks into `~/.dotfiles`; Claude quotes a
    CLAUDE.md rule; skills appear under `/`; `/plugin` lists superpowers,
    factory, ponytail, codex, web-designer.
