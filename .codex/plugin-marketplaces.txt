@@ -1,2 +1,3 @@
 # marketplace-name source
 agent-toolkit-for-aws aws/agent-toolkit-for-aws
+javier-plugins jfa94/web-designer

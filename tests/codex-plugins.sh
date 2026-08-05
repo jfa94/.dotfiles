@@ -19,10 +19,12 @@ printf '%s\n' "$*" >> "$state/calls"
 if [[ "$*" == "plugin marketplace list --json" ]]; then
   extra=""
   [[ -f "$state/aws-market" ]] && extra="$extra,{\"name\":\"agent-toolkit-for-aws\"}"
+  [[ -f "$state/javier-market" ]] && extra="$extra,{\"name\":\"javier-plugins\"}"
   printf '{"marketplaces":[{"name":"openai-curated"}%s]}\n' "$extra"
 elif [[ "$1 $2 $3" == "plugin marketplace add" ]]; then
   case "$4" in
     aws/agent-toolkit-for-aws) touch "$state/aws-market" ;;
+    jfa94/web-designer) touch "$state/javier-market" ;;
     *) exit 2 ;;
   esac
   printf '{}\n'
@@ -58,12 +60,14 @@ export MOCK_MANIFEST="$tmp/repo/.codex/plugins.txt"
 
 bash "$INSTALLER" "$tmp/repo"
 grep -Fq 'plugin marketplace add aws/agent-toolkit-for-aws --json' "$tmp/state/calls"
+grep -Fq 'plugin marketplace add jfa94/web-designer --json' "$tmp/state/calls"
 
 first_adds=$(grep -c '^plugin add ' "$tmp/state/calls")
 bash "$INSTALLER" "$tmp/repo"
 second_adds=$(grep -c '^plugin add ' "$tmp/state/calls")
 [[ "$first_adds" -eq "$second_adds" ]]
 grep -Fq 'plugin marketplace upgrade agent-toolkit-for-aws --json' "$tmp/state/calls"
+grep -Fq 'plugin marketplace upgrade javier-plugins --json' "$tmp/state/calls"
 
 rm -f "$tmp/state/plugin-posthog_openai-curated"
 export FAIL_PLUGIN="posthog@openai-curated"
@@ -72,9 +76,9 @@ if bash "$INSTALLER" "$tmp/repo" >/dev/null 2>&1; then
   exit 1
 fi
 
-expected_plugins=$'stripe@openai-curated\nsupabase@openai-curated\nposthog@openai-curated\naws-core@agent-toolkit-for-aws'
+expected_plugins=$'stripe@openai-curated\nsupabase@openai-curated\nposthog@openai-curated\naws-core@agent-toolkit-for-aws\nweb-designer@javier-plugins'
 [[ $(grep -Ev '^(#|$)' "$ROOT/.codex/plugins.txt") == "$expected_plugins" ]]
-expected_marketplace='agent-toolkit-for-aws aws/agent-toolkit-for-aws'
+expected_marketplace=$'agent-toolkit-for-aws aws/agent-toolkit-for-aws\njavier-plugins jfa94/web-designer'
 [[ $(grep -Ev '^(#|$)' "$ROOT/.codex/plugin-marketplaces.txt") == "$expected_marketplace" ]]
 
 echo "OK"

@@ -56,7 +56,7 @@ Claude's inventory contains 19 plugins. Codex requirements intentionally include
 | `stripe@claude-plugins-official` | Disabled | `stripe@openai-curated` | Required but partial; not every Claude command, agent, or skill maps |
 | `posthog@claude-plugins-official` | Disabled | `posthog@openai-curated` | Required direct integration; Outsidey reads allowed, writes ask |
 | `figma@claude-plugins-official` | Disabled | None required | Intentionally disabled; install separately when needed |
-| `resend@claude-plugins-official` | Inventory-only | None | Not explicitly enabled in Claude and not required in Codex |
+| `web-designer@javier-plugins` | Enabled | `web-designer@javier-plugins` | Direct shared-skill parity; runtime-specific invocation syntax |
 | `aws-core@agent-toolkit-for-aws` | Disabled | `aws-core@agent-toolkit-for-aws` | Required in Codex; official successor to legacy `aws-serverless` |
 
 GitHub is deliberately CLI-only through `gh`; the local GitHub plugin is disabled and the account connector is not installed. Stripe, Supabase, and PostHog connector authentication remains interactive. PostHog must connect to Outsidey project `107700`, with writes configured to ask.

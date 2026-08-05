@@ -147,6 +147,8 @@ FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
 [[ ! -e "$ROOT/.codex/config.toml" ]]
 grep -q 'CODEX_USER_CONFIG=".codex/user-config.toml"' "$ROOT/setup.sh"
 grep -Fxq 'aws-core@agent-toolkit-for-aws' "$ROOT/.codex/plugins.txt"
+grep -Fxq 'javier-plugins jfa94/web-designer' "$ROOT/.codex/plugin-marketplaces.txt"
+grep -Fxq 'web-designer@javier-plugins' "$ROOT/.codex/plugins.txt"
 if grep -Eq '^(superpowers|codex-security|ponytail)@' "$ROOT/.codex/plugins.txt"; then
   exit 1
 fi
@@ -158,7 +160,8 @@ for plugin in \
   visualize@openai-bundled \
   computer-use@openai-bundled \
   sites@openai-bundled \
-  browser@openai-bundled
+  browser@openai-bundled \
+  web-designer@javier-plugins
 do
   [[ $(grep -A1 "^\[plugins\\.\"$plugin\"\]$" "$CODEX_CONFIG" | tail -1) == "enabled = true" ]]
 done
