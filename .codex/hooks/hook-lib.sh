@@ -46,8 +46,15 @@ extract_paths() {
 }
 
 project_dir() {
-  local input="$1"
-  local cwd
+  local input="$1" cwd dir
   cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+  # Codex passes the per-command working directory as tool_input.workdir and
+  # tells the model to always set it; .cwd is only the session's turn cwd.
+  dir=$(printf '%s' "$input" | jq -r '.tool_input.workdir // empty' 2>/dev/null)
+  case "$dir" in
+    "") ;; # absent -> fall through to cwd
+    /*) printf '%s\n' "$dir"; return ;; # absolute -> use as-is
+    *) printf '%s\n' "${cwd:-$(pwd)}/$dir"; return ;; # relative -> resolve against turn cwd
+  esac
   [[ -n "$cwd" ]] && printf '%s\n' "$cwd" || pwd
 }

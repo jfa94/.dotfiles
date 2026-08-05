@@ -11,8 +11,13 @@ run_hook() {
 }
 
 assert_decision() {
-  local name=$1 hook=$2 command=$3 expected=$4 output decision
-  output=$(run_hook "$hook" "$(jq -cn --arg c "$command" --arg cwd "$ROOT" '{cwd:$cwd,tool_input:{command:$c}}')")
+  local name=$1 hook=$2 command=$3 expected=$4 workdir=${5:-} cwd=${6:-$ROOT} output decision payload
+  if [[ -n "$workdir" ]]; then
+    payload=$(jq -cn --arg c "$command" --arg cwd "$cwd" --arg w "$workdir" '{cwd:$cwd,tool_input:{command:$c,workdir:$w}}')
+  else
+    payload=$(jq -cn --arg c "$command" --arg cwd "$cwd" '{cwd:$cwd,tool_input:{command:$c}}')
+  fi
+  output=$(run_hook "$hook" "$payload")
   if [[ -n "$output" ]]; then
     decision=$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision // "allow"')
   else
@@ -40,6 +45,52 @@ aws secret value with flags|aws-readonly-check.sh|aws --profile prod secretsmana
 aws secret metadata passes hook|aws-readonly-check.sh|aws secretsmanager list-secrets|allow
 aws write passes hook to rules prompt|aws-readonly-check.sh|aws ec2 terminate-instances --instance-ids i-1|allow
 CASES
+
+# --- pre-commit gate: per-command workdir, not stale session cwd ---------
+# Codex passes each command's working directory as tool_input.workdir and
+# tells the model to always set it; sessions are commonly started outside
+# the target repo, so the session-level cwd alone is the wrong signal.
+# Regression for: "Pre-commit gate could not inspect staged files" when a
+# session's cwd isn't a git repo but the command's workdir is.
+assert_decision "pre-commit uses command workdir over stale session cwd" \
+  pre-commit-check.sh "git commit -m x" allow "$ROOT" "$HOME"
+assert_decision "pre-commit falls back to session cwd when workdir absent" \
+  pre-commit-check.sh "git commit -m x" allow "" "$ROOT"
+
+# --- pre-commit gate: secrets staged by this same command ----------------
+# The gate runs BEFORE the command executes, so `git add secret && git
+# commit` has nothing staged yet at hook time. These exercise the pending-add
+# resolution (git add --dry-run) that closes that hole.
+SCRATCH=$(mktemp -d)
+trap 'rm -rf "$SCRATCH"' EXIT
+git -C "$SCRATCH" init -q
+git -C "$SCRATCH" config user.email t@t.com
+git -C "$SCRATCH" config user.name t
+echo readme > "$SCRATCH/README.md"
+git -C "$SCRATCH" add README.md
+GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.com \
+  git -C "$SCRATCH" commit -q -m init
+
+echo secret > "$SCRATCH/fake.pem"
+assert_decision "pre-commit denies secret added in the same command" \
+  pre-commit-check.sh "git add fake.pem && git commit -m x" deny "$SCRATCH"
+rm -f "$SCRATCH/fake.pem"
+
+echo hi > "$SCRATCH/notes.txt"
+assert_decision "pre-commit allows a plain file added in the same command" \
+  pre-commit-check.sh "git add . && git commit -m x" allow "$SCRATCH"
+rm -f "$SCRATCH/notes.txt"
+
+mkdir -p "$SCRATCH/sub"
+echo secret > "$SCRATCH/sub/id_rsa"
+assert_decision "pre-commit denies a secret pulled in by 'git add .'" \
+  pre-commit-check.sh "git add . && git commit -m x" deny "$SCRATCH"
+rm -rf "$SCRATCH/sub"
+
+assert_decision "pre-commit fails closed on unresolvable git add args" \
+  pre-commit-check.sh 'git add $(cat list) && git commit -m x' deny "$SCRATCH"
+rm -rf "$SCRATCH"
+trap - EXIT
 
 # AWS approval routing: reads for actively used services auto-allow via the
 # generated aws-read.rules; writes and unlisted services fall to Codex's
