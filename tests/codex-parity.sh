@@ -232,7 +232,7 @@ PASS=$((PASS + 1))
 
 EXPECTED_STATUS='status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
 grep -Fxq "$EXPECTED_STATUS" "$CODEX_CONFIG"
-grep -Fxq 'approvals_reviewer = "user"' "$CODEX_CONFIG"
+grep -Fxq 'approvals_reviewer = "auto_review"' "$CODEX_CONFIG"
 NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
 FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
