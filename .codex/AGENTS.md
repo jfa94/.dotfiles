@@ -38,3 +38,11 @@
 - Existing project conventions take precedence. For greenfield work, prefer TypeScript, React, Next.js App Router, Tailwind CSS, Supabase/Auth, PostHog, Stripe, Lucide, and TypeScript on Node.
 - For frontend work, follow canonical guidance in `~/.claude/frontend.md` when it exists.
 - For backend work, follow canonical guidance in `~/.claude/backend.md` when it exists.
+
+## Codex source naming
+
+- `.codex/user-config.toml` and `.codex/user-hooks.json` are the canonical
+  tracked user-level sources. Setup links them to the discovered runtime paths
+  `~/.codex/config.toml` and `~/.codex/hooks.json`.
+- Do not rename the tracked sources to `config.toml` or `hooks.json`: Codex
+  would discover them project-locally in this repository as well as globally.

@@ -112,7 +112,7 @@ sqlite3 ~/.codex/state_5.sqlite "select id,cwd,substr(sandbox_policy,1,80) from 
 Run:
 
 ```sh
-jq empty .codex/hooks.json
+jq empty .codex/user-hooks.json
 shellcheck .codex/hooks/*.sh tests/codex-parity.sh
 bash tests/codex-parity.sh
 for test in tests/*.sh; do bash "$test"; done
@@ -123,4 +123,4 @@ bash .codex/plugin-doctor.sh
 
 Normal setup never upgrades existing plugin marketplaces. Use `bash .codex/update-plugins.sh` explicitly from outside an active Codex task; after it validates hook manifests and targets, restart Codex/ChatGPT and review changed hooks. The plugin doctor reports bundle, app dependency, OAuth, tool-discovery, and hook-validation layers separately so a missing connector is not misreported as a missing bundle.
 
-Fresh startup, resume, manual compaction, and automatic compaction at 200,000 tokens require interactive smoke testing. User config is authored at `.codex/user-config.toml` and linked to `~/.codex/config.toml` so Codex does not also load it as project-local config. The clean filter must preserve authored configuration above trailing `[hooks.state]` while stripping only trusted hashes.
+Fresh startup, resume, manual compaction, and automatic compaction at 200,000 tokens require interactive smoke testing. User config and user hooks are authored at `.codex/user-config.toml` and `.codex/user-hooks.json`, then linked to `~/.codex/config.toml` and `~/.codex/hooks.json`. Their non-discovered source names prevent Codex from also loading them as project-local configuration inside this repository. The seven parallel Bash policy handlers deliberately share the generic `Checking shell command policy` status so Codex can collapse their activity without claiming that a command-specific gate is running before each script self-filters. The clean filter must preserve authored configuration above trailing `[hooks.state]` while stripping only trusted hashes.

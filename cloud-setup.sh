@@ -60,14 +60,18 @@ fi
 # keep in sync with setup.sh section 4 (symlink loop + link_codex_user_config)
 # =============================================================================
 
-# .codex/user-config.toml is linked separately as ~/.codex/config.toml
+# User-level Codex config and hooks use non-discovered source names and are
+# linked separately to their runtime names under ~/.codex.
 CODEX_USER_CONFIG=".codex/user-config.toml"
 CODEX_LEGACY_CONFIG=".codex/config.toml"
+CODEX_USER_HOOKS=".codex/user-hooks.json"
+CODEX_LEGACY_HOOKS=".codex/hooks.json"
 
 link_count=0
 while IFS= read -r -d '' path; do
   [[ "$path" == .codex/skills/* ]] && continue
   [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
+  [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
   mkdir -p "$HOME/$(dirname "$path")"
   ln -sfn "$DOTFILES_DIR/$path" "$HOME/$path" && ((link_count++))
 done < <(git -C "$DOTFILES_DIR" ls-files -z -- .claude .codex)
@@ -75,6 +79,11 @@ done < <(git -C "$DOTFILES_DIR" ls-files -z -- .claude .codex)
 if [[ -f "$DOTFILES_DIR/$CODEX_USER_CONFIG" ]]; then
   mkdir -p "$HOME/.codex"
   ln -sfn "$DOTFILES_DIR/$CODEX_USER_CONFIG" "$HOME/.codex/config.toml"
+fi
+
+if [[ -f "$DOTFILES_DIR/$CODEX_USER_HOOKS" ]]; then
+  mkdir -p "$HOME/.codex"
+  ln -sfn "$DOTFILES_DIR/$CODEX_USER_HOOKS" "$HOME/.codex/hooks.json"
 fi
 
 if ((link_count == 0)); then

@@ -37,6 +37,7 @@ EOF
 echo '# claude rules' > "$dot/.claude/CLAUDE.md"
 echo 'echo hook' > "$dot/.claude/hooks/sample.sh"
 echo 'model = "gpt-5"' > "$dot/.codex/user-config.toml"
+echo '{"hooks": {}}' > "$dot/.codex/user-hooks.json"
 echo 'skill' > "$dot/.codex/skills/demo/SKILL.md"
 git -C "$dot" init -q
 git -C "$dot" -c user.email=t@t -c user.name=t add -A
@@ -70,8 +71,12 @@ out="$(run_setup env SUPABASE_ACCESS_TOKEN=tok SUPABASE_PROJECT_REF=abc123 2>&1)
 [[ "$(readlink "$home/.claude/CLAUDE.md")" == "$dot/.claude/CLAUDE.md" ]] \
   || fail "CLAUDE.md symlink target wrong"
 [[ -L "$home/.codex/config.toml" ]] || fail "user-config.toml not linked as config.toml"
+[[ -L "$home/.codex/hooks.json" ]] || fail "user-hooks.json not linked as hooks.json"
+[[ "$(readlink "$home/.codex/hooks.json")" == "$dot/.codex/user-hooks.json" ]] \
+  || fail "hooks.json symlink target wrong"
 [[ ! -e "$home/.codex/skills/demo/SKILL.md" ]] || fail ".codex/skills should be excluded"
 [[ ! -e "$home/.codex/user-config.toml" ]] || fail "user-config.toml should only exist as config.toml"
+[[ ! -e "$home/.codex/user-hooks.json" ]] || fail "user-hooks.json should only exist as hooks.json"
 [[ -x "$home/.claude/hooks/sample.sh" ]] || fail "hook not chmod +x"
 
 jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp?project_ref=abc123"' \

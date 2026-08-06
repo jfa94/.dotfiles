@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CONFIG="$ROOT/.codex/user-config.toml"
-HOOKS="$ROOT/.codex/hooks.json"
+HOOKS="$ROOT/.codex/user-hooks.json"
 HOOK="$ROOT/.codex/hooks/aws-mcp-readonly-check.sh"
 PASS=0
 

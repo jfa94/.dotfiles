@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CODEX_CONFIG="$ROOT/.codex/user-config.toml"
+CODEX_HOOKS="$ROOT/.codex/user-hooks.json"
 PASS=0
 
 run_hook() {
@@ -27,8 +28,26 @@ assert_decision() {
   PASS=$((PASS + 1))
 }
 
-jq empty "$ROOT/.codex/hooks.json"
-jq -e '.hooks.SessionStart[] | select(.matcher == "compact")' "$ROOT/.codex/hooks.json" >/dev/null
+jq empty "$CODEX_HOOKS"
+jq -e '.hooks.SessionStart[] | select(.matcher == "compact")' "$CODEX_HOOKS" >/dev/null
+[[ ! -e "$ROOT/.codex/hooks.json" ]]
+grep -q 'CODEX_USER_HOOKS=".codex/user-hooks.json"' "$ROOT/setup.sh"
+
+EXPECTED_BASH_HOOKS=$(cat <<'EOF'
+$HOME/.codex/hooks/compound-check.sh|
+$HOME/.codex/hooks/dangerous-patterns-check.sh|
+bash $HOME/.codex/hooks/aws-readonly-check.sh|
+$HOME/.codex/hooks/npm-to-pnpm.sh|
+$HOME/.codex/hooks/pre-commit-check.sh|60
+$HOME/.codex/hooks/pre-push-check.sh|900
+$HOME/.codex/hooks/semgrep-check.sh|120
+EOF
+)
+ACTUAL_BASH_HOOKS=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | [.command, (.timeout // "")] | join("|")' "$CODEX_HOOKS")
+[[ "$ACTUAL_BASH_HOOKS" == "$EXPECTED_BASH_HOOKS" ]]
+[[ $(jq '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]] | length' "$CODEX_HOOKS") -eq 7 ]]
+[[ $(jq -r '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].statusMessage] | unique | length' "$CODEX_HOOKS") -eq 1 ]]
+[[ $(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].statusMessage' "$CODEX_HOOKS") == "Checking shell command policy" ]]
 
 while IFS='|' read -r name hook command expected; do
   assert_decision "$name" "$hook" "$command" "$expected"

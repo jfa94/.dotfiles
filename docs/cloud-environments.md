@@ -10,6 +10,11 @@ Cloud environments run a per-environment setup script as root once per build
 repo and recreates `~/.claude` + `~/.codex` via symlinks — same mechanism as
 `setup.sh` locally — then installs CLIs and plugins.
 
+Codex user configuration is stored in the clone under the non-discovered
+source names `.codex/user-config.toml` and `.codex/user-hooks.json`, then linked
+to the runtime paths `~/.codex/config.toml` and `~/.codex/hooks.json`. This keeps
+the delivery clone from also treating the same files as project-local config.
+
 Key facts (spike-verified 2026-08):
 
 - Build and session both run as root with `HOME=/root`; a `~/.claude` created

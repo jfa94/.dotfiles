@@ -37,40 +37,40 @@
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/compound-check.sh",
-            "statusMessage": "Checking command structure"
+            "statusMessage": "Checking shell command policy"
           },
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/dangerous-patterns-check.sh",
-            "statusMessage": "Checking dangerous patterns"
+            "statusMessage": "Checking shell command policy"
           },
           {
             "type": "command",
             "command": "bash $HOME/.codex/hooks/aws-readonly-check.sh",
-            "statusMessage": "Checking AWS command is read-only"
+            "statusMessage": "Checking shell command policy"
           },
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/npm-to-pnpm.sh",
-            "statusMessage": "Rewriting npm to pnpm"
+            "statusMessage": "Checking shell command policy"
           },
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/pre-commit-check.sh",
             "timeout": 60,
-            "statusMessage": "Running pre-commit checks"
+            "statusMessage": "Checking shell command policy"
           },
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/pre-push-check.sh",
             "timeout": 900,
-            "statusMessage": "Running pre-push quality gate"
+            "statusMessage": "Checking shell command policy"
           },
           {
             "type": "command",
             "command": "$HOME/.codex/hooks/semgrep-check.sh",
             "timeout": 120,
-            "statusMessage": "Running Semgrep gate"
+            "statusMessage": "Checking shell command policy"
           }
         ]
       },

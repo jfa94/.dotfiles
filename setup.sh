@@ -21,6 +21,10 @@ DOTFILES=(
 # Its non-standard source name prevents Codex loading it twice in this repo.
 CODEX_USER_CONFIG=".codex/user-config.toml"
 CODEX_LEGACY_CONFIG=".codex/config.toml"
+# This tracked manifest is user-level too. Its source name must not be one of
+# Codex's project-discovered hook manifest names inside this repository.
+CODEX_USER_HOOKS=".codex/user-hooks.json"
+CODEX_LEGACY_HOOKS=".codex/hooks.json"
 
 # --- Helpers ---
 info()    { printf '[INFO] %s\n' "$1"; }
@@ -93,6 +97,22 @@ link_codex_user_config() {
     return
   fi
   link_file "$src" "$dest" "~/.codex/config.toml"
+}
+
+link_codex_user_hooks() {
+  local src="$DOTFILES_DIR/$CODEX_USER_HOOKS"
+  local dest="$HOME/.codex/hooks.json"
+  local legacy_src="$DOTFILES_DIR/$CODEX_LEGACY_HOOKS"
+
+  mkdir -p "$(dirname "$dest")"
+  if [[ -L "$dest" && "$(readlink "$dest")" == "$legacy_src" ]]; then
+    rm -f "$dest"
+    ln -s "$src" "$dest"
+    replaced+=("~/.codex/hooks.json (legacy link migrated)")
+    success "~/.codex/hooks.json legacy link migrated"
+    return
+  fi
+  link_file "$src" "$dest" "~/.codex/hooks.json"
 }
 
 link_skills_for_codex() {
@@ -478,6 +498,7 @@ for prefix in .claude .codex .config; do
     # under ~/.codex/skills by the path-for-path config linker.
     [[ "$path" == .codex/skills/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
+    [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
     rel="${path#"$prefix"/}"
     dest="$HOME/$prefix/$rel"
     if [[ -L "$dest" && "$(readlink "$dest")" == "$DOTFILES_DIR/$path" ]]; then
@@ -496,6 +517,17 @@ if [[ ! -L "$codex_config_dest" || "$(readlink "$codex_config_dest")" != "$codex
   if [[ ! -L "$codex_config_dest" || "$(readlink "$codex_config_dest")" != "$codex_legacy_config_src" ]]; then
     if [[ -e "$codex_config_dest" || -L "$codex_config_dest" ]]; then
       conflicts+=("~/.codex/config.toml")
+    fi
+  fi
+fi
+
+codex_hooks_src="$DOTFILES_DIR/$CODEX_USER_HOOKS"
+codex_hooks_dest="$HOME/.codex/hooks.json"
+codex_legacy_hooks_src="$DOTFILES_DIR/$CODEX_LEGACY_HOOKS"
+if [[ ! -L "$codex_hooks_dest" || "$(readlink "$codex_hooks_dest")" != "$codex_hooks_src" ]]; then
+  if [[ ! -L "$codex_hooks_dest" || "$(readlink "$codex_hooks_dest")" != "$codex_legacy_hooks_src" ]]; then
+    if [[ -e "$codex_hooks_dest" || -L "$codex_hooks_dest" ]]; then
+      conflicts+=("~/.codex/hooks.json")
     fi
   fi
 fi
@@ -561,6 +593,7 @@ for prefix in .claude .codex .config; do
   while IFS= read -r -d '' path; do
     [[ "$path" == .codex/skills/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
+    [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
     rel="${path#"$prefix"/}"
     dest="$HOME/$prefix/$rel"
     mkdir -p "$(dirname "$dest")"
@@ -569,6 +602,7 @@ for prefix in .claude .codex .config; do
 done
 
 link_codex_user_config
+link_codex_user_hooks
 
 link_skills_for_codex
 
