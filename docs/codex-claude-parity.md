@@ -8,7 +8,7 @@ Audited against `.claude/settings.json`, `.claude/plugins.txt`, and the Codex pl
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | Read broadly                 | `workspace-net` filesystem `/ = read`, including `.env*` under trusted workspaces                             | Exact for local context; subprocess environment inheritance remains filtered                      |
 | Write trusted repos/temp     | Explicit dotfiles, Projects, workspace roots (including `.git`), `$TMPDIR`, `/tmp`, `/private/tmp`, `/var/tmp` writes | Exact                                                                                      |
-| Protect credentials/secrets  | Filesystem denies plus protected-files and pre-commit hooks, except the explicitly readable AWS shared-credentials file; Linux recursive deny snapshots scan to depth 32 | Approximate; filename patterns cannot identify every secret |
+| Protect credentials/secrets  | protected-files and pre-commit hooks, except the explicitly readable AWS shared-credentials file; no filesystem read-denies, since any deny entry silently keeps `require_escalated` sandboxed | Approximate; filename patterns cannot identify every secret; reads are unrestricted |
 | Bash allowlist               | `.codex/rules/default.rules` exact argv prefixes                                                             | Approximate; wildcard `git -C` prompts                                                            |
 | AWS integration              | AWS `aws-core` plugin for knowledge/skills plus generated CLI read rules; Outsidey project config injects `AWS_PROFILE`; MCP API/script/presigned-URL tools denied | Broader guidance than legacy `aws-serverless`; authenticated resource access remains direct CLI-only |
 | Web search                   | `web_search = "live"`; limited trusted-domain network profile                                                | Exact for search; shell networking remains allowlisted                                            |
@@ -82,7 +82,7 @@ The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and
 ## Intentional gaps
 
 - AWS read auto-allow is scoped to actively used services (see `SERVICES` in `.codex/rules/generate-aws-read.sh`); Claude-allowed reads for other services prompt in Codex. `aws s3 cp s3://key -` also prompts — prefix rules cannot see the `-` destination that makes it a read. Codex hooks cannot express Claude's per-call "ask", so AWS writes prompt via the rules layer default rather than via hook.
-- `.env*` reads are limited to trusted workspaces and remain protected from edits and commits. Exact Outsidey parity makes `~/.aws/credentials` readable to Codex; SSH material, private keys/certificates, `secrets/`, and Codex authentication remain unreadable.
+- `.env*` reads are limited to trusted workspaces and remain protected from edits and commits. Exact Outsidey parity makes `~/.aws/credentials` readable to Codex. SSH material, private keys/certificates, `secrets/`, and Codex authentication are also readable — filesystem read-denies were removed because any deny entry silently keeps `require_escalated` commands sandboxed (see Sandbox-profile troubleshooting); writes and commits stay blocked by protected-files and pre-commit hooks.
 - Hooks resolve their target directory from `tool_input.workdir` (`hook-lib.sh:project_dir`), falling back to the PreToolUse payload's session `cwd`. Codex instructs the model to always pass `workdir` per command and commonly starts sessions outside the project root, so the session `cwd` alone is stale for repo-scoped hooks (pre-commit, pre-push, Semgrep, prettier, protected-files, `.codex` dir checks).
 - The pre-commit gate scans the index plus whatever this same command's own `git add` would stage (`git add --dry-run`), because PreToolUse fires before the command runs — otherwise `git add secret.pem && git commit` would scan an empty index. Unresolvable `git add` arguments (shell substitution, redirects) deny rather than skip the scan.
 - The pre-commit gate's secret-path pattern (`SECRET_PATH_RE`) is hand-kept identical between `.codex/hooks/pre-commit-check.sh` and `.claude/hooks/pre-commit-check.sh` — no shared library on the Claude side — and pinned equal by `tests/codex-permissions-aws-mcp.sh`. `.env.example`/`.sample`/`.template` are exempted and committable by design, matching `protected-files-check.sh`'s write-side exemption.
@@ -91,7 +91,6 @@ The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and
 - Dynamic Claude `ask` hooks use native sandbox/exec-policy prompts where expressible; unsupported dynamic cases deny with manual retry guidance.
 - Model-availability NUX and all Superpowers state remain untouched.
 - Newline-containing filenames are an acknowledged limitation in changed-file scanner lists.
-- Linux/WSL expands recursive filesystem deny globs to depth 32 before starting `bubblewrap`. Deeper matches are outside the shell-level snapshot, while raising the cap increases startup scanning work.
 
 ## Sandbox-profile troubleshooting
 
@@ -106,6 +105,15 @@ sqlite3 ~/.codex/state_5.sqlite "select id,cwd,substr(sandbox_policy,1,80) from 
 ```
 
 `special/root` indicates the downgraded built-in profile; `path:"/"` indicates the expected `workspace-net` profile.
+
+Codex's embedded macOS seatbelt policy is `(deny default)` with no `mach-register` grant, so any Chromium- or Electron-based command (Playwright, Puppeteer, the bundled `browser`/`computer-use` plugins) dies at launch:
+
+```
+FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS.
+bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.<pid>: Permission denied (1100)
+```
+
+There is no user-extensible seatbelt hook to add the missing rule (openai/codex#24742 is open, unimplemented), so the only fix is to run the command with `sandbox_permissions="require_escalated"`, which drops the seatbelt entirely. Escalation only works when the active permission profile has zero `= "deny"` filesystem entries — a single deny-read entry makes Codex silently keep the command sandboxed instead of honoring escalation, with no warning surfaced. `workspace-net` is kept deny-free for exactly this reason; reintroducing a deny entry breaks escalation for every command, not just browsers.
 
 ## Verification
 

@@ -294,8 +294,6 @@ done
 [[ -f "$ROOT/.claude/hooks/superpowers-compact-reinject.sh" ]]
 PASS=$((PASS + 1))
 
-FILESYSTEM_PROFILE=$(sed -n '/^\[permissions\.workspace-net\.filesystem\]$/,/^\[permissions\.workspace-net\.filesystem\./p' "$CODEX_CONFIG" | sed '$d')
-[[ $(printf '%s\n' "$FILESYSTEM_PROFILE" | awk '$0 == "glob_scan_max_depth = 32" { count++ } END { print count + 0 }') -eq 1 ]]
 WORKSPACE_PROFILE=$(sed -n '/^\[permissions\.workspace-net\.filesystem\.\":workspace_roots"\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$WORKSPACE_PROFILE" == *'".git" = "write"'* ]]
 PASS=$((PASS + 1))

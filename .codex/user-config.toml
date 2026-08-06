@@ -21,28 +21,13 @@ hooks = true
 js_repl = false
 
 [permissions.workspace-net.filesystem]
-glob_scan_max_depth = 32
 "/" = "read"
 "~/.codex" = "read"
-"~/.codex/auth.json" = "deny"
-"~/.ssh" = "deny"
 "~/.aws/credentials" = "read"
 "~/.aws/config" = "read"
 "~/.config/gh/hosts.yml" = "read"
 "~/.dotfiles" = "write"
 "~/Projects" = "write"
-"~/.dotfiles/**/secrets" = "deny"
-"~/.dotfiles/**/secrets/**" = "deny"
-"~/.dotfiles/**/*.pem" = "deny"
-"~/.dotfiles/**/*.key" = "deny"
-"~/.dotfiles/**/*.p12" = "deny"
-"~/.dotfiles/**/*.pfx" = "deny"
-"~/Projects/**/secrets" = "deny"
-"~/Projects/**/secrets/**" = "deny"
-"~/Projects/**/*.pem" = "deny"
-"~/Projects/**/*.key" = "deny"
-"~/Projects/**/*.p12" = "deny"
-"~/Projects/**/*.pfx" = "deny"
 "/tmp" = "write"
 "/private/tmp" = "write"
 "/var/tmp" = "write"
@@ -50,14 +35,6 @@ glob_scan_max_depth = 32
 [permissions.workspace-net.filesystem.":workspace_roots"]
 "." = "write"
 ".git" = "write"
-"**/secrets" = "deny"
-"**/secrets/**" = "deny"
-"**/*.pem" = "deny"
-"**/*.key" = "deny"
-"**/*.p12" = "deny"
-"**/*.pfx" = "deny"
-"**/id_rsa" = "deny"
-"**/id_ed25519" = "deny"
 
 [permissions.workspace-net.filesystem.":tmpdir"]
 "." = "write"
@@ -119,6 +96,9 @@ trust_level = "trusted"
 trust_level = "trusted"
 
 [projects."/Users/Javier/Projects/VoiceInk"]
+trust_level = "trusted"
+
+[projects."/private/tmp/claude-501/-Users-Javier--dotfiles/3c68aa22-e138-4ae9-96e9-0f277a068a4e/scratchpad"]
 trust_level = "trusted"
 
 [tui]

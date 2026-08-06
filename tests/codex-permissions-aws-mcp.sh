@@ -77,10 +77,12 @@ assert_shell_command() {
 assert_config_absent '\.env(\.\*)?"[[:space:]]*=[[:space:]]*"deny"'
 assert_config_present '"~/.aws/credentials" = "read"'
 assert_config_present '"~/.aws/config" = "read"'
-assert_config_present '"~/.ssh" = "deny"'
-assert_config_present '"**/secrets/**" = "deny"'
-assert_config_present '"**/*.pem" = "deny"'
-assert_config_present '"**/*.key" = "deny"'
+# No filesystem deny entries anywhere: a single deny-read makes Codex silently
+# keep the seatbelt sandbox on require_escalated commands instead of dropping
+# it (Chromium/Playwright's mach-register need is otherwise unreachable).
+# Secrets stay protected on the write/commit side by protected-files-check.sh
+# and pre-commit-check.sh instead.
+assert_config_absent '=[[:space:]]*"deny"'
 assert_config_present 'ignore_default_excludes = false'
 assert_config_absent '^sandbox_mode[[:space:]]*='
 grep -qF '(^|/)\.env[^/]*$' "$ROOT/.codex/hooks/protected-files-check.sh"

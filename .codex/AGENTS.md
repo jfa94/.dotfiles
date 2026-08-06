@@ -15,6 +15,7 @@
 - Keep plans current and end them with unresolved questions, if any.
 - After meaningful changes to behavior, APIs, architecture, or configuration, update the project's documentation when it has a documentation system.
 - Before declaring completion, exercise the changed behavior, confirm every planned step landed, and check relevant regressions.
+- Run Chromium-based commands (Playwright, Puppeteer, Electron) with `sandbox_permissions="require_escalated"`: the seatbelt sandbox denies Chromium's Mach port registration outright.
 
 ## Quality and Scope
 

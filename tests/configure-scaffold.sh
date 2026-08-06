@@ -47,8 +47,10 @@ if grep -q '"devDependencies"' "$TARGET/package.json"; then
 fi
 # pnpm add -D called with exactly the template's names/pins, in order.
 # Match ignores the "--dir <path>" prefix so temp-path canonicalization can't flake it.
+# configure.sh also calls `pnpm --version` (to pin packageManager) before add -D,
+# so pick the recorded line by content rather than assuming it's the first call.
 expected_names="$(node -e "const s=require('$FRONTEND_SCAFFOLD');process.stdout.write((s.scaffoldDevDependencies||[]).join(' '))")"
-recorded="$(head -1 "$PNPM_RECORD" 2>/dev/null || true)"
+recorded="$(grep -m1 ' add -D ' "$PNPM_RECORD" 2>/dev/null || true)"
 if [[ "$recorded" != "--dir "*" add -D $expected_names" ]]; then
   err "A: pnpm argv mismatch
   expected: --dir <target> add -D $expected_names
