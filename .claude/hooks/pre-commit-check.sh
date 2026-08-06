@@ -8,9 +8,16 @@ printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
 cd "${DIR:-${CLAUDE_PROJECT_DIR:-.}}" || exit 0
 
+# Kept identical to .codex/hooks/pre-commit-check.sh (drift-checked by
+# tests/codex-permissions-aws-mcp.sh). id_rsa/id_ed25519 etc. must NOT be
+# anchored with a leading '/' — git yields repo-relative paths, so a
+# repo-root key (e.g. "id_rsa") needs the (^|/) anchor to match at all.
+SECRET_PATH_RE='(^|/)\.env[^/]*($|/)|(^|/)secrets(/|$)|\.(pem|key|p12|pfx)$|(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)$'
+SECRET_EXEMPT_RE='\.env\.(example|sample|template)$'
+
 # --- 1. Block sensitive file paths ---
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
-BLOCKED=$(printf '%s\n' "$STAGED" | grep -iE '(^|/)\.env($|\.|/)|(^|/)secrets/|\.pem$|\.key$|\.p12$|\.pfx$|/id_rsa$|/id_ed25519$' || true)
+BLOCKED=$(printf '%s\n' "$STAGED" | grep -iE "$SECRET_PATH_RE" | grep -ivE "$SECRET_EXEMPT_RE" || true)
 if [ -n "$BLOCKED" ]; then
   jq -cn --arg r "Blocked: staged files contain secrets or env files: $(printf '%s' "$BLOCKED" | tr '\n' ' ')" \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'

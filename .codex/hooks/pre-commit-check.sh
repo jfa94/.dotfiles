@@ -3,6 +3,13 @@ set -uo pipefail
 
 . "${HOME}/.codex/hooks/hook-lib.sh"
 
+# Kept identical to .claude/hooks/pre-commit-check.sh (drift-checked by
+# tests/codex-permissions-aws-mcp.sh). id_rsa/id_ed25519 etc. must NOT be
+# anchored with a leading '/' — git yields repo-relative paths, so a
+# repo-root key (e.g. "id_rsa") needs the (^|/) anchor to match at all.
+SECRET_PATH_RE='(^|/)\.env[^/]*($|/)|(^|/)secrets(/|$)|\.(pem|key|p12|pfx)$|(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)$'
+SECRET_EXEMPT_RE='\.env\.(example|sample|template)$'
+
 INPUT=$(cat)
 CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 # Match git commit at start or after a chain operator (&&, ;, ||, &, |) —
@@ -38,7 +45,7 @@ PENDING=$(printf '%s\n' "$PENDING" | sed '/^$/d')
 
 ALL_FILES=$(printf '%s\n%s\n' "$STAGED" "$PENDING" | sed '/^$/d' | sort -u)
 
-BLOCKED=$(printf '%s\n' "$ALL_FILES" | grep -iE '(^|/)\.env($|\.|/)|(^|/)secrets/|\.pem$|\.key$|\.p12$|\.pfx$|/id_rsa$|/id_ed25519$' || true)
+BLOCKED=$(printf '%s\n' "$ALL_FILES" | grep -iE "$SECRET_PATH_RE" | grep -ivE "$SECRET_EXEMPT_RE" || true)
 if [[ -n "$BLOCKED" ]]; then
   deny "Blocked: staged files contain secrets or env files: $(printf '%s' "$BLOCKED" | tr '\n' ' ')"
   exit 0

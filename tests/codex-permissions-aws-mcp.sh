@@ -84,7 +84,19 @@ assert_config_present '"**/*.key" = "deny"'
 assert_config_present 'ignore_default_excludes = false'
 assert_config_absent '^sandbox_mode[[:space:]]*='
 grep -qF '(^|/)\.env[^/]*$' "$ROOT/.codex/hooks/protected-files-check.sh"
-grep -qF '(^|/)\.env($|\.|/)' "$ROOT/.codex/hooks/pre-commit-check.sh"
+PASS=$((PASS + 1))
+
+# The pre-commit gates (Codex + Claude) hand-maintain the same secret-path
+# regex in two files with no shared library between runtimes; the workdir
+# bug (id_rsa unblocked at repo root) shipped BECAUSE these silently drifted.
+# Pin them equal so a future edit to one side fails loudly instead of drifting.
+CODEX_SECRET_RE=$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.codex/hooks/pre-commit-check.sh")
+CLAUDE_SECRET_RE=$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.claude/hooks/pre-commit-check.sh")
+[[ -n "$CODEX_SECRET_RE" && "$CODEX_SECRET_RE" == "$CLAUDE_SECRET_RE" ]] || {
+  echo "FAIL pre-commit SECRET_PATH_RE drifted between .codex and .claude hooks" >&2
+  exit 1
+}
+grep -qF "(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)\$" "$ROOT/.codex/hooks/pre-commit-check.sh"
 PASS=$((PASS + 2))
 assert_protected_write "$ROOT/.env.local" deny
 assert_protected_write "$ROOT/.env.example" allow

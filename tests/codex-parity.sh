@@ -89,6 +89,48 @@ rm -rf "$SCRATCH/sub"
 
 assert_decision "pre-commit fails closed on unresolvable git add args" \
   pre-commit-check.sh 'git add $(cat list) && git commit -m x' deny "$SCRATCH"
+
+# --- pre-commit gate: SECRET_PATH_RE regression cases ---------------------
+# The bug this whole block exists for: id_rsa/id_ed25519 were anchored with a
+# required leading '/', so a repo-ROOT key (git's own relative path has no
+# leading slash) was never matched. sub/id_rsa above already covered the
+# nested case and passed even with the bug present.
+echo secret > "$SCRATCH/id_rsa"
+assert_decision "pre-commit denies id_rsa at repo root" \
+  pre-commit-check.sh "git add id_rsa && git commit -m x" deny "$SCRATCH"
+rm -f "$SCRATCH/id_rsa"
+
+echo secret > "$SCRATCH/id_ed25519"
+assert_decision "pre-commit denies id_ed25519 at repo root" \
+  pre-commit-check.sh "git add id_ed25519 && git commit -m x" deny "$SCRATCH"
+rm -f "$SCRATCH/id_ed25519"
+
+echo secret > "$SCRATCH/id_ecdsa"
+assert_decision "pre-commit denies id_ecdsa (new coverage)" \
+  pre-commit-check.sh "git add id_ecdsa && git commit -m x" deny "$SCRATCH"
+rm -f "$SCRATCH/id_ecdsa"
+
+echo 'export SECRET=x' > "$SCRATCH/.envrc"
+assert_decision "pre-commit denies .envrc" \
+  pre-commit-check.sh "git add .envrc && git commit -m x" deny "$SCRATCH"
+rm -f "$SCRATCH/.envrc"
+
+mkdir -p "$SCRATCH/secrets"
+echo secret > "$SCRATCH/secrets/a.txt"
+assert_decision "pre-commit denies a bare secrets/ dir" \
+  pre-commit-check.sh "git add secrets && git commit -m x" deny "$SCRATCH"
+rm -rf "$SCRATCH/secrets"
+
+echo 'FOO=bar' > "$SCRATCH/.env.example"
+assert_decision "pre-commit allows .env.example (false positive fixed)" \
+  pre-commit-check.sh "git add .env.example && git commit -m x" allow "$SCRATCH"
+rm -f "$SCRATCH/.env.example"
+
+echo 'ssh-ed25519 AAAA...' > "$SCRATCH/id_ed25519.pub"
+assert_decision "pre-commit allows a public key" \
+  pre-commit-check.sh "git add id_ed25519.pub && git commit -m x" allow "$SCRATCH"
+rm -f "$SCRATCH/id_ed25519.pub"
+
 rm -rf "$SCRATCH"
 trap - EXIT
 
