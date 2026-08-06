@@ -304,19 +304,20 @@ prefix_rule(
     ],
 )
 
-# GitHub CLI parity with Claude's allowlist. PR mutation safety remains covered
-# by pre-pr hooks and repository instructions.
+# GitHub CLI command-layer parity with Claude's allowlist. Allowing create and
+# merge here does not grant authorization: user and repository instructions
+# still govern external mutations.
 prefix_rule(
     pattern = ["gh", "pr", ["create", "merge", "list", "view", "diff", "status", "checks"]],
     decision = "allow",
-    justification = "GitHub PR commands mirror Claude's allowlist; non-draft PR creation is gated by hooks.",
+    justification = "These GitHub PR commands are command-layer allowlisted; create and merge still require user and repository authorization.",
     match = ["gh pr view 1", "gh pr create --draft"],
 )
 
 prefix_rule(
     pattern = ["gh", "pr", ["ready", "close"]],
     decision = "prompt",
-    justification = "PR readiness and close operations require a fresh decision.",
+    justification = "PR readiness and close operations remain approval-gated and require a fresh decision.",
     match = ["gh pr ready 1", "gh pr close 1"],
 )
 

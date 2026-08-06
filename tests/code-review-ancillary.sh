@@ -60,7 +60,7 @@ grep -Fq '.codex/skills/code-review' docs/codex-claude-parity.md \
   || fail 'parity doc missing Codex-only skill location'
 grep -Fq '.code-review/runs/<UTC timestamp>-<profile>-<nonce>/' docs/codex-claude-parity.md \
   || fail 'parity doc missing shared artifact contract'
-grep -Fq 'Codex-only orchestration skills may live under ' .codex/AGENTS.md \
-  || fail 'AGENTS.md missing Codex-only skill exception'
+grep -Fq 'Codex-specific routers must reference those resources rather than copy them.' AGENTS.md \
+  || fail 'root AGENTS.md missing canonical Claude resource policy'
 
 printf 'code-review ancillary checks passed\n'

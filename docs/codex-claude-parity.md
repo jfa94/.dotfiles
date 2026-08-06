@@ -26,7 +26,6 @@ Audited against `.claude/settings.json`, `.claude/plugins.txt`, and the Codex pl
 | Pre-commit secrets           | Protected names, regex scan, required TruffleHog                                                             | Approximate scanner coverage; failures deny                                                       |
 | Pre-push quality             | Required pnpm quality or typecheck/lint/test/deps gates                                                      | Exact when project scripts opt in; failures deny                                                  |
 | Semgrep                      | Changed-file scan with required valid scanner output                                                         | Approximate `.semgrepignore` handling; failures deny                                              |
-| Pre-PR mutation              | Stryker gate for configured TypeScript projects                                                              | Approximate scope selection; fetch/tool failures deny                                             |
 | Post-edit Prettier           | Project-local configured formatter                                                                           | Exact for supported extensions; missing/failing formatter surfaces error                          |
 | SessionStart startup         | Dotfiles symlink-integrity warning                                                                           | Intentional replacement for Claude model mutation                                                 |
 | SessionStart compact         | First/latest genuine rollout `event_msg.user_message`, capped with rollout pointer                           | Approximate; visible warning on unreadable/schema-changed rollouts                                |
@@ -93,6 +92,20 @@ The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and
 - Model-availability NUX and all Superpowers state remain untouched.
 - Newline-containing filenames are an acknowledged limitation in changed-file scanner lists.
 - Linux/WSL expands recursive filesystem deny globs to depth 32 before starting `bubblewrap`. Deeper matches are outside the shell-level snapshot, while raising the cap increases startup scanning work.
+
+## Sandbox-profile troubleshooting
+
+Claude WebFetch domain allowlists do not control Codex shell networking. If a session reports `could not resolve host: github.com`, `gh` cannot reach `api.github.com`, or `.git` refuses writes, first suspect that its `workspace-net` permission profile was replaced rather than a DNS or allowlist failure.
+
+Changing approval or permission mode from the TUI mode picker replaces the custom profile with a built-in preset that disables network access and makes `.git` read-only. The picker cannot restore `workspace-net`; start a new session instead of repeatedly escalating commands.
+
+Confirm the diagnosis with:
+
+```sh
+sqlite3 ~/.codex/state_5.sqlite "select id,cwd,substr(sandbox_policy,1,80) from threads order by updated_at desc limit 5;"
+```
+
+`special/root` indicates the downgraded built-in profile; `path:"/"` indicates the expected `workspace-net` profile.
 
 ## Verification
 
