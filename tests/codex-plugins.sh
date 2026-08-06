@@ -66,8 +66,10 @@ first_adds=$(grep -c '^plugin add ' "$tmp/state/calls")
 bash "$INSTALLER" "$tmp/repo"
 second_adds=$(grep -c '^plugin add ' "$tmp/state/calls")
 [[ "$first_adds" -eq "$second_adds" ]]
-grep -Fq 'plugin marketplace upgrade agent-toolkit-for-aws --json' "$tmp/state/calls"
-grep -Fq 'plugin marketplace upgrade javier-plugins --json' "$tmp/state/calls"
+if grep -Fq 'plugin marketplace upgrade ' "$tmp/state/calls"; then
+  echo "FAIL: normal installer upgraded an existing marketplace" >&2
+  exit 1
+fi
 
 rm -f "$tmp/state/plugin-posthog_openai-curated"
 export FAIL_PLUGIN="posthog@openai-curated"
@@ -76,9 +78,16 @@ if bash "$INSTALLER" "$tmp/repo" >/dev/null 2>&1; then
   exit 1
 fi
 
-expected_plugins=$'stripe@openai-curated\nsupabase@openai-curated\nposthog@openai-curated\naws-core@agent-toolkit-for-aws\nweb-designer@javier-plugins'
+expected_plugins=$'stripe@openai-curated\nposthog@openai-curated\naws-core@agent-toolkit-for-aws\nweb-designer@javier-plugins'
 [[ $(grep -Ev '^(#|$)' "$ROOT/.codex/plugins.txt") == "$expected_plugins" ]]
 expected_marketplace=$'agent-toolkit-for-aws aws/agent-toolkit-for-aws\njavier-plugins jfa94/web-designer'
 [[ $(grep -Ev '^(#|$)' "$ROOT/.codex/plugin-marketplaces.txt") == "$expected_marketplace" ]]
+
+: > "$tmp/state/calls"
+if env CODEX_THREAD_ID=test bash "$ROOT/.codex/update-plugins.sh" "$tmp/repo" >/dev/null 2>&1; then
+  echo "FAIL: updater ran inside an active Codex task" >&2
+  exit 1
+fi
+[[ ! -s "$tmp/state/calls" ]]
 
 echo "OK"

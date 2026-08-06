@@ -75,8 +75,8 @@ assert_shell_command() {
 # Environment files inherit readable workspace access. They remain protected
 # from writes by protected-files-check.sh and from commits by pre-commit-check.sh.
 assert_config_absent '\.env(\.\*)?"[[:space:]]*=[[:space:]]*"deny"'
-assert_config_present '"~/.aws/credentials" = "deny"'
-assert_config_present '"~/.aws/config" = "deny"'
+assert_config_present '"~/.aws/credentials" = "read"'
+assert_config_present '"~/.aws/config" = "read"'
 assert_config_present '"~/.ssh" = "deny"'
 assert_config_present '"**/secrets/**" = "deny"'
 assert_config_present '"**/*.pem" = "deny"'

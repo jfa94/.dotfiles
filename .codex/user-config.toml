@@ -6,6 +6,7 @@ plan_mode_reasoning_effort = "xhigh"
 model_auto_compact_token_limit = 200000
 web_search = "live"
 model = "gpt-5.6-sol"
+mcp_oauth_credentials_store = "keyring"
 
 service_tier = "default"
 
@@ -25,8 +26,8 @@ glob_scan_max_depth = 32
 "~/.codex" = "read"
 "~/.codex/auth.json" = "deny"
 "~/.ssh" = "deny"
-"~/.aws/credentials" = "deny"
-"~/.aws/config" = "deny"
+"~/.aws/credentials" = "read"
+"~/.aws/config" = "read"
 "~/.config/gh/hosts.yml" = "read"
 "~/.dotfiles" = "write"
 "~/Projects" = "write"
@@ -138,9 +139,6 @@ insert_newline = ["shift-enter", "ctrl-enter"]
 enabled = false
 
 [plugins."stripe@openai-curated"]
-enabled = true
-
-[plugins."supabase@openai-curated"]
 enabled = true
 
 [plugins."posthog@openai-curated"]

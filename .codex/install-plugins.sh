@@ -31,9 +31,7 @@ elif [[ -f "$MARKETPLACES_FILE" ]]; then
     fi
     if printf '%s' "$marketplaces_json" | jq -e --arg name "$marketplace_name" \
       '.marketplaces[] | select(.name == $name)' >/dev/null; then
-      if ! codex plugin marketplace upgrade "$marketplace_name" --json >/dev/null 2>&1; then
-        failures+=("marketplace upgrade failed: $marketplace_name")
-      fi
+      printf '[OK]   Codex marketplace already installed (not upgraded): %s\n' "$marketplace_name"
     elif ! codex plugin marketplace add "$marketplace_source" --json >/dev/null 2>&1; then
       failures+=("marketplace add failed: $marketplace_source")
     fi

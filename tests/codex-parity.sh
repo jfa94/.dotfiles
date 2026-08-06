@@ -247,7 +247,6 @@ if grep -Eq '^(superpowers|codex-security|ponytail)@' "$ROOT/.codex/plugins.txt"
 fi
 for plugin in \
   stripe@openai-curated \
-  supabase@openai-curated \
   posthog@openai-curated \
   aws-core@agent-toolkit-for-aws \
   visualize@openai-bundled \

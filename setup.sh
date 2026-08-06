@@ -758,7 +758,7 @@ if command -v codex &>/dev/null && [[ -f "$DOTFILES_DIR/.codex/plugins.txt" ]]; 
   info "Installing and verifying Codex plugins..."
   if bash "$DOTFILES_DIR/.codex/install-plugins.sh" "$DOTFILES_DIR"; then
     codex_plugins_status="installed"
-    info "Stripe, Supabase, and PostHog may require interactive connector OAuth."
+    info "Stripe and PostHog may require interactive connector OAuth."
   else
     codex_plugins_status="FAILED"
     setup_failed=1
@@ -799,12 +799,11 @@ echo "Claude plugins: $plugins_status"
 echo "Codex plugins: $codex_plugins_status"
 echo ""
 if [[ "$aws_status" == "installed" ]]; then
-  echo "AWS authentication remains manual. For Outsidey:"
-  echo "  aws login --profile Outsidey --region eu-west-1"
-  echo "  AWS_PROFILE=Outsidey aws sts get-caller-identity"
+  echo "Outsidey injects AWS_PROFILE from its project Codex config. After restarting Codex:"
+  echo "  aws sts get-caller-identity"
 fi
 if [[ "$codex_plugins_status" == "installed" ]]; then
-  echo "Open Codex /plugins to complete Stripe, Supabase, and PostHog OAuth."
+  echo "Open Codex /plugins to complete Stripe and PostHog OAuth."
   echo "Set PostHog permissions to 'Any changes' and select Outsidey project 107700."
 fi
 echo "Open Codex /hooks to review the new AWS MCP read-only hook by exact hash."

@@ -9,16 +9,18 @@ Setup installs the official AWS CLI in user-local storage when it is absent or o
 Projects select an AWS account without committing credentials:
 
 - Claude Code: set `AWS_PROFILE` in the project's `.claude/settings.json` `env` object.
-- Codex: authenticate the AWS CLI manually and select the profile through the shell or a project-local `.envrc`.
+- Codex: set `AWS_PROFILE` in the trusted project's `.codex/config.toml` `[shell_environment_policy.set]` table and use the ordinary AWS CLI.
 - Interactive shells: create a machine-local `.envrc` that exports the same profile, ignore it in Git, then run `direnv allow` for the project.
 
 For Outsidey, configure both mechanisms with the `Outsidey` profile. Its application region is `eu-west-1`; Agent Toolkit commands use `us-east-1`.
 
 Setup does not edit `~/.aws/config`, `~/.aws/credentials`, run `aws login`, or run the global `aws configure agent-toolkit --yes` wizard. Authentication and profile creation are deliberate manual steps. Codex may use AWS knowledge, documentation, skill-discovery, and region tools. Repository hooks deny authenticated AWS MCP `call_aws`, `run_script`, and presigned-URL operations; use the audited AWS CLI rules for resource reads. AWS writes and unlisted CLI operations continue to prompt.
 
-Trusted workspace `.env*` files are readable by Codex so it can understand local configuration, but they remain protected from edits and commits. AWS credential files, private keys, certificates, `secrets/`, and Codex authentication data remain unreadable. Read permission never implies that all environment variables are inherited by child processes.
+Trusted workspace `.env*` files are readable by Codex so it can understand local configuration, but they remain protected from edits and commits. Exact Claude parity intentionally permits Codex to read `~/.aws/credentials`; AWS config is also readable. SSH material, private keys, certificates, `secrets/`, and Codex authentication data remain unreadable. The secret-output hook and environment-variable filter remain active.
 
-After setup, open Codex `/hooks` and review the new AWS MCP read-only hook by exact hash. Setup never uses the global hook-trust bypass.
+Normal setup adds missing marketplaces/plugins but never upgrades installed marketplaces. Run `bash .codex/update-plugins.sh` only from a normal terminal outside an active Codex task. It validates enabled plugin hook manifests and command targets, then requires a Codex/ChatGPT restart and `/hooks` review.
+
+If shell commands fail after a plugin update, restart Codex so it reloads the current `com.anthropic.claude-code/hooks/secret-safety.py` path. If validation still fails, leave AWS Core disabled and file an upstream issue with the old/new manifests and cache timestamps. Never patch the vendor cache or add a compatibility symlink.
 
 Verify with:
 
@@ -26,5 +28,9 @@ Verify with:
 aws --version
 uvx --version
 AWS_PROFILE=Outsidey aws agent-toolkit list-available-skills --region us-east-1
-direnv exec /Users/Javier/Projects/outsidey aws sts get-caller-identity
+cd /Users/Javier/Projects/outsidey
+aws sts get-caller-identity
+aws amplify list-apps --region eu-west-1
 ```
+
+In a fresh Outsidey Codex session, STS must report account `412868037405` and IAM user `jflores`. No wrapper or login command is involved. Authenticated AWS resource access remains CLI-only; AWS MCP is limited to documentation, skills, and region metadata.

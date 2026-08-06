@@ -47,7 +47,11 @@ grep -qF 'official AWS CLI in user-local storage when it is absent or older than
 grep -qF "Setup does not edit \`~/.aws/config\`, \`~/.aws/credentials\`, run \`aws login\`" "$AWS_DOC"
 grep -qF "Repository hooks deny authenticated AWS MCP \`call_aws\`, \`run_script\`, and presigned-URL operations" "$AWS_DOC"
 grep -qF "Trusted workspace \`.env*\` files are readable by Codex" "$AWS_DOC"
-grep -qF "review the new AWS MCP read-only hook by exact hash" "$AWS_DOC"
+# shellcheck disable=SC2016 # Backticks are literal Markdown.
+grep -qF 'Exact Claude parity intentionally permits Codex to read `~/.aws/credentials`' "$AWS_DOC"
+# shellcheck disable=SC2016 # Backticks are literal Markdown.
+grep -qF 'account `412868037405` and IAM user `jflores`' "$AWS_DOC"
+grep -qF 'No wrapper or login command is involved' "$AWS_DOC"
 
 grep -qF 'Claude'\''s inventory contains 19 plugins' "$PARITY_DOC"
 grep -qF "\`posthog@openai-curated\`" "$PARITY_DOC"
