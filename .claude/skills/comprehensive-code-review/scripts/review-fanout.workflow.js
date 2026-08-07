@@ -804,6 +804,7 @@ const results = await pipeline(
       label: "review:" + r.name,
       phase: "Review",
       schema: FINDINGS_SCHEMA,
+      model: input.reviewerModel, // optional caller override; undefined = inherit session model
     })
       .then((res) =>
         res
