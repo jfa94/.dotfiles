@@ -32,11 +32,15 @@ tmux|tmux|tmux|tmux
 direnv|direnv|direnv|direnv
 jq|jq|jq|jq
 graphviz|graphviz|graphviz|graphviz
+gnupg|-|gnupg|gnupg
 gh|gh|bootstrap|github-cli
 node|node|bootstrap|nodejs
 npm|-|-|npm
 deno|deno|optional|optional
 pnpm|pnpm|optional|optional
+stripe|stripe-cli|direct|direct
+onepassword_cli|1password-cli|direct|direct
+posthog_cli|direct|direct|direct
 trufflehog|trufflehog|optional|optional
 semgrep|semgrep|optional|optional
 supabase|supabase/tap/supabase|optional|optional

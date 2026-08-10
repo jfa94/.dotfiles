@@ -1,4 +1,2 @@
-stripe@openai-curated
-posthog@openai-curated
 aws-core@agent-toolkit-for-aws
 web-designer@javier-plugins

@@ -182,8 +182,8 @@ link_skills_for_codex() {
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
 # so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
 # Keep this list, PACMAN_PACKAGES below, and Brewfile in sync when adding a tool.
-APT_PACKAGES=(zsh git vim python3 cmake tmux direnv golang-go default-jdk build-essential python3-dev pipx unzip jq graphviz)
-PACMAN_PACKAGES=(zsh git vim python cmake tmux direnv go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq graphviz)
+APT_PACKAGES=(zsh git vim python3 cmake tmux direnv golang-go default-jdk build-essential python3-dev pipx unzip jq graphviz gnupg)
+PACMAN_PACKAGES=(zsh git vim python cmake tmux direnv go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq graphviz gnupg)
 
 install_gh_apt() {
   command -v gh &>/dev/null && return
@@ -214,6 +214,113 @@ install_node_apt() {
   fi
   warn "NodeSource apt repo setup failed; cleaning up partial state"
   sudo rm -f /etc/apt/sources.list.d/nodesource.list /etc/apt/keyrings/nodesource.gpg
+  return 1
+}
+
+install_onepassword_cli_apt() {
+  command -v op &>/dev/null && return
+  info "Adding the official 1Password CLI apt repo..."
+  if sudo mkdir -p -m 755 /usr/share/keyrings \
+    && curl -sS https://downloads.1password.com/linux/keys/1password.asc \
+      | sudo gpg --dearmor --batch --yes --output /usr/share/keyrings/1password-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" \
+      | sudo tee /etc/apt/sources.list.d/1password.list >/dev/null \
+    && sudo mkdir -p /etc/debsig/policies/AC2D62742012EA22 /usr/share/debsig/keyrings/AC2D62742012EA22 \
+    && curl -sS https://downloads.1password.com/linux/debian/debsig/1password.pol \
+      | sudo tee /etc/debsig/policies/AC2D62742012EA22/1password.pol >/dev/null \
+    && curl -sS https://downloads.1password.com/linux/keys/1password.asc \
+      | sudo gpg --dearmor --batch --yes --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg \
+    && sudo apt-get update \
+    && sudo apt-get install -y 1password-cli; then
+    return 0
+  fi
+  warn "1Password CLI apt repo setup failed; cleaning up partial state"
+  sudo rm -f /etc/apt/sources.list.d/1password.list \
+    /usr/share/keyrings/1password-archive-keyring.gpg
+  return 1
+}
+
+onepassword_arch() {
+  case "$1" in
+    x86_64) printf 'amd64\n' ;;
+    aarch64 | arm64) printf 'arm64\n' ;;
+    armv7l | armv6l) printf 'arm\n' ;;
+    i386 | i686) printf '386\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+install_onepassword_cli_archive() {
+  command -v op &>/dev/null && return
+  local arch version archive base tmp
+  arch=$(onepassword_arch "$(uname -m)") || { warn "unsupported 1Password CLI architecture: $(uname -m)"; return 1; }
+  version=$(curl -fsSL https://app-updates.agilebits.com/check/1/0/CLI2/en/0.0.0/N | jq -r '.version // empty')
+  [[ -n "$version" ]] || { warn "could not resolve the latest 1Password CLI version"; return 1; }
+  archive="op_linux_${arch}_v${version}.zip"
+  base="https://cache.agilebits.com/dist/1P/op2/pkg/v${version}"
+  tmp=$(mktemp -d)
+  if (
+    set -e
+    cd "$tmp"
+    curl -fsSLO "$base/$archive"
+    curl -fsSL "$base/op.sig" -o op.sig
+    unzip -q "$archive"
+    mkdir -m 700 gnupg
+    curl -fsSL https://downloads.1password.com/linux/keys/1password.asc -o 1password.asc
+    GNUPGHOME="$tmp/gnupg" gpg --batch --import 1password.asc >/dev/null 2>&1
+    GNUPGHOME="$tmp/gnupg" gpg --batch --verify op.sig op
+    sudo install -m 755 op /usr/local/bin/op
+    sudo groupadd -f onepassword-cli
+    sudo chgrp onepassword-cli /usr/local/bin/op
+    sudo chmod g+s /usr/local/bin/op
+  ); then
+    rm -rf "$tmp"
+    return 0
+  fi
+  rm -rf "$tmp"
+  return 1
+}
+
+install_onepassword_cli() {
+  command -v op &>/dev/null && return
+  if [[ "$PKG" == "apt" ]]; then
+    install_onepassword_cli_apt
+  else
+    install_onepassword_cli_archive
+  fi
+}
+
+stripe_arch() {
+  case "$1" in
+    x86_64) printf 'x86_64\n' ;;
+    aarch64 | arm64) printf 'arm64\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+install_stripe() {
+  command -v stripe &>/dev/null && return
+  local arch tag version archive base tmp
+  arch=$(stripe_arch "$(uname -m)") || { warn "unsupported Stripe CLI architecture: $(uname -m)"; return 1; }
+  tag=$(curl -fsSL https://api.github.com/repos/stripe/stripe-cli/releases/latest | jq -r '.tag_name // empty')
+  [[ "$tag" == v* ]] || { warn "could not resolve the latest Stripe CLI version"; return 1; }
+  version="${tag#v}"
+  archive="stripe_${version}_linux_${arch}.tar.gz"
+  base="https://github.com/stripe/stripe-cli/releases/download/${tag}"
+  tmp=$(mktemp -d)
+  if (
+    set -e
+    cd "$tmp"
+    curl -fsSLO "$base/$archive"
+    curl -fsSL "$base/stripe-linux-checksums.txt" -o stripe-linux-checksums.txt
+    grep -F "  $archive" stripe-linux-checksums.txt | sha256sum -c -
+    tar -xzf "$archive"
+    install -Dm755 stripe "$HOME/.local/bin/stripe"
+  ); then
+    rm -rf "$tmp"
+    return 0
+  fi
+  rm -rf "$tmp"
   return 1
 }
 
@@ -251,6 +358,11 @@ install_supabase() {
   # SUPABASE_INSTALL_DIR is script-internal (not read for the skip decision);
   # --no-modify-path is the flag that actually suppresses the rc write.
   SUPABASE_INSTALL_DIR="$HOME/.supabase/bin" bash -c "$(curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install)" -- --no-modify-path
+}
+install_posthog_cli() {
+  command -v posthog-cli &>/dev/null && return
+  info "Installing PostHog CLI..."
+  pnpm add --global @posthog/cli
 }
 
 version_at_least() {
@@ -414,6 +526,9 @@ install_packages_linux() {
     info "Installing packages via pacman..."
     sudo pacman -Syu --needed --noconfirm "${PACMAN_PACKAGES[@]}"
   fi
+
+  install_onepassword_cli
+  install_stripe
 
   install_docker || warn "docker install failed"
 
@@ -681,6 +796,13 @@ else
   pkg_summary="Packages ($PKG): installed"
 fi
 
+posthog_status="installed"
+if ! install_posthog_cli || ! command -v posthog-cli &>/dev/null; then
+  warn "PostHog CLI install failed"
+  posthog_status="FAILED"
+  setup_failed=1
+fi
+
 aws_status="installed"
 if ! install_aws; then
   aws_status="FAILED"
@@ -792,7 +914,6 @@ if command -v codex &>/dev/null && [[ -f "$DOTFILES_DIR/.codex/plugins.txt" ]]; 
   info "Installing and verifying Codex plugins..."
   if bash "$DOTFILES_DIR/.codex/install-plugins.sh" "$DOTFILES_DIR"; then
     codex_plugins_status="installed"
-    info "Stripe and PostHog may require interactive connector OAuth."
   else
     codex_plugins_status="FAILED"
     setup_failed=1
@@ -827,6 +948,7 @@ echo "Claude Code: $claude_status"
 echo "Codex CLI: $codex_status"
 echo "AWS CLI: $aws_status"
 echo "uv/uvx: $uv_status"
+echo "PostHog CLI: $posthog_status"
 echo "Vim plugins: $vim_plugins_status"
 echo "YouCompleteMe: $ycm_status"
 echo "Claude plugins: $plugins_status"
@@ -836,11 +958,10 @@ if [[ "$aws_status" == "installed" ]]; then
   echo "Outsidey injects AWS_PROFILE from its project Codex config. After restarting Codex:"
   echo "  aws sts get-caller-identity"
 fi
-if [[ "$codex_plugins_status" == "installed" ]]; then
-  echo "Open Codex /plugins to complete Stripe and PostHog OAuth."
-  echo "Set PostHog permissions to 'Any changes' and select Outsidey project 107700."
-fi
 echo "Open Codex /hooks to review the new AWS MCP read-only hook by exact hash."
+echo "On each machine, enable 1Password desktop CLI integration and run 'op account list'."
+echo "Run 'direnv allow' once in each credential-scoped project checkout."
+echo "Run 'op plugin init stripe' from Outsidey if its transparent alias is not initialized."
 echo "Done."
 
 exit "${setup_failed:-0}"

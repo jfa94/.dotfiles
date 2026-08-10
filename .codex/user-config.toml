@@ -59,6 +59,16 @@ mode = "limited"
 "developers.openai.com" = "allow"
 "api.openai.com" = "allow"
 
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?read_only=true"
+bearer_token_env_var = "SUPABASE_ACCESS_TOKEN"
+required = false
+
+[mcp_servers.posthog]
+url = "https://mcp.posthog.com/mcp?mode=cli&readonly=true"
+bearer_token_env_var = "POSTHOG_MCP_TOKEN"
+required = false
+
 [projects."/Users/Javier/Projects/youtube-subscriptions-cleaner-plugin"]
 trust_level = "trusted"
 
@@ -117,12 +127,6 @@ insert_newline = ["shift-enter", "ctrl-enter"]
 
 [plugins."github@openai-curated"]
 enabled = false
-
-[plugins."stripe@openai-curated"]
-enabled = true
-
-[plugins."posthog@openai-curated"]
-enabled = true
 
 [plugins."aws-core@agent-toolkit-for-aws"]
 enabled = true

@@ -265,8 +265,6 @@ if grep -Eq '^(superpowers|codex-security|ponytail)@' "$ROOT/.codex/plugins.txt"
   exit 1
 fi
 for plugin in \
-  stripe@openai-curated \
-  posthog@openai-curated \
   aws-core@agent-toolkit-for-aws \
   visualize@openai-bundled \
   computer-use@openai-bundled \
@@ -275,6 +273,11 @@ for plugin in \
   web-designer@javier-plugins
 do
   [[ $(grep -A1 "^\[plugins\\.\"$plugin\"\]$" "$CODEX_CONFIG" | tail -1) == "enabled = true" ]]
+done
+for plugin in stripe@openai-curated posthog@openai-curated; do
+  if grep -qF "[plugins.\"$plugin\"]" "$CODEX_CONFIG"; then
+    exit 1
+  fi
 done
 for plugin in \
   superpowers@openai-curated \

@@ -10,7 +10,7 @@ Projects select an AWS account without committing credentials:
 
 - Claude Code: set `AWS_PROFILE` in the project's `.claude/settings.json` `env` object.
 - Codex: set `AWS_PROFILE` in the trusted project's `.codex/config.toml` `[shell_environment_policy.set]` table and use the ordinary AWS CLI.
-- Interactive shells: create a machine-local `.envrc` that exports the same profile, ignore it in Git, then run `direnv allow` for the project.
+- Interactive shells: use a secret-free `.envrc` that exports the same profile and the matching `AGENT_ENV_FILE`, then run `direnv allow` for the project. See [agent-credentials.md](agent-credentials.md).
 
 For Outsidey, configure both mechanisms with the `Outsidey` profile. Its application region is `eu-west-1`; Agent Toolkit commands use `us-east-1`.
 

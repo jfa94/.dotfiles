@@ -147,35 +147,6 @@ fi
 hash -r
 
 # =============================================================================
-# Section 5: Supabase MCP (user scope, env-var token via headersHelper)
-# =============================================================================
-
-# Written unconditionally: environment UI vars reach the Claude Code session
-# but NOT this setup script, and the helper reads the env var at request time
-# anyway — nothing secret is written to disk here. Without a token in the
-# session env the server just fails auth; the harness-injected Supabase
-# connector (if any) is unaffected.
-if command -v jq &>/dev/null; then
-  mcp_url="https://mcp.supabase.com/mcp"
-  [[ -n "${SUPABASE_PROJECT_REF:-}" ]] && mcp_url="$mcp_url?project_ref=$SUPABASE_PROJECT_REF"
-  # shellcheck disable=SC2016  # helper expands at MCP request time, not here
-  helper='printf '\''{"Authorization":"Bearer %s"}'\'' "${SUPABASE_MCP_TOKEN:-$SUPABASE_ACCESS_TOKEN}"'
-  claude_json="$HOME/.claude.json"
-  [[ -s "$claude_json" ]] || echo '{}' > "$claude_json"
-  if jq --arg url "$mcp_url" --arg h "$helper" \
-      '.mcpServers.supabase = {type: "http", url: $url, headersHelper: $h}' \
-      "$claude_json" > "$claude_json.tmp"; then
-    mv "$claude_json.tmp" "$claude_json"
-    success "Supabase MCP configured ($mcp_url)"
-  else
-    rm -f "$claude_json.tmp"
-    note_fail "Supabase MCP config merge failed"
-  fi
-else
-  note_fail "Supabase MCP skipped (no jq)"
-fi
-
-# =============================================================================
 # Section 6: Claude Code plugins (must happen at build time: the session
 # harness sets SKIP_PLUGIN_MARKETPLACE=true, which disables session-start
 # install). Marketplaces + install list derive from settings.json.

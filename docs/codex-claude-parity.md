@@ -51,14 +51,14 @@ Claude's inventory contains 19 plugins. Codex requirements intentionally include
 | `plugin-dev@claude-plugins-official` | Disabled | Built-in plugin/skill creation tools | Native workflow, not a required installed plugin |
 | `frontend-design@claude-plugins-official` | Disabled | None | Intentionally not mirrored |
 | `playwright@claude-plugins-official` | Disabled | None | Intentionally not mirrored |
-| `supabase@claude-plugins-official` | Disabled | Project-native MCP | Outsidey uses a required, OAuth-authenticated, project-scoped, server-side read-only MCP; mutations remain CLI-only |
-| `stripe@claude-plugins-official` | Disabled | `stripe@openai-curated` | Required but partial; not every Claude command, agent, or skill maps |
-| `posthog@claude-plugins-official` | Disabled | `posthog@openai-curated` | Required direct integration; Outsidey reads allowed, writes ask |
+| `supabase@claude-plugins-official` | Disabled | Project-native MCP | Outsidey uses optional bearer auth with project scoping and server-side read-only mode |
+| `stripe@claude-plugins-official` | Disabled | Project-native MCP | Outsidey uses a restricted read-oriented key plus a Codex tool allowlist |
+| `posthog@claude-plugins-official` | Disabled | Project-native MCP | Outsidey pins project 107700, CLI mode, and server-enforced read-only access |
 | `figma@claude-plugins-official` | Disabled | None required | Intentionally disabled; install separately when needed |
 | `web-designer@javier-plugins` | Enabled | `web-designer@javier-plugins` | Direct shared-skill parity; runtime-specific invocation syntax |
 | `aws-core@agent-toolkit-for-aws` | Disabled | `aws-core@agent-toolkit-for-aws` | Required in Codex; official successor to legacy `aws-serverless` |
 
-GitHub is deliberately CLI-only through `gh`; the local GitHub plugin is disabled and the account connector is not installed. Stripe and PostHog connector authentication remains interactive. Outsidey's native Supabase MCP uses OAuth stored in the OS keyring. PostHog must connect to Outsidey project `107700`, with writes configured to ask.
+GitHub is deliberately CLI-only through `gh`; the local GitHub plugin is disabled and the account connector is not installed. Outsidey's project-native MCP servers receive process-scoped bearer variables from 1Password in Codex. Claude resolves fixed 1Password references through `headersHelper`. All three servers are non-required, project-scoped where supported, and read-only at the server, token, or tool-list layer.
 
 Codex keeps Browser, Computer Use, Sites, and Visualize globally available. Document, PDF, spreadsheet, presentation, and artifact-template plugins are intentionally omitted and can be installed when needed.
 

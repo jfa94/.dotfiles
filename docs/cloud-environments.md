@@ -23,9 +23,8 @@ Key facts (spike-verified 2026-08):
   be installed at build time — session-start auto-install never happens.
 - **Environment UI env vars reach the session only, NOT the setup script.**
   Anything needing a token at build time can't have it; `cloud-setup.sh`
-  therefore writes the Supabase MCP entry unconditionally with a
-  `headersHelper` that reads the env var at request time. Consequence:
-  `SUPABASE_PROJECT_REF` (read at setup time) currently has no effect in cloud.
+  therefore never writes credentialed MCP entries from setup-time variables.
+  Managed connectors or project-native MCP files are authoritative.
 - Setup-script stdout is **not persisted** anywhere on the VM — the script
   tees everything to `/tmp/cloud-setup.log`; read that in-session to diagnose
   build failures.
@@ -69,17 +68,10 @@ On claude.ai → Code → your repo → environment settings:
 
    The shim stays tiny so all real logic lives (and evolves) in this repo.
 
-2. **Environment variables** — this is where per-account/per-project scoping
-   happens (one environment per project, each with its own tokens):
-
-   | Variable | Required | Purpose |
-   |----------------------|----------|--------------------------------------------------|
-   | `SUPABASE_ACCESS_TOKEN` | yes* | Scoped PAT for the right Supabase account; auths the CLI and (fallback) the MCP |
-   | `SUPABASE_MCP_TOKEN` | no | Separate token for the MCP server, if you want it distinct from the CLI's |
-   | `SUPABASE_PROJECT_REF` | no | Intended to scope the MCP via `?project_ref=` — currently inert: env vars don't reach the setup script (see Key facts) |
-
-   *The MCP entry is written regardless (env vars are session-only); without a
-   token the server just fails auth when called.
+2. **Environment variables** — prefer managed Supabase/PostHog connectors after
+   verifying their project binding. If the image provides `op`, set a
+   vault-restricted `OP_SERVICE_ACCOUNT_TOKEN` plus `AGENT_ENV_FILE` for
+   project-native 1Password references. Never paste provider tokens directly.
 
 3. **Network access** — Trusted covers everything except Codex. For Codex,
    switch to Custom and allow at least: `chatgpt.com`, `auth.openai.com`,
@@ -108,8 +100,8 @@ On claude.ai → Code → your repo → environment settings:
 - **AWS CLI** — SSO creds last 12–24h; per-session ritual judged not worth it.
   AWS work stays local.
 - **claude-in-chrome** — no browser on the VM.
-- **macOS Keychain secrecy** — the Supabase PAT sits in env config,
-  agent-visible; mitigated by token scoping.
+- **Local 1Password injection** — cloud uses managed connectors unless the
+  image supplies `op` and a vault-restricted service-account token.
 
 ## Verification checklist (first session after changes)
 
@@ -119,7 +111,7 @@ On claude.ai → Code → your repo → environment settings:
    CLAUDE.md rule; skills appear under `/`; `/plugin` lists superpowers,
    factory, ponytail, codex, web-designer.
 2. Hooks fire: `npm install x` → pnpm rewrite; no model-lock warning.
-3. `supabase projects list` works; `/mcp` shows supabase connected;
+3. `/mcp` shows only project-bound Supabase/PostHog connectors;
    `mcp__supabase__list_projects` allowed silently; `execute_sql` gated by
    `sql-readonly-check.sh`.
 4. Tool sweep (`gh` intentionally absent — GitHub via MCP):

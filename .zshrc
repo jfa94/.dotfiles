@@ -25,6 +25,14 @@ export PATH="$HOME/.local/bin:$PATH"
 
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
+# Secret references are resolved only inside commands launched through 1Password.
+export AGENT_ENV_FILE="${AGENT_ENV_FILE:-$HOME/.config/agent-env/personal.env}"
+if command -v op &>/dev/null; then
+  alias codex='op run --env-file "$AGENT_ENV_FILE" -- codex'
+  alias supabase='op run --env-file "$AGENT_ENV_FILE" -- supabase'
+  alias posthog-cli='op run --env-file "$AGENT_ENV_FILE" -- posthog-cli'
+fi
+
 # Ctrl+Left/Right word-jump. Windows Terminal sends the native Ctrl-arrow
 # CSI sequence (1;5D/C) normally, and the Alt-arrow one (1;3D/C) once Ctrl+Left/
 # Right is remapped to it in WT settings.json (done for Claude Code, which has
@@ -33,3 +41,13 @@ bindkey '^[[1;5D' backward-word
 bindkey '^[[1;5C' forward-word
 bindkey '^[[1;3D' backward-word
 bindkey '^[[1;3C' forward-word
+
+# 1Password Shell Plugins choose their config root per platform. Source the
+# first generated alias file that exists without making shell startup depend on it.
+for _op_plugins in "${XDG_CONFIG_HOME:-$HOME/.config}/op/plugins.sh" "$HOME/.op/plugins.sh"; do
+  if [[ -r "$_op_plugins" ]]; then
+    source "$_op_plugins"
+    break
+  fi
+done
+unset _op_plugins

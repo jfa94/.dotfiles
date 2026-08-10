@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests for cloud-setup.sh: syntax, sandboxed happy path (symlinks, MCP merge,
-# plugin install calls), and degraded run (missing tools/network -> still exit 0).
+# Tests for cloud-setup.sh: syntax, sandboxed happy path (symlinks and plugin
+# install calls), and degraded run (missing tools/network -> still exit 0).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -59,12 +59,12 @@ chmod +x "$stubs"/*
 
 run_setup() {
   HOME="$home" PATH="$stubs:$PATH" CLAUDE_LOG="$tmp/claude.log" \
-    CLOUD_SETUP_LOG="$tmp/setup.log" "$@" bash "$SCRIPT"
+    CLOUD_SETUP_LOG="$tmp/setup.log" bash "$SCRIPT"
 }
 
 # --- happy path -------------------------------------------------------------
 
-out="$(run_setup env SUPABASE_ACCESS_TOKEN=tok SUPABASE_PROJECT_REF=abc123 2>&1)" \
+out="$(run_setup 2>&1)" \
   || fail "happy path exited nonzero"
 
 [[ -L "$home/.claude/CLAUDE.md" ]] || fail "CLAUDE.md not symlinked"
@@ -79,10 +79,7 @@ out="$(run_setup env SUPABASE_ACCESS_TOKEN=tok SUPABASE_PROJECT_REF=abc123 2>&1)
 [[ ! -e "$home/.codex/user-hooks.json" ]] || fail "user-hooks.json should only exist as hooks.json"
 [[ -x "$home/.claude/hooks/sample.sh" ]] || fail "hook not chmod +x"
 
-jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp?project_ref=abc123"' \
-  "$home/.claude.json" >/dev/null || fail "MCP url missing project_ref"
-jq -e '.mcpServers.supabase.headersHelper | contains("SUPABASE_MCP_TOKEN:-$SUPABASE_ACCESS_TOKEN")' \
-  "$home/.claude.json" >/dev/null || fail "headersHelper wrong"
+[[ ! -e "$home/.claude.json" ]] || fail "setup wrote an unscoped user MCP config"
 
 grep -q 'plugin marketplace add anthropics/claude-plugins-official' "$tmp/claude.log" \
   || fail "official marketplace not added"
@@ -92,20 +89,11 @@ grep -q 'plugin install good@acme --scope user' "$tmp/claude.log" || fail "enabl
 grep -q 'disabled@acme' "$tmp/claude.log" && fail "disabled plugin should be skipped"
 grep -q 'cloud-setup finished clean' <<< "$out" || fail "expected clean summary, got: $out"
 
-# --- MCP merge preserves an existing ~/.claude.json, no project ref ---------
+# --- setup preserves an existing ~/.claude.json -----------------------------
 
 echo '{"existing": true}' > "$home/.claude.json"
-run_setup env SUPABASE_ACCESS_TOKEN=tok >/dev/null 2>&1 || fail "second run exited nonzero"
+run_setup >/dev/null 2>&1 || fail "second run exited nonzero"
 jq -e '.existing == true' "$home/.claude.json" >/dev/null || fail "existing keys clobbered"
-jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp"' \
-  "$home/.claude.json" >/dev/null || fail "MCP url without project_ref wrong"
-
-# --- no token: MCP still written (env vars only reach the session, not setup)
-
-rm -f "$home/.claude.json"
-run_setup >/dev/null 2>&1 || fail "no-token run exited nonzero"
-jq -e '.mcpServers.supabase.url == "https://mcp.supabase.com/mcp"' \
-  "$home/.claude.json" >/dev/null || fail "MCP not written without token"
 
 # --- degraded: tools missing + network dead -> reports issues, exits 0 ------
 # restricted PATH so the host's real CLIs can't satisfy the command -v guards
@@ -125,6 +113,7 @@ out="$(HOME="$home" PATH="$stubs:$realbin" CLAUDE_LOG="$tmp/claude.log" \
 grep -q 'issue(s)' <<< "$out" || fail "degraded run should report issues"
 grep -q 'supabase CLI install failed' <<< "$out" || fail "vacuous curl not caught (supabase)"
 grep -q 'codex CLI install failed' <<< "$out" || fail "vacuous curl not caught (codex)"
-grep -q 'issue(s)' "$tmp/setup-degraded.log" || fail "failures not mirrored to log file"
+grep -Eq 'failed|not found' "$tmp/setup-degraded.log" \
+  || fail "failures not mirrored to log file"
 
 echo 'PASS: cloud-setup tests'

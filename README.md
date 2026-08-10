@@ -35,6 +35,10 @@ The script:
 - Installs Codex CLI with OpenAI's standalone installer, then installs the plugins listed in `.codex/plugins.txt`.
 - Sets up vim plugin/undo directories.
 
+Agent credentials use tracked 1Password references with process-scoped
+injection; see [docs/agent-credentials.md](docs/agent-credentials.md). No
+plaintext provider token is sourced into the interactive shell.
+
 It is idempotent — re-running skips anything already linked. If conflicts are detected, you’ll be prompted to replace, skip, or decide file-by-file. New files added to the repo are only deployed on a re-run.
 
 ### Shared Claude and Codex skills
@@ -59,22 +63,23 @@ work before Codex can execute every step.
 The script also runs on Linux (`apt` on Ubuntu/Debian, `pacman` on Arch/CachyOS)
 — no `xcode-select` step, but `sudo` and `curl` are required. Packages install
 via the native package manager instead of Homebrew; a few tools not in the
-default repos (`deno`, `pnpm`, `trufflehog`, `semgrep`, `supabase`) use their
-official install scripts on both distros. Docker is installed from Docker's
-official apt repo (Ubuntu/Debian/WSL2) or via `pacman` (Arch/CachyOS); setup
-also adds the current user to the `docker` group (re-login required) and
-starts the daemon (`systemctl`, or `service` when systemd is off, as on
-default WSL2).
+default repos use their official installers. This includes a signed 1Password
+CLI install and a checksum-verified Stripe CLI release; the 1Password desktop
+app and CLI integration remain per-machine interactive steps. Docker is
+installed from Docker's official apt repo (Ubuntu/Debian/WSL2) or via `pacman`
+(Arch/CachyOS); setup also adds the current user to the `docker` group (re-login
+required) and starts the daemon (`systemctl`, or `service` when systemd is off,
+as on default WSL2).
 
 ## Claude Code cloud environments
 
 `cloud-setup.sh` replicates the full Claude Code workflow (CLAUDE.md, skills,
-hooks, plugins, Codex/Supabase CLIs + MCP) on claude.ai/code cloud VMs. Paste
+hooks, plugins, and Codex/Supabase CLIs) on claude.ai/code cloud VMs. Paste
 the tiny shim from [docs/cloud-environments.md](docs/cloud-environments.md)
-into each project's environment setup script and set that project's
-`SUPABASE_ACCESS_TOKEN` (plus optional `SUPABASE_MCP_TOKEN` /
-`SUPABASE_PROJECT_REF`) as environment variables. AWS CLI is deliberately
-excluded; Codex re-auths per session via `codex login --device-auth`.
+into each project's environment setup script. Managed PostHog/Supabase
+connectors remain authoritative when their project binding is verified; setup
+does not add duplicate unscoped MCP servers. AWS CLI is deliberately excluded;
+Codex re-auths per session via `codex login --device-auth`.
 
 ## Codex CLI
 

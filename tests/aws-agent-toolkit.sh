@@ -54,7 +54,7 @@ grep -qF 'account `412868037405` and IAM user `jflores`' "$AWS_DOC"
 grep -qF 'No wrapper or login command is involved' "$AWS_DOC"
 
 grep -qF 'Claude'\''s inventory contains 19 plugins' "$PARITY_DOC"
-grep -qF "\`posthog@openai-curated\`" "$PARITY_DOC"
+grep -qF "Outsidey pins project 107700" "$PARITY_DOC"
 grep -qF "GitHub is deliberately CLI-only through \`gh\`" "$PARITY_DOC"
 grep -qF "\`.env*\` reads are limited to trusted workspaces" "$PARITY_DOC"
 
