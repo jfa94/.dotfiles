@@ -15,6 +15,11 @@ while IFS= read -r line; do
   esac
 done < "$file"
 
+lock_helper="$ENV_DIR/op-read-locked"
+[[ -f "$lock_helper" ]] || { echo "FAIL missing $lock_helper" >&2; exit 1; }
+[[ -x "$lock_helper" ]] || { echo "FAIL not executable: $lock_helper" >&2; exit 1; }
+grep -Fq 'zsystem flock' "$lock_helper" || { echo "FAIL $lock_helper does not serialize via zsystem flock" >&2; exit 1; }
+
 for profile in outsidey almunia; do
   [[ ! -e "$ENV_DIR/$profile.env" ]] || {
     echo "FAIL project credential profile remains in dotfiles: $profile" >&2
@@ -24,7 +29,7 @@ done
 
 # shellcheck disable=SC2016  # Assert the literal deferred expansion in zshrc.
 grep -Fqx 'export AGENT_ENV_FILE="${AGENT_ENV_FILE:-$HOME/.config/agent-env/personal.env}"' "$ROOT/.zshrc"
-grep -Fqx "  alias codex='op run --env-file \"\$AGENT_ENV_FILE\" -- codex'" "$ROOT/.zshrc"
+grep -Fqx "  alias codex='op run --no-masking --env-file \"\$AGENT_ENV_FILE\" -- codex'" "$ROOT/.zshrc"
 grep -Fqx "  alias supabase='op run --env-file \"\$AGENT_ENV_FILE\" -- supabase'" "$ROOT/.zshrc"
 grep -Fqx "  alias posthog-cli='op run --env-file \"\$AGENT_ENV_FILE\" -- posthog-cli'" "$ROOT/.zshrc"
 

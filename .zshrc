@@ -28,7 +28,9 @@ command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 # Secret references are resolved only inside commands launched through 1Password.
 export AGENT_ENV_FILE="${AGENT_ENV_FILE:-$HOME/.config/agent-env/personal.env}"
 if command -v op &>/dev/null; then
-  alias codex='op run --env-file "$AGENT_ENV_FILE" -- codex'
+  # --no-masking: masking swaps codex's stdout/stderr for pipes and its TUI
+  # refuses non-terminal stdio ("Error: stdout is not a terminal").
+  alias codex='op run --no-masking --env-file "$AGENT_ENV_FILE" -- codex'
   alias supabase='op run --env-file "$AGENT_ENV_FILE" -- supabase'
   alias posthog-cli='op run --env-file "$AGENT_ENV_FILE" -- posthog-cli'
 fi

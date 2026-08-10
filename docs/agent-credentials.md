@@ -9,9 +9,21 @@ non-secret routing metadata and are never sourced into the parent shell.
 
 `.zshrc` defaults `AGENT_ENV_FILE` to `personal.env`. When `op` is available,
 `codex`, `supabase`, and `posthog-cli` are aliases that launch the real command
-through `op run --env-file "$AGENT_ENV_FILE" -- ...`. Use `command codex` as
-the no-secrets escape hatch when 1Password is unavailable. Credentialed MCP
-servers are optional, so Codex still starts without their variables.
+through `op run --env-file "$AGENT_ENV_FILE" -- ...`. The `codex` alias adds
+`--no-masking`: masking replaces the child's stdout/stderr with pipes and the
+Codex TUI refuses non-terminal stdio (`Error: stdout is not a terminal`).
+Masking stays on for `supabase` and `posthog-cli`, which are plain CLIs. Use
+`command codex` as the no-secrets escape hatch when 1Password is unavailable.
+Credentialed MCP servers are optional, so Codex still starts without their
+variables.
+
+Claude MCP `headersHelper` commands must call
+`~/.config/agent-env/op-read-locked` (tracked in dotfiles, symlinked by
+`setup.sh`) instead of `op read` directly. Claude launches all helpers
+concurrently; on a cold 1Password terminal session each raw `op read` pops its
+own authorization prompt. The wrapper serializes them behind a kernel file
+lock so the first call prompts once and the rest reuse the cached per-TTY
+authorization.
 
 Project `.envrc` files select only an environment reference file and native
 provider profiles. They must not call `op`, source a resolved file, or export a
@@ -64,8 +76,8 @@ host routes to the correct data region based on the authenticated account.
 
 Supabase MCP URLs must include both `project_ref` and `read_only=true`. Codex
 receives bearer tokens from the process environment. Claude project MCP files
-use `headersHelper` with a fixed `op read` reference, so Claude itself does not
-need to launch under `op run`.
+use `headersHelper` with a fixed `op://` reference resolved through
+`op-read-locked`, so Claude itself does not need to launch under `op run`.
 
 Application Stripe keys, webhook secrets, price IDs, and PostHog ingestion keys
 remain in deployment secret stores and are not part of this system.
@@ -78,6 +90,10 @@ remain in deployment secret stores and are not part of this system.
 4. Clone the project repositories and run `direnv allow` once in each checkout.
 5. In Outsidey, run `op plugin init stripe` if the transparent alias is absent.
 6. Authenticate AWS profiles with `aws login` and GitHub with `gh auth login`.
+7. Migrate the user-level Claude supabase server: with all Claude sessions
+   closed, set `mcpServers.supabase.headersHelper` in `~/.claude.json` to
+   `printf '{"Authorization":"Bearer %s"}' "$("$HOME/.config/agent-env/op-read-locked" 'op://Credentials/Supabase Access Token/credential')"`
+   (that file is machine-local live state, not tracked here).
 
 Rotate a credential by updating its existing 1Password item so references stay
 stable. If an item is renamed or recreated, update every tracked reference. A

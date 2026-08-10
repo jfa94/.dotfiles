@@ -48,7 +48,7 @@ outsidey_envrc=$'export AGENT_ENV_FILE="$(expand_path .agent-env)"\nexport AWS_P
 outsidey_envrc_old=$'export AGENT_ENV_FILE="$HOME/.config/agent-env/outsidey.env"\nexport AWS_PROFILE="Outsidey"'
 posthog_url='https://mcp.posthog.com/mcp?mode=cli&readonly=true&project_id=107700'
 # shellcheck disable=SC2016  # Preserve command substitution for Claude's helper.
-posthog_helper='printf '\''{"Authorization":"Bearer %s"}'\'' "$(op read '\''op://Credentials/PostHog API Key/credential'\'')"'
+posthog_helper='printf '\''{"Authorization":"Bearer %s"}'\'' "$("$HOME/.config/agent-env/op-read-locked" '\''op://Credentials/PostHog API Key/credential'\'')"'
 posthog_toml=$'[mcp_servers.posthog]\nurl = "https://mcp.posthog.com/mcp?mode=cli&readonly=true&project_id=107700"\nbearer_token_env_var = "POSTHOG_MCP_TOKEN"\nrequired = false'
 posthog_toml_old=$'[mcp_servers.posthog]\nenabled = false'
 almunia_envrc=$'export AGENT_ENV_FILE=/dev/null\nexport AWS_PROFILE="Almunia"'

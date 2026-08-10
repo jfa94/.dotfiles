@@ -49,6 +49,7 @@ AGENT_PROJECTS_ROOT="$SCRATCH" bash "$SCRIPT"
 
 jq -e '.mcpServers.supabase.url == "https://example.test"' "$SCRATCH/outsidey/.mcp.json" >/dev/null
 jq -e '.mcpServers.posthog.url | contains("readonly=true&project_id=107700")' "$SCRATCH/outsidey/.mcp.json" >/dev/null
+jq -e '.mcpServers.posthog.headersHelper | contains("op-read-locked")' "$SCRATCH/outsidey/.mcp.json" >/dev/null
 grep -Fqx 'POSTHOG_CLI_PROJECT_ID=107700' "$SCRATCH/outsidey/.agent-env"
 # shellcheck disable=SC2016  # Assert the literal deferred expansion.
 grep -Fqx 'export AGENT_ENV_FILE="$(expand_path .agent-env)"' "$SCRATCH/outsidey/.envrc"

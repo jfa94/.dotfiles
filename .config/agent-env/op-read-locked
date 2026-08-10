@@ -1,0 +1,10 @@
+#!/bin/zsh -f
+# Serialize op calls: concurrent MCP headersHelpers on a cold 1Password
+# terminal session each pop their own authorization prompt; first serialized
+# call prompts once, the rest reuse the cached per-TTY authorization.
+# Kernel lock releases on process exit - no stale-lock cleanup.
+zmodload zsh/system
+lock="${TMPDIR:-/tmp}/op-read-locked.$UID.lock"
+: >> "$lock"
+zsystem flock -t 120 "$lock" 2>/dev/null  # ponytail: on timeout, fall through; worst case = extra prompts
+op read "$1"
