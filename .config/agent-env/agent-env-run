@@ -1,0 +1,102 @@
+#!/bin/zsh -f
+
+setopt NO_UNSET PIPE_FAIL EXTENDED_GLOB
+
+usage() {
+  print -u2 -- "usage: agent-env-run <command> [args...]"
+  exit 2
+}
+
+(( $# )) || usage
+
+readonly env_file="${AGENT_ENV_FILE:-$HOME/.config/agent-env/personal.env}"
+readonly script_dir=${0:A:h}
+readonly helper="$script_dir/op-read-locked"
+
+keychain_available() {
+  [[ "$(uname -s)" == Darwin && -x /usr/bin/security && -x "$helper" ]] || return 1
+  if [[ -n "${AGENT_ENV_CACHE_KEYCHAIN:-}" ]]; then
+    [[ -e "$AGENT_ENV_CACHE_KEYCHAIN" ]]
+    return
+  fi
+
+  local keychain
+  keychain=$(/usr/bin/security login-keychain 2>/dev/null) || return 1
+  keychain=${keychain##[[:space:]]#}
+  keychain=${keychain%%[[:space:]]#}
+  keychain=${keychain#\"}
+  keychain=${keychain%\"}
+  [[ -e "$keychain" ]]
+}
+
+if ! keychain_available; then
+  command op run --no-masking --env-file "$env_file" -- "$@"
+  exit $?
+fi
+
+[[ -r "$env_file" ]] || {
+  print -u2 -- "agent-env-run: environment file is missing or unreadable: $env_file"
+  exit 1
+}
+
+typeset -a names unique_refs
+typeset -A raw_values is_reference seen_ref resolved
+line_number=0
+while IFS= read -r line || [[ -n "$line" ]]; do
+  (( ++line_number ))
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  if [[ "$line" != *=* ]]; then
+    print -u2 -- "agent-env-run: malformed line $line_number in $env_file"
+    exit 1
+  fi
+  name=${line%%=*}
+  value=${line#*=}
+  if [[ "$name" != [A-Za-z_][A-Za-z0-9_]# ]]; then
+    print -u2 -- "agent-env-run: invalid variable name on line $line_number in $env_file"
+    exit 1
+  fi
+  if [[ -z "${raw_values[$name]+set}" ]]; then
+    names+=("$name")
+  fi
+  raw_values[$name]=$value
+  if [[ "$value" == op://* ]]; then
+    is_reference[$name]=1
+  else
+    unset "is_reference[$name]"
+  fi
+done < "$env_file"
+
+for name in "${names[@]}"; do
+  [[ -n "${is_reference[$name]:-}" ]] || continue
+  value=${raw_values[$name]}
+  if [[ -z "${seen_ref[$value]:-}" ]]; then
+    seen_ref[$value]=1
+    unique_refs+=("$value")
+  fi
+done
+
+if (( ${#unique_refs} )); then
+  index=1
+  while IFS= read -r -d $'\0' value; do
+    (( index <= ${#unique_refs} )) || {
+      print -u2 -- "agent-env-run: credential helper returned unexpected output"
+      exit 1
+    }
+    resolved[${unique_refs[$index]}]=$value
+    (( ++index ))
+  done < <(printf '%s\n' "${unique_refs[@]}" | "$helper" --batch)
+  if (( index != ${#unique_refs} + 1 )); then
+    print -u2 -- "agent-env-run: credential resolution failed"
+    exit 1
+  fi
+fi
+
+for name in "${names[@]}"; do
+  value=${raw_values[$name]}
+  if [[ -n "${is_reference[$name]:-}" ]]; then
+    value=${resolved[$value]}
+  fi
+  export "$name=$value"
+done
+
+exec "$@"

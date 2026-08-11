@@ -1,10 +1,251 @@
 #!/bin/zsh -f
-# Serialize op calls: concurrent MCP headersHelpers on a cold 1Password
-# terminal session each pop their own authorization prompt; first serialized
-# call prompts once, the rest reuse the cached per-TTY authorization.
-# Kernel lock releases on process exit - no stale-lock cleanup.
-zmodload zsh/system
-lock="${TMPDIR:-/tmp}/op-read-locked.$UID.lock"
-: >> "$lock"
-zsystem flock -t 120 "$lock" 2>/dev/null  # ponytail: on timeout, fall through; worst case = extra prompts
-op read "$1"
+
+setopt NO_UNSET PIPE_FAIL EXTENDED_GLOB
+zmodload zsh/system || {
+  print -u2 -- "op-read-locked: zsh/system is unavailable"
+  exit 1
+}
+
+readonly cache_service=agent-env-cache
+readonly cache_ttl=43200
+readonly lock_path="${TMPDIR:-/tmp}/op-read-locked.$UID.lock"
+
+warn() {
+  print -u2 -- "op-read-locked: warning: $*"
+}
+
+usage() {
+  print -u2 -- "usage: op-read-locked <op://reference> | --clear"
+  exit 2
+}
+
+lock_cache() {
+  : >> "$lock_path" || return 1
+  if ! zsystem flock -t 120 "$lock_path" 2>/dev/null; then
+    print -u2 -- "op-read-locked: timed out waiting 120 seconds for credential lock"
+    return 1
+  fi
+}
+
+keychain_path() {
+  if [[ -n "${AGENT_ENV_CACHE_KEYCHAIN:-}" ]]; then
+    REPLY=$AGENT_ENV_CACHE_KEYCHAIN
+    return 0
+  fi
+
+  local output
+  output=$(/usr/bin/security login-keychain 2>/dev/null) || return 1
+  output=${output##[[:space:]]#}
+  output=${output%%[[:space:]]#}
+  output=${output#\"}
+  output=${output%\"}
+  [[ -n "$output" ]] || return 1
+  REPLY=$output
+}
+
+keychain_available() {
+  [[ "$(uname -s)" == Darwin && -x /usr/bin/security ]] || return 1
+  keychain_path
+}
+
+safe_reference() {
+  local ref=$1
+  [[ "$ref" == op://?* ]] || return 1
+  [[ "$ref" != *$'\n'* && "$ref" != *$'\r'* ]] || return 1
+  [[ "$ref" != *'"'* && "$ref" != *'\\'* ]] || return 1
+  ! print -rn -- "$ref" | LC_ALL=C grep -q '[^ -~]'
+}
+
+cacheable_value() {
+  local value=$1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || return 1
+  ! print -rn -- "$value" | LC_ALL=C grep -q '[^ -~]'
+}
+
+security_quote() {
+  local value=${1//\\/\\\\}
+  value=${value//\"/\\\"}
+  REPLY=\"$value\"
+}
+
+cache_read() {
+  local ref=$1 keychain=$2 record rc timestamp value now error_file
+  if [[ ! -e "$keychain" ]]; then
+    warn "Keychain read failed for $ref: keychain does not exist: $keychain"
+    return 2
+  fi
+  error_file=$(mktemp "${TMPDIR:-/tmp}/op-read-locked.security.XXXXXX") || {
+    warn "could not create a temporary file for Keychain errors"
+    return 2
+  }
+  record=$(/usr/bin/security -q find-generic-password -s "$cache_service" -a "$ref" -w "$keychain" 2>"$error_file")
+  rc=$?
+  if (( rc != 0 )); then
+    if (( rc != 44 )); then
+      warn "Keychain read failed for $ref: $(<"$error_file")"
+      command rm -f -- "$error_file"
+      return 2
+    fi
+    command rm -f -- "$error_file"
+    return 1
+  fi
+  command rm -f -- "$error_file"
+
+  # Passwords written with -X are returned by security -w as hexadecimal.
+  [[ -n "$record" && $(( ${#record} % 2 )) == 0 ]] || return 1
+  print -rn -- "$record" | LC_ALL=C grep -q '^[0-9a-fA-F]*$' || return 1
+  record=$(print -rn -- "$record" | /usr/bin/xxd -r -p) || return 2
+
+  timestamp=${record%%$'\t'*}
+  [[ "$record" == *$'\t'* && "$timestamp" == <-> ]] || return 1
+  value=${record#*$'\t'}
+  now=$(date +%s) || return 2
+  (( timestamp <= now && now - timestamp < cache_ttl )) || return 1
+  REPLY=$value
+}
+
+cache_write() {
+  local ref=$1 value=$2 keychain=$3 timestamp record hex quoted_ref quoted_keychain
+  [[ -e "$keychain" ]] || return 1
+  timestamp=$(date +%s) || return 1
+  record="$timestamp"$'\t'"$value"
+  hex=$(print -rn -- "$record" | od -An -tx1 | tr -d ' \n') || return 1
+  security_quote "$ref"
+  quoted_ref=$REPLY
+  security_quote "$keychain"
+  quoted_keychain=$REPLY
+
+  print -r -- "add-generic-password -U -s \"$cache_service\" -a $quoted_ref -X $hex $quoted_keychain" \
+    | /usr/bin/security -q -i >/dev/null
+}
+
+resolve_uncached() {
+  local ref=$1 value
+  value=$(command op read "$ref") || return $?
+  REPLY=$value
+}
+
+fill_one() {
+  local ref=$1 use_keychain=$2 keychain=$3 value
+
+  resolve_uncached "$ref" || return $?
+  value=$REPLY
+
+  if (( use_keychain )); then
+    if ! safe_reference "$ref" || ! cacheable_value "$value"; then
+      warn "resolved value for $ref is not safe to cache; returning it without caching"
+    elif ! cache_write "$ref" "$value" "$keychain"; then
+      warn "could not write the resolved value for $ref to the login Keychain"
+    fi
+  fi
+
+  REPLY=$value
+}
+
+clear_cache() {
+  local keychain rc output
+  if ! keychain_available; then
+    print -u2 -- "op-read-locked: Keychain cache is unavailable on this platform"
+    return 1
+  fi
+  keychain=$REPLY
+  if [[ ! -e "$keychain" ]]; then
+    print -u2 -- "op-read-locked: could not clear Keychain cache: keychain does not exist: $keychain"
+    return 1
+  fi
+  lock_cache || return 1
+
+  while true; do
+    output=$(/usr/bin/security delete-generic-password -s "$cache_service" "$keychain" 2>&1)
+    rc=$?
+    (( rc == 0 )) && continue
+    (( rc == 44 )) && return 0
+    print -u2 -- "op-read-locked: could not clear Keychain cache: $output"
+    return "$rc"
+  done
+}
+
+resolve_batch() {
+  local -a refs unique_refs misses
+  local -A seen values
+  local ref value keychain=''
+  local use_keychain=0 need_lock=0
+
+  while IFS= read -r ref; do
+    [[ -n "$ref" ]] || {
+      print -u2 -- "op-read-locked: empty reference in batch input"
+      return 2
+    }
+    refs+=("$ref")
+    if [[ -z "${seen[$ref]:-}" ]]; then
+      seen[$ref]=1
+      unique_refs+=("$ref")
+    fi
+  done
+
+  if keychain_available; then
+    use_keychain=1
+    keychain=$REPLY
+    for ref in "${unique_refs[@]}"; do
+      if safe_reference "$ref" && cache_read "$ref" "$keychain"; then
+        values[$ref]=$REPLY
+      else
+        misses+=("$ref")
+        need_lock=1
+      fi
+    done
+  elif (( ${#unique_refs} )); then
+    misses=("${unique_refs[@]}")
+    need_lock=1
+  fi
+
+  if (( need_lock )); then
+    lock_cache || return 1
+    for ref in "${misses[@]}"; do
+      if (( use_keychain )) && safe_reference "$ref" && cache_read "$ref" "$keychain"; then
+        values[$ref]=$REPLY
+        continue
+      fi
+      fill_one "$ref" "$use_keychain" "$keychain" || return $?
+      values[$ref]=$REPLY
+    done
+  fi
+
+  for ref in "${refs[@]}"; do
+    value=${values[$ref]}
+    print -rn -- "$value"$'\0'
+  done
+}
+
+(( $# == 1 )) || usage
+case "$1" in
+  --clear)
+    clear_cache
+    ;;
+  --batch)
+    resolve_batch
+    ;;
+  --*)
+    usage
+    ;;
+  *)
+    ref=$1
+    use_keychain=0
+    keychain=''
+    if keychain_available; then
+      use_keychain=1
+      keychain=$REPLY
+      if safe_reference "$ref" && cache_read "$ref" "$keychain"; then
+        print -r -- "$REPLY"
+        exit 0
+      fi
+    fi
+    lock_cache || exit 1
+    if (( use_keychain )) && safe_reference "$ref" && cache_read "$ref" "$keychain"; then
+      print -r -- "$REPLY"
+      exit 0
+    fi
+    fill_one "$ref" "$use_keychain" "$keychain" || exit $?
+    print -r -- "$REPLY"
+    ;;
+esac

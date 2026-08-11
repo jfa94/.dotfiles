@@ -7,23 +7,49 @@ non-secret routing metadata and are never sourced into the parent shell.
 
 ## Local use
 
-`.zshrc` defaults `AGENT_ENV_FILE` to `personal.env`. When `op` is available,
-`codex`, `supabase`, and `posthog-cli` are aliases that launch the real command
-through `op run --env-file "$AGENT_ENV_FILE" -- ...`. The `codex` alias adds
-`--no-masking`: masking replaces the child's stdout/stderr with pipes and the
-Codex TUI refuses non-terminal stdio (`Error: stdout is not a terminal`).
-Masking stays on for `supabase` and `posthog-cli`, which are plain CLIs. Use
+`.zshrc` defaults `AGENT_ENV_FILE` to `personal.env`. When `op` and the tracked
+runner are available, thin `codex`, `supabase`, and `posthog-cli` functions call
+`~/.config/agent-env/agent-env-run`. The external runner resolves references,
+exports values only in its own process, and then replaces itself with the target
+command. Secrets therefore never persist in the interactive parent shell. Use
 `command codex` as the no-secrets escape hatch when 1Password is unavailable.
 Credentialed MCP servers are optional, so Codex still starts without their
 variables.
 
+On macOS, resolved values are cached in the explicit login Keychain under
+service `agent-env-cache`, with the full `op://` reference as the account. A
+record is logically valid for a fixed 12 hours; timestamps at exactly 12 hours,
+in the future, or malformed are misses. Expired records remain encrypted at
+rest until refreshed or cleared. Run the following after rotating a value when
+the old cached value must stop being used immediately:
+
+```sh
+"$HOME/.config/agent-env/op-read-locked" --clear
+```
+
+The cache is local to the login Keychain and does not sync through iCloud.
+Writes enter `/usr/bin/security` through stdin, so values are absent from its
+argv. This protects process listings, not the unlocked account boundary: any
+process running as the same user can invoke `security` while the Keychain is
+unlocked.
+
 Claude MCP `headersHelper` commands must call
 `~/.config/agent-env/op-read-locked` (tracked in dotfiles, symlinked by
-`setup.sh`) instead of `op read` directly. Claude launches all helpers
-concurrently; on a cold 1Password terminal session each raw `op read` pops its
-own authorization prompt. The wrapper serializes them behind a kernel file
-lock so the first call prompts once and the rest reuse the cached per-TTY
-authorization.
+`setup.sh`) instead of `op read` directly. Claude launches helpers concurrently;
+the wrapper checks the Keychain and serializes cache misses behind a kernel file
+lock. A waiter fails after 120 seconds instead of proceeding concurrently. The
+timeout does not bound the first process's `op read`, which can remain in flight
+indefinitely. A cold env-file fill batches unique references through one wrapper
+process, so 1Password authorization is shared and duplicate references resolve
+once.
+
+Only single-line printable ASCII values and safe printable `op://` references
+are cached. Other resolved values are returned with a warning. 1Password and
+Keychain failures are surfaced; a cache-write failure warns but does not discard
+a value already returned by 1Password. On Linux/WSL, `op-read-locked` retains
+serialized `op read`, while `agent-env-run` delegates to `op run --no-masking`.
+Output is intentionally unmasked on every platform so TTY applications keep
+working; do not print token-bearing child environments or enable shell tracing.
 
 Project `.envrc` files select only an environment reference file and native
 provider profiles. They must not call `op`, source a resolved file, or export a
@@ -41,12 +67,20 @@ export AWS_PROFILE="Almunia"
 ```
 
 After adding or changing a selector, run `direnv allow` in that repository.
-For a non-interactive shell, use the explicit form:
+For a non-interactive shell, use the explicit runner. This also avoids Codex's
+intentional filtering of `KEY`, `SECRET`, and `TOKEN` variables from tool
+subprocess environments:
 
 ```sh
-op run --env-file "$AGENT_ENV_FILE" -- supabase projects list
-op run --env-file "$AGENT_ENV_FILE" -- posthog-cli api --help
+"$HOME/.config/agent-env/agent-env-run" supabase projects list
+"$HOME/.config/agent-env/agent-env-run" posthog-cli api --help
 ```
+
+The supported env-file format is deliberately strict: blank lines, comments
+whose first character is `#`, or `NAME=value` with a valid shell variable name.
+Values beginning with `op://` are references; every other value is literal.
+Shell quoting, interpolation, `export`, inline comments, and leading whitespace
+are not supported. `/dev/null` is a valid empty environment file.
 
 GitHub stays on `gh auth login`. AWS stays on native `aws login` profiles and
 `AWS_PROFILE`; do not put AWS access keys in these files. Do not remove existing
@@ -96,11 +130,13 @@ remain in deployment secret stores and are not part of this system.
    (that file is machine-local live state, not tracked here).
 
 Rotate a credential by updating its existing 1Password item so references stay
-stable. If an item is renamed or recreated, update every tracked reference. A
-future Outsidey-specific PostHog key changes only Outsidey's `.agent-env` and
-Claude `headersHelper`; the personal default remains unchanged. Keep legacy
-Keychain copies until this checklist passes on every machine, then remove them
-only as a separately approved cleanup.
+stable, then clear the cache for immediate use; otherwise the cached value can
+remain active for up to 12 hours. If an item is renamed or recreated, update
+every tracked reference and clear the cache. A future Outsidey-specific PostHog
+key changes only Outsidey's `.agent-env` and Claude `headersHelper`; the
+personal default remains unchanged. Keep legacy Keychain copies until this
+checklist passes on every machine, then remove them only as a separately
+approved cleanup.
 
 Cloud and CI authentication are outside this local-workstation design. Managed
 connectors remain authoritative there; do not copy personal `op://` references
