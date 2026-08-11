@@ -15,7 +15,7 @@ export const meta = {
     {
       title: "Verify",
       detail:
-        "one fresh refuter agent per critical/important finding (claim + location only, no reasoning chain)",
+        "fresh refuters classify critical/important reviewer findings and every structured Codex severity",
     },
     {
       title: "Persist",
@@ -30,7 +30,8 @@ export const meta = {
 // validates and retries on mismatch, so `verbatim` length and severity enum are
 // enforced here rather than by hand-written parser rules downstream.
 // NOTE: the Verify stage annotates findings post-validation with `refuted` +
-// `refute_reason`; those fields are intentionally NOT in this schema (it
+// `refute_reason`; workflow annotations may also update intent_question/doc_basis.
+// `refuted` fields are intentionally NOT in this schema (it
 // validates reviewer output, not the workflow's own annotations).
 const FINDINGS_SCHEMA = {
   type: "object",
@@ -61,6 +62,8 @@ const FINDINGS_SCHEMA = {
           title: { type: "string" },
           why: { type: "string" },
           fix_sketch: { type: "string" },
+          intent_question: { type: "string", minLength: 10 },
+          doc_basis: { type: "string", minLength: 10 },
           // Severity honesty: how the failure path is reached. Downstream,
           // important+theoretical is downgraded to minor (verify-citations.mjs).
           reachability: { enum: ["direct", "conditional", "theoretical"] },
@@ -125,6 +128,8 @@ const VERIFY_SCHEMA = {
     // finding without the in-memory pairing this script normally provides.
     file: { type: "string" },
     line: { type: "integer" },
+    intent_question: { type: "string", minLength: 10 },
+    doc_basis: { type: "string", minLength: 10 },
   },
 };
 
@@ -152,6 +157,16 @@ function buildPrompt(reviewer, ctx) {
   const dispositionsBlock = ctx.dispositions
     ? ["", ctx.dispositions, ""].join("\n")
     : "";
+  const docsBlock = ctx.docsManifest
+    ? [
+        "## Documentation manifest",
+        ctx.docsManifest,
+        "Read the relevant listed documents before deciding whether behavior is defective or intended.",
+        "Set doc_basis only when documentation establishes expected behavior that the code violates. If documentation establishes the current behavior is intended, do not report the finding.",
+        "Set intent_question only for a concrete plausible interpretation of undocumented intent that changes whether this is defective. Drop ordinary code uncertainty.",
+        "",
+      ].join("\n")
+    : "";
   const parts = [
     "You are the " + reviewer.name + " for a comprehensive code review.",
     "",
@@ -171,6 +186,7 @@ function buildPrompt(reviewer, ctx) {
     "## Context",
     "- Repo root: " + ctx.repoRoot,
     "- CLAUDE.md: " + ctx.claudeMdPath,
+    docsBlock,
     specBlock,
     dispositionsBlock,
     "## Output",
@@ -195,7 +211,22 @@ function buildPrompt(reviewer, ctx) {
 // Note: this prompt embeds the diff (reviewInput), which is repo content, not
 // an external agent's free-text claim — lower injection surface than the
 // Codex path below, so no delimiter fencing here.
-function buildVerifyPrompt(reviewerName, f) {
+function docsVerifyInstructions(docsManifest) {
+  return docsManifest
+    ? [
+        "Documentation manifest (paths only):",
+        docsManifest,
+        "Read relevant listed documents before classifying intent.",
+        "Use refuted=true when code or documentation proves the current behavior is intended or the claim is otherwise false.",
+        "If the defect status depends on a concrete plausible undocumented intent choice, leave refuted=false and set intent_question.",
+        "If documentation establishes expected behavior that the code violates, leave refuted=false and set doc_basis.",
+        "Ordinary uncertainty is neither an intent question nor doc basis.",
+        "",
+      ].join("\n")
+    : "";
+}
+
+function buildVerifyPrompt(reviewerName, f, docsManifest) {
   if (f.kind === "systemic") {
     const anchorLines = (f.anchors || [])
       .map(
@@ -237,6 +268,7 @@ function buildVerifyPrompt(reviewerName, f) {
       "  3. A repair/exit path the reviewer missed resolves the stuck state — name the path.",
       "",
       "Read every anchored file around the stated lines, then trace the scenario end-to-end.",
+      docsVerifyInstructions(docsManifest),
       "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
       "If the chain holds, set refuted=false and state in reason what you verified at each anchor.",
       "Echo the finding's location in your output: file=\"" +
@@ -263,6 +295,7 @@ function buildVerifyPrompt(reviewerName, f) {
       " and whatever code is needed to follow the claim (callers, callees, guards, types).",
     "Look for: handling the reviewer missed, a misreading of the code, preconditions that make the issue impossible, or the claim describing intended/documented behavior.",
     "",
+    docsVerifyInstructions(docsManifest),
     "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
     "If the claim stands, or you cannot find counter-evidence, set refuted=false and state in reason what you checked.",
     "Echo the finding's location in your output: file=\"" +
@@ -277,7 +310,7 @@ function buildVerifyPrompt(reviewerName, f) {
 // verbatim quote, so the refuter starts from the claimed line range instead of
 // a quoted snippet; the keep-on-uncertainty bias is identical to the reviewer
 // refuters above.
-function buildCodexVerifyPrompt(f) {
+function buildCodexVerifyPrompt(f, docsManifest) {
   const lineEnd = f.line_end || f.line_start;
   return [
     "You are an adversarial verifier for ONE finding from an external (Codex) code review. It claims:",
@@ -303,6 +336,7 @@ function buildCodexVerifyPrompt(f) {
       " first, then follow whatever code the claim depends on (callers, callees, guards, types).",
     "Look for: handling the reviewer missed, a misreading of the code, preconditions that make the issue impossible, or the claim describing intended/documented behavior.",
     "",
+    docsVerifyInstructions(docsManifest),
     "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
     "If the claim stands, or you cannot find counter-evidence, set refuted=false and state in reason what you checked.",
     "Echo the finding's location in your output: file=\"" +
@@ -350,6 +384,8 @@ const CODEX_RUNNER_SCHEMA = {
           line_end: { type: "integer" },
           confidence: { type: "number" },
           recommendation: { type: "string" },
+          intent_question: { type: "string", minLength: 10 },
+          doc_basis: { type: "string", minLength: 10 },
         },
       },
     },
@@ -397,7 +433,15 @@ function buildCodexRunnerPrompt(input) {
     '    --json-out "' + jsonPath + '" \\',
     '    --stderr-out "' + stderrPath + '" \\',
     '    --pid-file "' + pidPath + '" \\',
-    "    -- " + renderCodexTargetFlags(codex.targetFlags),
+    "    -- " +
+      renderCodexTargetFlags(codex.targetFlags) +
+      (input.docsManifest
+        ? " " +
+          shellQuote(
+            "Review intent using this documentation manifest (paths only; read relevant documents before classification):\n" +
+              input.docsManifest,
+          )
+        : ""),
     "",
     "The launcher spawns the review OS-detached exactly once (the pidfile makes every re-run attach-and-wait, never relaunch), then blocks until it prints one token:",
     "- `EXITED` → the review process ended; go to Step 2.",
@@ -422,21 +466,43 @@ function buildCodexRunnerPrompt(input) {
   ].join("\n");
 }
 
-// Refute Codex critical/high/medium findings with fresh agents and persist the
+function applyVerificationVotes(finding, verdicts, needed) {
+  const votes = (verdicts || []).filter(Boolean);
+  const refutes = votes.filter((v) => v.refuted);
+  if (refutes.length >= needed) {
+    finding.refuted = true;
+    finding.refute_reason = refutes.map((v) => v.reason).join(" | ");
+    return;
+  }
+  const docVotes = votes.filter((v) => !v.refuted && v.doc_basis);
+  const intentVotes = votes.filter((v) => !v.refuted && v.intent_question);
+  if (finding.intent_question) {
+    if (docVotes.length >= needed) {
+      delete finding.intent_question;
+      finding.doc_basis = docVotes.map((v) => v.doc_basis).join(" | ");
+    }
+    return;
+  }
+  if (intentVotes.length >= needed) {
+    finding.intent_question = intentVotes[0].intent_question;
+  } else if (docVotes.length >= needed) {
+    finding.doc_basis = docVotes.map((v) => v.doc_basis).join(" | ");
+  }
+}
+
+// Refute every structured Codex finding with fresh agents and persist the
 // annotated set to codex-verify-result.json. Same invariant as the reviewer
 // Verify stage: native criticals need 2 independent unanimous refuters (a
-// single refuter is the weakest link for the highest-stakes drops); high/medium
-// keep 1. Annotates `codexFindings` in place.
+// single refuter is the weakest link for the highest-stakes drops); every
+// other severity keeps 1. Annotates `codexFindings` in place.
 async function refuteCodexFindings(codexFindings, input) {
-  const eligible = codexFindings.filter((f) =>
-    ["critical", "high", "medium"].includes(f.severity),
-  );
+  const eligible = codexFindings;
   log(
     "Codex verify: refuting " +
       eligible.length +
       " of " +
       codexFindings.length +
-      " findings (native critical/high/medium).",
+      " findings (all native severities).",
   );
   const verdictSets = await parallel(
     eligible.map((f) => () => {
@@ -445,7 +511,7 @@ async function refuteCodexFindings(codexFindings, input) {
         Array.from(
           { length: votes },
           (_, v) => () =>
-            agent(buildCodexVerifyPrompt(f), {
+            agent(buildCodexVerifyPrompt(f, input.docsManifest), {
               label:
                 "verify:codex:" +
                 f.file +
@@ -466,12 +532,8 @@ async function refuteCodexFindings(codexFindings, input) {
   // thrown thunk to null per its documented semantics, so a crashed refuter
   // already lands in this null-keeps-the-finding path, same as a clean skip.
   verdictSets.forEach((vs, i) => {
-    const refutes = (vs || []).filter((v) => v && v.refuted);
     const needed = eligible[i].severity === "critical" ? 2 : 1;
-    if (refutes.length >= needed) {
-      eligible[i].refuted = true;
-      eligible[i].refute_reason = refutes.map((v) => v.reason).join(" | ");
-    }
+    applyVerificationVotes(eligible[i], vs, needed);
   });
   await persistResult(
     input.repoRoot || ".",
@@ -514,6 +576,11 @@ function validateCodexTargetFlags(targetFlags) {
 function renderCodexTargetFlags(targetFlags) {
   const m = /^--base (\S+)$/.exec(targetFlags);
   return m ? '--base "' + m[1] + '"' : targetFlags;
+}
+
+// POSIX single-quote arbitrary prompt text passed as one companion focus arg.
+function shellQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\"'\"'") + "'";
 }
 
 async function runCodexTrack(input) {
@@ -592,9 +659,7 @@ async function runCodexTrack(input) {
   if (
     runner.status === "DONE" &&
     runner.outcome === "structured" &&
-    runner.findings.some((f) =>
-      ["critical", "high", "medium"].includes(f.severity),
-    )
+    runner.findings.length > 0
   ) {
     await refuteCodexFindings(runner.findings, input);
     track.verifyRan = true;
@@ -781,6 +846,9 @@ if (!["full", "base", "working-tree"].includes(input.mode)) {
 if (input.dispositions != null && typeof input.dispositions !== "string") {
   throw new Error("args.dispositions must be a string (pre-rendered ledger block) when provided");
 }
+if (input.docsManifest != null && typeof input.docsManifest !== "string") {
+  throw new Error("args.docsManifest must be a string (path-only manifest) when provided");
+}
 
 const reviewers = Array.isArray(input.reviewers) ? input.reviewers : [];
 
@@ -840,7 +908,7 @@ const results = await pipeline(
           Array.from(
             { length: votes },
             (_, v) => () =>
-              agent(buildVerifyPrompt(res.name, f), {
+              agent(buildVerifyPrompt(res.name, f, input.docsManifest), {
                 label:
                   "verify:" +
                   res.name +
@@ -860,12 +928,8 @@ const results = await pipeline(
     // A null verdict (verifier skipped/died) keeps the finding — verification
     // failure must not silently delete a reviewer's finding.
     verdictSets.forEach((vs, i) => {
-      const refutes = (vs || []).filter((v) => v && v.refuted);
       const needed = toVerify[i].severity === "critical" ? 2 : 1;
-      if (refutes.length >= needed) {
-        toVerify[i].refuted = true;
-        toVerify[i].refute_reason = refutes.map((v) => v.reason).join(" | ");
-      }
+      applyVerificationVotes(toVerify[i], vs, needed);
     });
     return res;
   },

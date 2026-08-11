@@ -68,6 +68,14 @@ AWS setup registers `aws/agent-toolkit-for-aws`, installs `aws-core`, `uv`/`uvx`
 
 Claude retains `/focused-code-review` and `/comprehensive-code-review` under `.claude/skills/`. Codex exposes its own `$code-review` router from `.codex/skills/code-review`; this keeps the Codex interface out of Claude Code while avoiding copied reviewer prompts. Claude-owned agents, prompts, and verification assets remain canonical under `.claude/skills/comprehensive-code-review/` and the Codex router references them directly.
 
+Both runtimes use the same intent classification contract. Proven defects remain findings,
+documented intended behavior is refuted, and concrete undocumented intent choices become independent
+Open Questions. Each prompt receives the same prioritized path-only documentation manifest. The
+shared verifier applies user-only `by-design` / `intent-confirmed` rulings, keeps questions out of
+dedup and verdict math, and emits the same report section and disposition commands. Claude also runs
+the external Codex adversarial track and verifies all structured severities; native Codex omits
+recursive self-review but otherwise uses the same vote thresholds and verifier.
+
 Both runtimes write each review to a unique directory:
 
 ```text

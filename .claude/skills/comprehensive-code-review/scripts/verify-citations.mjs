@@ -12,7 +12,7 @@
 // --codex takes raw/codex-adversarial.json; only payload.result.findings
 // (structured outcome) is processed — the degraded rawOutput fallback stays
 // with the orchestrator. --codex-verify takes raw/codex-verify-result.json
-// (refuter annotations from the workflow's in-script Codex-verify stage).
+// (refutation/intent/doc annotations from the workflow's Codex-verify stage).
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -169,15 +169,23 @@ function main() {
           " — adjudication matching skipped",
       );
     } else {
-      dispositions = r.value.dispositions.filter(
-        (d) =>
+      dispositions = r.value.dispositions.filter((d) => {
+        const validShape =
           d &&
           d.status !== "overturned" &&
           Number.isInteger(d.id) &&
           d.fingerprint &&
           typeof d.fingerprint.file === "string" &&
-          typeof d.fingerprint.title === "string",
-      );
+          typeof d.fingerprint.title === "string";
+        if (!validShape) return false;
+        // These two rulings directly answer an intent question. Only an
+        // explicit user decision may activate them; older statuses retain
+        // their existing attribution semantics.
+        if (d.status === "by-design" || d.status === "intent-confirmed") {
+          return d.decidedBy === "user";
+        }
+        return true;
+      });
     }
   }
   // Match = same repo-relative file AND (exact normalized title OR all of
@@ -201,6 +209,7 @@ function main() {
   const verified = [];
   const dropped = [];
   let unmatchedCodexRefutations = 0;
+  let unmatchedCodexAnnotations = 0;
   const perReviewer = {};
   const bump = (name, key) => {
     perReviewer[name] ||= {
@@ -315,7 +324,7 @@ function main() {
       );
     }
     for (const v of (verify && verify.codexFindings) || []) {
-      if (!v.refuted) continue;
+      if (!v.refuted && !v.intent_question && !v.doc_basis) continue;
       // Content (this loop's target) comes from the trusted codex-adversarial
       // payload; only the refute bit is trusted from the LLM-transcribed
       // codex-verify-result. Mark every match (not just the first) so a
@@ -328,9 +337,12 @@ function main() {
           c.title === v.title,
       );
       if (matches.length === 0) {
-        unmatchedCodexRefutations++;
+        if (v.refuted) unmatchedCodexRefutations++;
+        else unmatchedCodexAnnotations++;
         console.error(
-          "verify-citations: codex-verify refutation matched no finding — " +
+          "verify-citations: codex-verify " +
+            (v.refuted ? "refutation" : "annotation") +
+            " matched no finding — " +
             JSON.stringify({
               file: v.file,
               line_start: v.line_start,
@@ -340,8 +352,15 @@ function main() {
         continue;
       }
       for (const match of matches) {
-        match.refuted = true;
-        match.refute_reason = v.refute_reason;
+        if (v.refuted) {
+          match.refuted = true;
+          match.refute_reason = v.refute_reason;
+          delete match.intent_question;
+          delete match.doc_basis;
+        } else {
+          if (v.intent_question) match.intent_question = v.intent_question;
+          if (v.doc_basis) match.doc_basis = v.doc_basis;
+        }
       }
     }
   }
@@ -369,6 +388,8 @@ function main() {
       fix_sketch: c.recommendation,
       confidence: c.confidence,
       kind: "local",
+      ...(c.intent_question ? { intent_question: c.intent_question } : {}),
+      ...(c.doc_basis ? { doc_basis: c.doc_basis } : {}),
     };
     if (c.refuted) {
       drop(Object.assign(f, { refute_reason: c.refute_reason }), "refuted");
@@ -405,23 +426,42 @@ function main() {
   // was already decided in a prior pass — reported separately, never
   // actionable — UNLESS it explicitly challenges that disposition by id.
   const previouslyAdjudicated = [];
-  const actionable = [];
+  const dispositionMatched = [];
   for (const f of verified) {
     const d = matchDisposition(f);
     if (f.challenges_disposition != null) {
       // Challenges stay actionable (they survived their own refutation in the
       // workflow); a challenge that matches nothing is surfaced, not dropped.
       if (!d || d.id !== f.challenges_disposition) f.challenge_unmatched = true;
-      actionable.push(f);
+      dispositionMatched.push(f);
     } else if (d) {
-      previouslyAdjudicated.push(
-        Object.assign({}, f, {
-          disposition_id: d.id,
-          disposition_status: d.status,
-          disposition_reason: d.reason,
-        }),
+      const annotated = Object.assign({}, f, {
+        disposition_id: d.id,
+        disposition_status: d.status,
+        disposition_reason: d.reason,
+      });
+      if (d.status === "intent-confirmed") {
+        delete annotated.intent_question;
+        annotated.intent_confirmed = true;
+        dispositionMatched.push(annotated);
+      } else {
+        previouslyAdjudicated.push(annotated);
+        bump(f.reviewer, "adjudicated");
+      }
+    } else {
+      dispositionMatched.push(f);
+    }
+  }
+
+  // --- Open Question split: intent-dependent entries are independently
+  // reported and never participate in finding deduplication or blocking.
+  const openQuestions = [];
+  const actionable = [];
+  for (const f of dispositionMatched) {
+    if (f.intent_question) {
+      openQuestions.push(
+        Object.assign({}, f, { open_question: true, blocking: false }),
       );
-      bump(f.reviewer, "adjudicated");
     } else {
       actionable.push(f);
     }
@@ -481,6 +521,7 @@ function main() {
       dropped_by_cap: r.dropped_by_cap,
     })),
     findings: deduped,
+    openQuestions,
     previouslyAdjudicated,
     dropped,
     codexPayloadError,
@@ -490,14 +531,16 @@ function main() {
       perReviewer,
       duplicatesMerged,
       unmatchedCodexRefutations,
+      unmatchedCodexAnnotations,
       previouslyAdjudicated: previouslyAdjudicated.length,
+      openQuestions: openQuestions.length,
       blocking,
     },
   };
   mkdirSync(path.dirname(path.resolve(opts.out)), { recursive: true });
   writeFileSync(opts.out, JSON.stringify(output, null, 2));
   console.log(
-    `verified=${deduped.length} adjudicated=${previouslyAdjudicated.length} blocking=${blocking} dropped=${dropped.length} duplicatesMerged=${duplicatesMerged}` +
+    `verified=${deduped.length} openQuestions=${openQuestions.length} adjudicated=${previouslyAdjudicated.length} blocking=${blocking} dropped=${dropped.length} duplicatesMerged=${duplicatesMerged}` +
       (codexPayloadError ? ` codexPayloadError=${JSON.stringify(codexPayloadError)}` : "") +
       (codexVerifyError ? ` codexVerifyError=${JSON.stringify(codexVerifyError)}` : "") +
       (dispositionsError ? ` dispositionsError=${JSON.stringify(dispositionsError)}` : "") +

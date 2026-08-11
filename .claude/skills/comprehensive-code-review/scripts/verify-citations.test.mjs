@@ -566,6 +566,76 @@ test("unmatched codex refutation is surfaced in stats, not silently discarded", 
   assert.equal(out.stats.unmatchedCodexRefutations, 1);
 });
 
+test("Codex intent/doc annotations copy through and unmatched annotations warn separately", (t) => {
+  const codexFinding = {
+    severity: "low",
+    title: "Policy may be intentional",
+    body: "Behavior depends on retry policy",
+    file: "src/a.js",
+    line_start: 2,
+    line_end: 2,
+    confidence: 0.7,
+  };
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [],
+    codex: {
+      target: { mode: "working-tree", explicit: true },
+      result: { verdict: "needs-attention", summary: "s", findings: [codexFinding] },
+    },
+    codexVerify: {
+      codexFindings: [
+        {
+          ...codexFinding,
+          intent_question: "Should retry exhaustion be treated as success here?",
+        },
+        {
+          ...codexFinding,
+          title: "unmatched",
+          doc_basis: "README specifies retries must surface as failures.",
+        },
+      ],
+    },
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.openQuestions.length, 1);
+  assert.equal(out.openQuestions[0].codex_severity, "low");
+  assert.match(out.openQuestions[0].intent_question, /retry exhaustion/);
+  assert.equal(out.openQuestions[0].blocking, false);
+  assert.equal(out.stats.unmatchedCodexRefutations, 0);
+  assert.equal(out.stats.unmatchedCodexAnnotations, 1);
+});
+
+test("Codex refutation takes precedence over intent annotations", (t) => {
+  const c = {
+    severity: "medium",
+    title: "T",
+    body: "B",
+    file: "src/a.js",
+    line_start: 2,
+    line_end: 2,
+    confidence: 0.8,
+  };
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [],
+    codex: { target: { mode: "working-tree" }, result: { findings: [c] } },
+    codexVerify: {
+      codexFindings: [
+        {
+          ...c,
+          refuted: true,
+          refute_reason: "Guard proves the path impossible",
+          intent_question: "Should this path be permitted by policy?",
+        },
+      ],
+    },
+  });
+  assert.equal(out.openQuestions.length, 0);
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.dropped[0].verification, "refuted");
+});
+
 test("Calibration buckets: exclusion/existence drops land in droppedOther, not droppedCitation", (t) => {
   const out = run(t, {
     files: { "src/a.js": SRC },
@@ -750,6 +820,107 @@ test("adjudicated finding does not participate in dedup", (t) => {
   assert.equal(out.findings[0].reviewer, "security");
   assert.equal(out.stats.duplicatesMerged, 0);
   assert.ok(!out.findings[0].also_flagged_by);
+});
+
+test("intent questions route after checks, remain independent, and never block or dedup", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [
+        finding({ title: "plain defect" }),
+        finding({
+          title: "intent A",
+          intent_question: "Should addition intentionally permit string coercion?",
+        }),
+      ]),
+      reviewer("security", [
+        finding({
+          title: "intent B",
+          intent_question: "Must callers guarantee that both operands are numbers?",
+        }),
+      ]),
+    ],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.openQuestions.length, 2);
+  assert.equal(out.stats.openQuestions, 2);
+  assert.equal(out.stats.duplicatesMerged, 0);
+  assert.ok(out.openQuestions.every((q) => q.open_question && !q.blocking));
+  assert.equal(out.stats.blocking, 1);
+});
+
+test("question routing still enforces citation, systemic, and reachability checks", (t) => {
+  const question = "Should this recovery contract intentionally have no exit path?";
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [
+        finding({ title: "good", reachability: "theoretical", intent_question: question }),
+        finding({ title: "bad citation", verbatim: "not in this source", intent_question: question }),
+      ]),
+      reviewer("systemic", [
+        finding({ title: "bad systemic", kind: "systemic", intent_question: question }),
+      ]),
+    ],
+  });
+  assert.equal(out.openQuestions.length, 1);
+  assert.equal(out.openQuestions[0].severity, "minor");
+  assert.equal(out.openQuestions[0].downgraded_from, "important");
+  assert.equal(out.dropped.length, 2);
+});
+
+test("by-design suppresses a question; intent-confirmed restores normal finding policy", (t) => {
+  const q = finding({
+    intent_question: "Should addition intentionally permit string coercion?",
+  });
+  const byDesign = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [q])],
+    dispositions: [dispo({ status: "by-design", decidedBy: "user" })],
+  });
+  assert.equal(byDesign.openQuestions.length, 0);
+  assert.equal(byDesign.previouslyAdjudicated.length, 1);
+  assert.equal(byDesign.previouslyAdjudicated[0].disposition_status, "by-design");
+
+  const confirmed = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [q])],
+    dispositions: [
+      dispo({ status: "intent-confirmed", decidedBy: "user", reason: "Must be numeric" }),
+    ],
+  });
+  assert.equal(confirmed.openQuestions.length, 0);
+  assert.equal(confirmed.findings.length, 1);
+  assert.equal(confirmed.findings[0].intent_confirmed, true);
+  assert.equal(confirmed.findings[0].disposition_status, "intent-confirmed");
+  assert.equal(confirmed.findings[0].blocking, true);
+});
+
+test("intent challenge precedence and invalidly attributed intent rulings are actionable", (t) => {
+  const challenged = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [
+        finding({
+          intent_question: "Should addition intentionally permit string coercion?",
+          challenges_disposition: 1,
+        }),
+      ]),
+    ],
+    dispositions: [dispo({ status: "by-design", decidedBy: "user" })],
+  });
+  assert.equal(challenged.openQuestions.length, 1);
+  assert.equal(challenged.previouslyAdjudicated.length, 0);
+
+  for (const status of ["by-design", "intent-confirmed"]) {
+    const invalid = run(t, {
+      files: { "src/a.js": SRC },
+      reviewers: [reviewer("quality", [finding({ intent_question: "Should this be intentional behavior?" })])],
+      dispositions: [dispo({ status, decidedBy: "report" })],
+    });
+    assert.equal(invalid.openQuestions.length, 1, status);
+    assert.equal(invalid.previouslyAdjudicated.length, 0, status);
+  }
 });
 
 // --- Reachability downgrade + blocking ---

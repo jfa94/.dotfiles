@@ -19,8 +19,10 @@ const VALID_DISPOSITION = new Set([
   "wont-fix",
   "refuted",
   "overturned",
+  "by-design",
+  "intent-confirmed",
 ]);
-const VALID_DECIDED_BY = new Set(["caller", "report"]);
+const VALID_DECIDED_BY = new Set(["caller", "report", "user"]);
 const RUN_ID = /^\d{8}T\d{6}Z-(focused|comprehensive)-[A-Za-z0-9]{6}$/;
 
 const fail = (message) => {
@@ -146,12 +148,20 @@ const disposition = (args) => {
   const status = required(args, "status");
   const reason = required(args, "reason");
   if (!VALID_DISPOSITION.has(status)) {
-    fail("--status must be accepted-risk, wont-fix, refuted, or overturned");
+    fail(
+      "--status must be accepted-risk, wont-fix, refuted, overturned, by-design, or intent-confirmed",
+    );
   }
   if (!normalizeClaim(title)) fail("--title must not be empty");
   const decidedBy = args["decided-by"] || "caller";
   if (!VALID_DECIDED_BY.has(decidedBy)) {
-    fail("--decided-by must be caller or report");
+    fail("--decided-by must be caller, report, or user");
+  }
+  if (
+    (status === "by-design" || status === "intent-confirmed") &&
+    decidedBy !== "user"
+  ) {
+    fail(`--status ${status} requires --decided-by user`);
   }
   try {
     if (!statSync(repoRoot).isDirectory()) fail("--repo-root must be a directory");

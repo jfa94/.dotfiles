@@ -37,6 +37,7 @@ Workflow({
     repoRoot: "<absolute repo root>",
     outDir: ".code-review/runs/<runId>",
     claudeMdPath: "<path to CLAUDE.md or 'not found'>",
+    docsManifest: null | "<path-only prioritized documentation manifest, max 50 + omitted count>",
     spec: null | { path: "<spec path>", content: "<spec file content>" },
     dispositions:
       null | "<pre-rendered 'Previously adjudicated claims' block (SKILL.md Phase 1) — spliced verbatim into every reviewer prompt; never sent to refuters or Codex>",
@@ -95,22 +96,21 @@ reason if its agent failed or was skipped). The `codex` key is the track's termi
 review content itself stays in `codex-adversarial.json` (source of truth, written by the CLI) and
 `codex-verify-result.json` (refuted annotations, written when `verifyRan` is true).
 
-The persist stage is transcription-checked: the script computes the payload's UTF-8 byte count and
-the persist agent must confirm `wc -c` on the written file matches before returning `written=true`
-(a mismatch means the agent altered content while copying — the canonical way findings get silently
-corrupted and then dropped at citation verification). A failed persist (no output, `written` false,
-or byte mismatch) is retried once with a fresh agent before the workflow gives up — persistence is
+The persist stage is transcription-checked: the persist agent parses the read-back and confirms the
+expected entry and nested-finding counts before returning `written=true`. A failed persist (no
+output, `written` false, or count mismatch) is retried once with a fresh agent before the workflow gives up — persistence is
 the run's single point of failure. If both attempts fail, the skill's journal fallback (Phase 6)
 reconstructs the result from the run's `journal.jsonl`; reviewer results echo `name` and refuter
 verdicts echo `file`/`line` to help that reconstruction. This is **best-effort, not deterministic**:
 the journal has no record of an agent's `label`, so pairing a refuter verdict back to its finding
 relies entirely on these schema-optional echoes — if a verdict omits the echo, or two reviewers
 flagged the same file:line (the case the dedup stage exists for), the match is ambiguous. Pair by
-`file`/`line`; on a missing echo or an ambiguous (>1 candidate) match, leave the finding unrefuted
-rather than guess — a mis-paired refutation can then at worst let a refuted finding survive
-(findings are deduped only _after_ refuted ones are dropped), never drop a real one.
+`file`/`line`; on a missing echo or an ambiguous (>1 candidate) match, preserve the finding's original
+classification rather than guess. When pairing is unambiguous, apply the same refutation/intent/doc
+vote table described below, including refutation precedence and the rule against replacing a
+reviewer-authored question.
 
-Five behaviors live inside the workflow, not the skill:
+These behaviors live inside the workflow, not the skill:
 
 - **Adversarial Verify stage**: each critical/important finding is handed to a fresh refuter agent
   that sees only the claim + location (title, severity, file:line, verbatim quote — NOT the
@@ -122,6 +122,10 @@ Five behaviors live inside the workflow, not the skill:
   importants get 1. Refuted findings
   stay in the payload annotated `refuted: true` + `refute_reason` — the skill moves them to Dropped
   Findings (never silently deleted, never resurrected). A verifier that dies/skips keeps the finding.
+  The same vote table classifies intent: criticals require two `intent_question` votes or two
+  `doc_basis` votes; importants require one. Refutation takes precedence. Mixed/missing/malformed
+  votes preserve the reviewer classification, and a reviewer question is never replaced with a
+  refuter's wording.
 - **Diffless reviewers**: `documentation-reviewer` audits current state, not the change; the workflow
   withholds the diff from it (it gets the changed-files list only) to avoid context dilution.
 - **Spec scoping**: `args.spec` (when provided) is included ONLY in implementation-reviewer's prompt —
@@ -136,11 +140,15 @@ Five behaviors live inside the workflow, not the skill:
   guaranteed) runs the adversarial-review CLI per §3, applies the §6 validity/staleness gates and
   structured/degraded routing, and returns the track's terminal state — concurrent with the reviewer
   pipeline (the promise starts before the pipeline is awaited).
-- **Codex-verify stage**: when the runner returns a structured outcome with ≥1 native
-  `critical`/`high`/`medium` finding, the workflow refutes those findings in-script — concurrent with
+- **Documentation manifest**: `args.docsManifest` is spliced into every reviewer and refuter prompt.
+  The codex-runner passes it as the companion's existing focus-text positional argument using POSIX
+  single-quote escaping. Every classification path reads relevant listed documents first.
+- **Codex-verify stage**: when the runner returns a structured outcome with ≥1 finding, the workflow
+  classifies every severity, including low, in-script — concurrent with
   reviewers still in flight. Codex findings carry no `verbatim`, so each refuter Reads `file` around
   `line_start..line_end` instead of starting from a quote; same keep-on-uncertainty bias; native
-  criticals need 2 unanimous refuters, high/medium 1. It annotates `refuted`/`refute_reason` and persists
+  criticals need 2 votes, high/medium/low 1. It annotates `refuted`/`refute_reason`,
+  `intent_question`, and/or `doc_basis` and persists
   `{ "runtime", "profile", "runId", "scopeLabel", "mode", "codexFindings": [ ...all findings, annotated... ] }` to
   `<repoRoot>/<outDir>/raw/codex-verify-result.json` (same persist agent + retry), and sets
   `codex.verifyRan: true` in the consolidated result.
@@ -163,6 +171,8 @@ Five behaviors live inside the workflow, not the skill:
       "title": "<one-line title>",
       "why": "<reasoning>",
       "fix_sketch": "<one sentence, optional>",
+      "intent_question": "<optional concrete undocumented intent choice, min 10 chars>",
+      "doc_basis": "<optional documentation establishing violated expected behavior, min 10 chars>",
       "reachability": "direct | conditional | theoretical (required on critical/important: direct = fails under normal operation; conditional = specific but plausible state; theoretical = improbable operational sequence — important+theoretical is downgraded to minor downstream)",
       "challenges_disposition": "<ledger id, optional — ONLY to challenge a previously-adjudicated claim with NEW evidence>",
       "kind": "local | systemic (systemic-failure-reviewer only)",
@@ -184,17 +194,20 @@ Five behaviors live inside the workflow, not the skill:
 `verbatim` min length (10) and the `severity` enum are enforced by the schema validator, not by a
 downstream parser. There is no STATUS line and no prose verdict block any more.
 
-After validation, the workflow's Verify stage may annotate a finding with two extra fields the
+After validation, the workflow's Verify stage may annotate a finding with these extra fields the
 schema does not declare (they are workflow annotations, not reviewer output):
 
 ```json
 {
   "refuted": true,
-  "refute_reason": "<refuter's counter-evidence, with file:line>"
+  "refute_reason": "<refuter's counter-evidence, with file:line>",
+  "intent_question": "<intent ruling needed>",
+  "doc_basis": "<documented violated expectation>"
 }
 ```
 
-Refuter verdicts themselves (`VERIFY_SCHEMA`) are `{ refuted, reason }` plus optional `file`/`line`
+Refuter verdicts themselves (`VERIFY_SCHEMA`) are `{ refuted, reason, intent_question?, doc_basis? }`
+plus optional `file`/`line`
 echoes of the finding's location — journal-reconstruction aids, ignored by the in-memory pairing.
 
 ## 3. Codex invocation pattern (runs INSIDE the workflow's codex-runner agent)
@@ -238,7 +251,7 @@ node "<skill dir>/scripts/codex-launch.mjs" \
   --json-out <runDir>/raw/codex-adversarial.json \
   --stderr-out <runDir>/raw/codex-adversarial.stderr.log \
   --pid-file <runDir>/raw/codex.pid \
-  -- $CODEX_TARGET
+  -- $CODEX_TARGET '<path-only docs manifest focus text>'
 ```
 
 No `--background`; no `--model` (let the companion auto-default to the best model); no
@@ -298,6 +311,13 @@ Working-tree mode diffs with `git diff HEAD -- . "${EXCLUDES[@]}"` (staged + uns
 (`git ls-files --others --exclude-standard -- . "${EXCLUDES[@]}"`) to `changedFiles`;
 untracked files carry no diff hunks, so note in `reviewInput` that agents must Read them directly.
 Always pass the complete `changedFiles` list in every mode.
+
+Build `docsManifest` separately from the diff manifest. Base/full use tracked files; working-tree
+uses tracked plus untracked, non-ignored files. Reuse `EXCLUDES`, deduplicate paths, then sort into
+four priority groups: applicable `AGENTS.md`/`CLAUDE.md`, `README*.md`, `docs/**`, remaining
+Markdown. Keep 50, append `(<N> more omitted)`, and use `null` when empty. It is path-only and goes
+unchanged to every Claude reviewer/refuter prompt and to the Codex companion focus-text positional
+argument (POSIX single-quoted with embedded `'` rendered as `'"'"'`).
 
 ### Inline mode — diff ≤ 2000 lines
 
@@ -367,6 +387,9 @@ changed-files list only.
 This section is the SPEC for `scripts/verify-citations.mjs` — the skill runs the script (Phase 7)
 and never hand-executes this procedure. The pseudocode below documents what the script does;
 change the script and this spec together.
+
+The complete order is fixed: exclusion → refutation → systemic/citation checks → reachability →
+disposition matching → Open Question split → actionable dedup/blocking.
 
 Source the reviewer findings from `<runDir>/raw/workflow-result.json` (the file the
 workflow wrote), not from the Workflow return value.
@@ -440,11 +463,12 @@ The review schema has **no `verbatim` field** (`additionalProperties:false`), so
 impossible by construction — line-range existence-checking is the verification ceiling. For each
 structured finding: confirm `file` exists AND both `line_start` and `line_end` fall within the file's
 length; on failure move it to Dropped Findings (`codex_file_missing` / `codex_line_out_of_range`).
-Refutation substitutes for the missing quote check: critical/high/medium findings go through the
-workflow's in-script Codex-verify stage (§1) and arrive at the script (via `--codex-verify`) with
-`refuted` annotations that drop them like any refuted reviewer finding. Include surviving findings under
-"Adversarial-Codex" and note they are existence-checked and (critical/high/medium) refuter-verified,
-not quote-verified.
+Refutation/classification substitutes for the missing quote check: every structured severity,
+including low, goes through the workflow's in-script Codex-verify stage (§1) and arrives at the
+script (via `--codex-verify`) with optional `refuted`, `intent_question`, or `doc_basis`
+annotations. Refutation drops as usual; intent-dependent entries become Open Questions. Include
+surviving findings under "Adversarial-Codex" and note they are existence-checked and
+refuter-classified, not quote-verified.
 
 The optional inputs are LLM/CLI-written and must never crash the pass: a missing, empty, or
 invalid-JSON `--codex` file sets `codexPayloadError` in the output (Codex findings empty; the
@@ -452,6 +476,9 @@ orchestrator reports the Codex track BLOCKED with that reason); same for `--code
 `codexVerifyError`, in which case the refutation loop is skipped and Codex findings ship unrefuted
 (the orchestrator adds the mandatory "not adversarially verified" note — never drop a finding
 because verification broke). Both errors also echo on stderr and in the stdout summary line.
+Codex verification entries carrying any refutation, intent, or doc-basis annotation are matched by
+file + line_start + title. Unmatched refutations increment `unmatchedCodexRefutations`; unmatched
+non-refutation annotations increment the separate `unmatchedCodexAnnotations` warning count.
 `--workflow-result` is a required input with its own journal-fallback recovery; the script still
 fails hard on it.
 
@@ -461,12 +488,13 @@ standard scale (`critical→critical`, `high|medium→important`, `low→minor`,
 `codex_severity`), dedups across reviewers (same file AND same `kind` AND (lines ±3 OR identical
 collapsed verbatim); highest severity wins, others in `also_flagged_by`), and emits
 `stats.perReviewer` (verified / refuted / adjudicated / citation-dropped counts) +
-`stats.duplicatesMerged` + `stats.previouslyAdjudicated` + `stats.blocking` for the report's
+`stats.duplicatesMerged` + `stats.openQuestions` + `stats.previouslyAdjudicated` +
+`stats.unmatchedCodexRefutations` + `stats.unmatchedCodexAnnotations` + `stats.blocking` for the report's
 Summary and Calibration lines.
 
 ### Dispositions, reachability downgrade, blocking (anti-ratcheting)
 
-Between the refuted/citation drops and dedup, the script runs three deterministic passes over the
+After excluded/refuted/systemic/citation checks and before dedup, the script runs these deterministic passes over the
 verified findings (change the script and this spec together):
 
 1. **Reachability downgrade** — `severity === "important"` AND `reachability === "theoretical"` →
@@ -476,7 +504,8 @@ verified findings (change the script and this spec together):
    `<repoRoot>/.code-review/dispositions.json` (written by `review-run.mjs disposition`). A missing
    file is a no-op (fresh repo); an unreadable/invalid one sets `dispositionsError` in the output
    and skips matching (fail-open, the `codexPayloadError` pattern). Entries with status
-   `overturned` never match. **Match** = same repo-relative `file` AND (exact normalized title OR
+   `overturned` never match. `by-design` and `intent-confirmed` are effective only when
+   `decidedBy === "user"`; incorrectly attributed entries are ignored. **Match** = same repo-relative `file` AND (exact normalized title OR
    ≥2 fingerprint keywords all present in the normalized title+why), where normalization =
    lowercase, strip non-alphanumerics, collapse whitespace. Codex findings arrive with
    `why = body`, so the same matcher deterministically kills blind Codex re-raises. Matched
@@ -485,8 +514,14 @@ verified findings (change the script and this spec together):
    `findings`, not in `dropped`, excluded from dedup and blocking. **Exception**: a finding with
    `challenges_disposition === <matched id>` stays actionable (it already survived its own
    refutation); a challenge whose id matches nothing (or a different entry) also stays, annotated
-   `challenge_unmatched: true` — surfaced, never silently dropped.
-3. **Blocking computation** (after dedup) — every surviving finding gets
+   `challenge_unmatched: true` — surfaced, never silently dropped. `by-design` routes to
+   `previouslyAdjudicated`. `intent-confirmed` clears `intent_question`, sets
+   `intent_confirmed: true`, attaches disposition id/status/reason, and remains actionable under
+   ordinary dedup/blocking. Challenges retain precedence.
+3. **Open Question split** — any remaining finding with `intent_question` moves independently to
+   `openQuestions[]`, gets `open_question: true` and `blocking: false`, and is excluded from dedup.
+   Questions at the same site are never merged; `duplicatesMerged` retains its old meaning.
+4. **Blocking computation** (after actionable dedup) — every surviving finding gets
    `blocking: severity === "critical" || (severity === "important" && reviewer not in
    NONBLOCKING_REVIEWERS)`, with `NONBLOCKING_REVIEWERS = { test-coverage-reviewer,
    simplification-reviewer, comment-accuracy-reviewer, documentation-reviewer }`. `stats.blocking`

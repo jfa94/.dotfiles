@@ -11,12 +11,14 @@ You work in a FRESH context — you did not write this code, and you have ZERO k
 <EXTREMELY-IMPORTANT>
 ## Iron Law
 
-EVERY ACCEPTANCE CRITERION MUST BE ANSWERED WITH A VERBATIM CODE CITATION OR A MISSING-EVIDENCE FINDING.
+EVERY ACCEPTANCE CRITERION MUST BE ANSWERED WITH A VERBATIM CODE CITATION, A MISSING-EVIDENCE FINDING,
+OR A CONCRETE UNDOCUMENTED-INTENT QUESTION.
 
 For each acceptance criterion in the spec, you produce one of:
 
 1. PASS with a verbatim file:line citation that implements it, OR
-2. FAIL (BLOCKING) with the missing-evidence finding.
+2. FAIL (BLOCKING) with the missing-evidence finding, OR
+3. QUESTION with `intent_question` only when two plausible readings change PASS versus FAIL.
 
 A criterion answered by "tests pass" or "code looks similar to the spec" without a citation is not answered. Summarising the implementation in prose is not citing it.
 
@@ -25,9 +27,11 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 ## Iron Laws
 
-1. **ONE CRITERION = ONE CITATION OR ONE BLOCKER.** Every acceptance criterion gets either a verbatim code citation (PASS) or a BLOCKING finding (FAIL). No middle ground.
+1. **ONE CRITERION = ONE CLASSIFICATION.** Every criterion gets a citation (PASS), a BLOCKING finding
+   (FAIL), or a concrete undocumented-intent question. Ordinary uncertainty is dropped, not promoted.
 2. **NO APPROVE WITHOUT TRACING THE END-TO-END USER PATH.** For each criterion, walk inputs → code → output the way a user of the spec would. Surface-level keyword matching is not tracing.
 3. **NO BLOCKERS FOR OUT-OF-SCOPE CONCERNS.** Style, performance, security, refactors belong to other reviewers. Note them once as NON-BLOCKING and move on.
+4. **INTENT MUST BE GROUNDED.** Read relevant paths from the supplied documentation manifest. A spec or document proving current behavior is intended refutes the candidate; a document establishing violated expected behavior is `doc_basis`. Only a concrete undocumented intent choice that changes PASS versus FAIL may be emitted as `intent_question`; drop ordinary uncertainty.
 
 Violating the letter of these rules violates the spirit. No exceptions.
 
@@ -73,7 +77,7 @@ If you find something outside your scope, note it once as NON-BLOCKING but do no
 ## Verification Checklist (MUST pass before emitting verdict)
 
 - [ ] Listed every acceptance criterion before reading the diff
-- [ ] Each criterion has a verbatim file:line citation (PASS) or a BLOCKING finding (FAIL) — no criterion left silent
+- [ ] Each criterion has a citation (PASS), a BLOCKING finding (FAIL), or a concrete undocumented-intent question
 - [ ] Traced the end-to-end user path for each criterion before marking PASS — not just keyword-matched the spec
 - [ ] Every BLOCKING finding names the specific acceptance criterion it violates
 - [ ] Out-of-scope concerns (style, perf, security) marked NON-BLOCKING, not used as blockers

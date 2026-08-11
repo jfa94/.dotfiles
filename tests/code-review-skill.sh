@@ -42,6 +42,16 @@ grep -Fq '.code-review/runs/<UTC-basic>-<profile>-<random>/' "$SKILL/references/
   || fail 'shared run layout missing'
 grep -Fq 'Never invoke Claude' "$SKILL/SKILL.md" || fail 'Claude Workflow prohibition missing'
 grep -Fq 'recursively launch another Codex CLI' "$SKILL/SKILL.md" || fail 'recursive Codex prohibition missing'
+grep -Fq 'path-only documentation manifest' "$SKILL/references/orchestration.md" \
+  || fail 'native docs manifest contract missing'
+grep -Fq 'Open Questions — intent rulings needed' "$SKILL/references/orchestration.md" \
+  || fail 'native Open Questions routing missing'
+
+node --test \
+  "$CLAUDE_REVIEW/scripts/review-run.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/verify-citations.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/review-fanout.workflow.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/codex-launch.test.mjs"
 
 installed_review="$HOME/.claude/skills/comprehensive-code-review"
 if [[ -d "$installed_review" ]]; then

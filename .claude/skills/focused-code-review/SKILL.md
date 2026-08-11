@@ -180,12 +180,20 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 
 Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{security-reviewer,quality-reviewer,simplification-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
 
+**Documentation manifest → `docsManifest`.** Build a path-only, newline-joined manifest after the
+empty guard. Base mode uses tracked files; working-tree mode uses tracked plus untracked,
+non-ignored files. Reuse `EXCLUDES`, deduplicate, then prioritize applicable `AGENTS.md`/`CLAUDE.md`,
+`README*.md`, `docs/**`, and remaining Markdown. Cap at 50 and append `(<N> more omitted)`; use
+`null` when empty. Pass it to every reviewer, refuter, Codex verifier, and external Codex focus-text
+argument. Reviewers must read relevant listed docs before classifying intent.
+
 **Disposition ledger → DISPOSITIONS_BLOCK.** If `<repoRoot>/.code-review/dispositions.json`
 exists, render `DISPOSITIONS_BLOCK` for the reviewer prompts (else set it to `null`):
 
 - Include ONLY entries whose `fingerprint.file` is in `changedFiles` (diff-scoped injection —
   the block can never outgrow the diff's relevance) AND whose file still exists; skip status
   `overturned`.
+- Ignore `by-design` and `intent-confirmed` unless `decidedBy === "user"`.
 - Cap at the 20 most recent (by `decidedAt`); one line each:
   `#<id> [<status>] <file> — "<title>" — <reason>`
 - Prefix with this header, verbatim:
@@ -203,7 +211,7 @@ append `!.code-review/dispositions.json` to `.gitignore` (one line, once) — th
 committed; run artifacts stay ignored.
 
 Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`,
-`claudeMdPath`, `dispositions` (the rendered block, or null), `passNumber`.
+`claudeMdPath`, `docsManifest`, `dispositions` (the rendered block, or null), `passNumber`.
 
 ## Phase 2 — Resolve Codex
 
@@ -257,6 +265,7 @@ Workflow({
   scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
   args: { runtime: "claude", profile: "focused", runId, scopeLabel, mode,
           reviewInput, changedFiles, repoRoot, claudeMdPath, outDir: runDir, reviewers,
+          docsManifest,
           dispositions: <the Phase 1 DISPOSITIONS_BLOCK, or null>,
           codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
 })
@@ -285,7 +294,10 @@ directory; `<transcript dir>/journal.jsonl` records every agent's structured ret
 `file`/`line` — rebuild
 `{ runtime: "claude", profile: "focused", runId, scopeLabel, mode, reviewers: [...] }`
 (criticals count as refuted only when
-BOTH of their two verdicts refute; importants on one). This pairing is **best-effort, not
+BOTH of their two verdicts refute; importants on one). Apply the same thresholds to intent:
+two critical `intent_question` votes create a question and two `doc_basis` votes clear a reviewer
+question; important needs one. Refutation takes precedence; mixed/missing/malformed votes preserve
+the original classification, and never replace a reviewer question with refuter wording. This pairing is **best-effort, not
 deterministic** — the journal has no record of an agent's `label`, only the schema-optional
 `file`/`line` echo, so if a verdict omits it or matches more than one finding, leave that finding
 unrefuted rather than guess (mis-pairing can then at worst let a refuted finding survive, never drop
@@ -313,7 +325,7 @@ refutation pass in-script, so there is nothing to launch or poll here:
   note** in both the Reviewers table Verdict cell (suffix `(degraded — narrative fallback)`) and the
   Codex section ("structured output unavailable — findings recovered from narrative fallback; degraded,
   not schema-validated").
-- `codex.verifyRan === true` → the workflow refuted the critical/high/medium Codex findings and
+- `codex.verifyRan === true` → the workflow classified every structured Codex finding, including low, and
   persisted `<runDir>/raw/codex-verify-result.json`. Read it, apply the same five-field staleness
   guard as above; findings annotated `refuted: true` go to Dropped
   Findings (`refuted`, with `refute_reason`) — never resurrect them. If the file is missing/stale
@@ -358,14 +370,16 @@ The script implements the full §6 procedure: EXCLUDES drop (incl. the Codex bac
 the systemic gate, the line±2 / grep-rescue citation check (`ok` / `relocated_ok`), outside-diff
 tagging, Codex existence checks + native→standard severity mapping, cross-reviewer dedup, the
 reachability downgrade (important+theoretical → minor), the adjudication split against the
-disposition ledger, and per-finding `blocking`.
+disposition ledger, the independent Open Question split, and per-finding `blocking`.
 
 Read `verified-findings.json`: `findings` (verified, post-dedup, each with `blocking`),
+`openQuestions` (independent intent rulings needed; never deduped and always non-blocking),
 `previouslyAdjudicated` (ledger-matched — render in the Previously Adjudicated section, exclude
 from verdict/Themes/fix scope), `dropped` (with per-finding
 `verification` reasons), `reviewers` (status pass-through), and `stats` (`perReviewer` +
-`duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations` (Phase 7
-warning) + `previouslyAdjudicated` + `blocking`, which drives the Summary verdict).
+`duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations` and
+`unmatchedCodexAnnotations` warnings + `openQuestions` + `previouslyAdjudicated` + `blocking`, which
+drives the Summary verdict).
 
 ## Phase 7 — Group, Sort, Emit
 
@@ -380,6 +394,7 @@ warning) + `previouslyAdjudicated` + `blocking`, which drives the Summary verdic
    `comprehensive-code-review/references/report-format.md`. The **Summary verdict is deterministic**:
    NEEDS-CHANGES iff `stats.blocking > 0`; INCOMPLETE on any BLOCKED track; else SHIP —
    reviewer prose verdicts never gate. Render the **Fix-Scope Contract** section verbatim, the
+   **Open Questions — intent rulings needed** section from `openQuestions` immediately after it,
    **Previously Adjudicated** section (from `previouslyAdjudicated`; omit when empty), the
    `Previously adjudicated: <n>` Summary line, and — when `passNumber ≥ 3` AND NEEDS-CHANGES —
    the **STOP-LOOPING** recommendation. Findings with `challenges_disposition` render in their
@@ -387,7 +402,9 @@ warning) + `previouslyAdjudicated` + `blocking`, which drives the Summary verdic
    build-output patterns and note this is a **focused review (5 reviewers + Codex)**, not the comprehensive
    one. The raw JSON files under `<runDir>/raw/` are the machine record — do NOT render
    per-reviewer or Codex `.md` files.
-4. **Ledger write-back (Iron Law 5).** For every dropped finding with
+4. Never auto-write an Open Question to the disposition ledger. Only the user may run one of the
+   paired `by-design` / `intent-confirmed` commands rendered in the report.
+5. **Ledger write-back (Iron Law 5).** For every dropped finding with
    `verification: "refuted"` and severity critical/important, append it to the disposition
    ledger so no later pass re-litigates it:
 
@@ -399,7 +416,7 @@ warning) + `previouslyAdjudicated` + `blocking`, which drives the Summary verdic
 
    (Upsert semantics: re-refuting the same claim updates the existing entry, no duplicates.
    Apply the Phase 1 `.gitignore` negation on first creation.)
-5. Print the summary:
+6. Print the summary:
 
    ```
    ## Focused Code Review complete
@@ -407,12 +424,14 @@ warning) + `previouslyAdjudicated` + `blocking`, which drives the Summary verdic
    Report: <runDir>/report.md
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged; <n> blocking)
+   Open questions: <n> intent rulings needed                           # only when > 0
    Previously adjudicated: <n> suppressed via the disposition ledger   # only when > 0
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
    Calibration: <reviewer> <n> refuted, <n> citation-dropped; …        # from stats.perReviewer; only reviewers with non-zero counts; omit line if all zero
    Recommendation: STOP-LOOPING                                        # only when passNumber >= 3 and verdict is NEEDS-CHANGES
    ⚠ Codex verify mismatch: <n> refutation(s) matched no finding — possible false-positive in report   # only when stats.unmatchedCodexRefutations > 0
+   ⚠ Codex annotation mismatch: <n> intent/doc annotation(s) matched no finding   # only when stats.unmatchedCodexAnnotations > 0
    ```
 
 ## Phase 8 — STATUS line

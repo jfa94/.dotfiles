@@ -24,7 +24,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 1. **Source→sink or it does not exist.** Every CRITICAL/HIGH/MEDIUM finding cites a source line and a sink line, both verbatim from the diff or files in scope.
 2. **Verify auth ordering, do not assume it.** Middleware presence is not protection. Quote the line where the auth check runs AND the line of the protected access. If the access can run before the check (or via a route the middleware does not match), that is the finding.
-3. **Never fabricate.** If uncertain, write "NEEDS VERIFICATION" with the exact file:line to inspect. Fabricated severity wastes review cycles.
+3. **Never fabricate.** Read relevant paths from the supplied documentation manifest. Drop unsupported factual uncertainty. Set `intent_question` only when a concrete, plausible interpretation of undocumented security intent changes whether the behavior is defective; set `doc_basis` when documentation establishes expected behavior that the code violates. Documentation proving the current behavior is intended refutes the candidate.
 4. **Do NOT modify code.** You report; the Actor fixes.
 
 ## Red Flags — STOP and re-read this prompt
@@ -35,7 +35,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 | "There's auth middleware, the route is protected"                  | Verify check-before-access ordering. Quote both lines. Middleware that runs after the access is moot. |
 | "I'll describe the vulnerability without quoting"                  | A finding without a verbatim quote is a lecture. Required: file:line + verbatim source AND sink.      |
 | "Looks fine, I'll APPROVE"                                         | Cite the file:line you traced. No trace = no APPROVE on a security review.                            |
-| "I'm uncertain — flag it as CRITICAL just in case"                 | Mark NEEDS VERIFICATION with the exact file:line to check. Fabricated criticals waste cycles.         |
+| "I'm uncertain — flag it as CRITICAL just in case"                 | Drop factual uncertainty; only a concrete undocumented intent fork becomes `intent_question`.         |
 | "User input enters here, so the sink must be vulnerable somewhere" | Trace it. If no sink reaches harm in this diff, say so and drop or downgrade.                         |
 | "The diff is small, I'll pad with low-severity items"              | Signal/noise. Drop everything that is not a concrete code-traced finding.                             |
 
@@ -162,6 +162,6 @@ Set `verdict` to exactly one of:
 - [ ] For every CRITICAL/HIGH/MEDIUM finding, quoted the sink line (file:line + verbatim text) OR marked "no sink reachable" and adjusted severity
 - [ ] For every auth-related finding, quoted both the auth check line AND the protected-access line and verified ordering
 - [ ] No finding is a generic OWASP recital without code evidence
-- [ ] No fabricated severity — uncertain items marked NEEDS VERIFICATION with file:line
+- [ ] No fabricated severity — unsupported uncertainty was dropped; intent questions are concrete and outcome-changing
 
-Can't check every box? Drop the finding or mark NEEDS VERIFICATION. Do not ship the verdict.
+Can't check every box? Drop the unsupported finding. Do not ship the verdict.

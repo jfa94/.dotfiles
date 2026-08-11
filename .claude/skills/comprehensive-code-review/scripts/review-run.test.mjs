@@ -181,6 +181,50 @@ test("disposition upserts on same file + normalized title, appends on new title"
   assert.equal(readLedger(root).dispositions.length, 2);
 });
 
+test("intent rulings require user attribution and paired commands upsert one claim", (t) => {
+  const root = fixture(t);
+  for (const status of ["by-design", "intent-confirmed"]) {
+    const rejected = spawnSync(process.execPath, [
+      script,
+      "disposition",
+      "--repo-root",
+      root,
+      "--file",
+      "src/upload.ts",
+      "--title",
+      "Ambiguous retry policy",
+      "--status",
+      status,
+      "--reason",
+      "intent ruling",
+      "--decided-by",
+      "caller",
+    ]);
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr.toString(), /requires --decided-by user/);
+  }
+
+  dispositionCmd(root, {
+    title: "Ambiguous retry policy",
+    status: "by-design",
+    reason: "Current behavior is intended",
+    "decided-by": "user",
+    keywords: "retry,policy",
+  });
+  dispositionCmd(root, {
+    title: "Ambiguous retry policy",
+    status: "intent-confirmed",
+    reason: "Expected behavior is confirmed",
+    "decided-by": "user",
+    keywords: "retry,policy",
+  });
+  const ledger = readLedger(root);
+  assert.equal(ledger.version, 1);
+  assert.equal(ledger.dispositions.length, 1);
+  assert.equal(ledger.dispositions[0].status, "intent-confirmed");
+  assert.equal(ledger.dispositions[0].decidedBy, "user");
+});
+
 test("disposition rejects bad status, empty title, file outside repo, corrupt ledger", (t) => {
   const root = fixture(t);
   const attempt = (over) =>

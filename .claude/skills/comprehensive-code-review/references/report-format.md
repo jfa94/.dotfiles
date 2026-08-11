@@ -11,7 +11,7 @@
     ├── codex-adversarial.json       # Codex structured machine output (source of truth)
     ├── codex-verify-result.json     # Codex refutation pass output (when Phase 6.5 ran)
     ├── changed-files.txt            # input to verify-citations.mjs
-    └── verified-findings.json       # verify-citations.mjs output (findings/previouslyAdjudicated/dropped/stats)
+    └── verified-findings.json       # verifier output (findings/openQuestions/previouslyAdjudicated/dropped/stats)
 
 <repoRoot>/.code-review/dispositions.json   # cross-run adjudication ledger (committed to git;
                                             # written by review-run.mjs disposition, read via --dispositions)
@@ -77,6 +77,9 @@ downgraded to minor upstream). SHIP: none of the above. Reviewer prose verdicts
 - important: <n>
 - minor: <n>
 
+**Open questions: <n>** _(intent rulings needed; excluded from finding totals, verdict, categories,
+Themes, fix scope, blocking, and convergence. Omit when 0.)_
+
 **Previously adjudicated: <n>** _(matched the disposition ledger; excluded from the verdict — see
 Previously Adjudicated below. Omit this line when 0.)_
 
@@ -105,7 +108,7 @@ By category:
 _(≤3 bullets; only when ≥2 verified findings share a root cause — name the root cause and list the
 finding titles it explains. Omit the section when no shared root cause exists. Themes may cite only
 findings present in the report body: refuted or previously-adjudicated findings and their residuals
-never seed or support a theme — Iron Law 5.)_
+never seed or support a theme, and Open Questions never seed a theme — Iron Law 5.)_
 
 ## Fix-Scope Contract
 
@@ -121,11 +124,37 @@ _(rendered verbatim into every report — binds any fixer or loop-caller acting 
 
 ---
 
+## Open Questions — intent rulings needed
+
+_(Render immediately after Fix-Scope Contract and omit when empty. Keep every `openQuestions[]`
+entry independent, even when multiple entries share a file and line. Never deduplicate, include in
+fix scope, or auto-write one to the ledger.)_
+
+### [critical|important|minor] `file:line` — <title>
+
+- **Question**: <intent_question>
+- **Reviewer**: <reviewer>
+- **Quote**: `<verbatim; for Codex use “n/a — existence-checked”>`
+- **Rationale**: <why/body>
+- **Documentation basis**: <doc_basis; omit when absent>
+- **Record as by design**:
+  `node '<review-run.mjs path>' disposition --repo-root '<repoRoot>' --file '<file>' --title '<title>' --status by-design --reason 'User confirmed current behavior is by design' --decided-by user --keywords '<same comma-separated keywords>'`
+- **Confirm intended requirement**:
+  `node '<review-run.mjs path>' disposition --repo-root '<repoRoot>' --file '<file>' --title '<title>' --status intent-confirmed --reason 'User confirmed the intended requirement; treat this as a normal finding' --decided-by user --keywords '<same comma-separated keywords>'`
+
+Every dynamic argument is POSIX single-quoted; render an embedded `'` as `'"'"'`. The two commands
+must use identical file, title, and 2–5 stable normalized keywords so either command upserts the same
+version-1 ledger entry.
+
+---
+
 ## Findings by Category
 
 _(sorted severity DESC, then file ASC within each category. Findings tagged `outside_diff` — verified
 but citing a file not in the changed-files list (diff modes only) — get the title suffix
-"(outside diff)" so pre-existing issues are distinguishable from findings on the change.)_
+"(outside diff)" so pre-existing issues are distinguishable from findings on the change. In every
+category, render `doc_basis` as a **Documentation basis** evidence bullet and render
+`intent_confirmed` as a **Disposition** tag with id/status/reason.)_
 
 ### Architecture
 
@@ -134,6 +163,8 @@ but citing a file not in the changed-files list (diff modes only) — get the ti
 - **Reviewer**: architecture
 - **Quote**: `<verbatim ≥10 chars>`
 - **Why**: <reasoning from reviewer output>
+- **Documentation basis**: <doc_basis; omit when absent>
+- **Disposition**: `#<id> intent-confirmed — <reason>` _(only when `intent_confirmed: true`)_
 - **Fix sketch**: <one sentence>
 - **Also flagged by**: <other reviewers, only when the finding was deduped across reviewers — omit otherwise>
 
@@ -200,8 +231,8 @@ _(only present if --spec provided)_
 
 ### Adversarial-Codex
 
-_(only present if Codex ran. Codex findings are existence-checked and — for native
-critical/high/medium — refuter-verified via the workflow's in-script Codex-verify stage, but not
+_(only present if Codex ran. Codex findings are existence-checked and every structured severity,
+including low, is refuter-classified via the workflow's in-script Codex-verify stage, but not
 quote-verified: the review schema has no `verbatim` field. They carry their native severity +
 confidence. Refuted Codex findings appear in Dropped Findings like any refuted reviewer finding.
 When Codex is DONE via the degraded narrative fallback (structured output unavailable), the
@@ -308,6 +339,13 @@ the 4→3 collapse loses no signal.
   "title": "<one-line title>",
   "why": "<reasoning>",
   "fix_sketch": "<one sentence>",
+  "intent_question": "<concrete undocumented intent choice; Open Questions only>",
+  "open_question": "<true; Open Questions only>",
+  "doc_basis": "<documentation establishing violated expected behavior>",
+  "intent_confirmed": "<true; user confirmed the intended requirement>",
+  "disposition_id": "<ledger id; intent-confirmed findings and adjudicated entries>",
+  "disposition_status": "<ledger status>",
+  "disposition_reason": "<ledger reason>",
   "confidence": "<0-1; Codex findings only>",
   "codex_severity": "<critical|high|medium|low; Codex findings only, native level pre-mapping>",
   "also_flagged_by": [
@@ -328,7 +366,7 @@ the 4→3 collapse loses no signal.
 in the file (line-number drift); the finding is kept with the corrected line.
 
 Entries in `verified-findings.json`'s `previouslyAdjudicated[]` array are the same finding shape
-plus `disposition_id`, `disposition_status` (`accepted-risk|wont-fix|refuted`), and
+plus `disposition_id`, `disposition_status` (`accepted-risk|wont-fix|refuted|by-design`), and
 `disposition_reason` — they render only in the Previously Adjudicated section, never in Findings
 by Category.
 

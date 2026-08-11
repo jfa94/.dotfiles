@@ -29,6 +29,17 @@ review tracks succeed.
 
 Collect installed static-analysis seeds only; never install tooling or author configuration. Store capped output under `raw/seeds/` and give reviewers paths, not duplicated raw output.
 
+Build one path-only documentation manifest for every prompt. Base/full use tracked files; working
+tree uses tracked plus untracked, non-ignored files. Reuse the exclusions above, deduplicate, and
+prioritize applicable `AGENTS.md`/`CLAUDE.md`, `README*.md`, `docs/**`, then remaining Markdown.
+Cap at 50 and include `(<N> more omitted)`; use `null` when empty. Every reviewer and refuter must
+read relevant listed documents before classifying intent.
+
+Read `.code-review/dispositions.json` when present and render the same diff-scoped, 20-entry ledger
+block as the Claude skills. Ignore overturned entries and ignore `by-design` / `intent-confirmed`
+unless `decidedBy === "user"`. Pass the block to reviewers, but not refuters. A corrupt ledger is a
+visible warning and matching fails open.
+
 ## 2. Create an isolated run
 
 Before writing any diff, seed, or result, call the canonical initializer:
@@ -64,6 +75,7 @@ Spawn fresh reviewers with `fork_turns="none"` in batches no larger than the cur
 - the full charter body;
 - repo root and applicable instruction-file paths;
 - profile, scope label, changed-files list, and review input/manifest;
+- the path-only documentation manifest and rendered disposition ledger;
 - spec path and content only for implementation-reviewer;
 - the compatibility note: Read means read-only file access, Grep means `rg`, Glob means `rg --files`, and Bash means non-mutating shell diagnostics;
 - the canonical JSON contract below.
@@ -87,7 +99,9 @@ Require one JSON object and no markdown fence:
       "verbatim": "exact quote of at least 10 characters",
       "title": "concise title",
       "why": "evidence and execution trace",
-      "fix_sketch": "optional"
+      "fix_sketch": "optional",
+      "intent_question": "optional concrete undocumented intent choice (>=10 chars)",
+      "doc_basis": "optional documented expectation the code violates (>=10 chars)"
     }
   ]
 }
@@ -104,10 +118,17 @@ After reviewer collection, refute every important finding with one fresh agent a
 Each refuter sees the claim, severity, location, quote, and systemic anchors/scenario when applicable, but not the reviewer's reasoning chain. Require JSON:
 
 ```json
-{"refuted":false,"reason":"what was checked with file:line evidence","file":"path","line":1}
+{"refuted":false,"reason":"what was checked with file:line evidence","file":"path","line":1,"intent_question":"optional","doc_basis":"optional"}
 ```
 
 Set `refuted=true` only for concrete counter-evidence. Uncertainty keeps the finding. Drop an important on one refutation; drop a critical only when both independent refuters agree. Missing, malformed, or failed refuters keep the finding and add a verification warning.
+
+Apply the same vote table to intent. For an ordinary critical finding, two intent votes create an
+Open Question; for important, one does. Two critical doc-confirmed votes (one for important) clear a
+reviewer question and attach `doc_basis`. Refutation takes precedence. Mixed, missing, or malformed
+votes preserve the original classification, and a reviewer-set question is never replaced with a
+refuter's differently worded question. Reviewer minor findings get no refuter; preserve their
+classification after the reviewer has consulted docs.
 
 ## 5. Persist and verify
 
@@ -117,7 +138,10 @@ After every artifact write, read it back. JSON artifacts must parse, match the c
 and contain the expected reviewer/finding counts; rewrite once on mismatch, then mark the run
 `ABORTED` rather than silently degrading.
 
-Write `raw/changed-files.txt`, then run the canonical `verify-citations.mjs` with the workflow result, mode, changed-files list, repo root, and `raw/verified-findings.json` output. Do not pass Codex adversarial files: a native run intentionally omits recursive Codex self-review. If the verifier errors, fix the invocation and rerun; never downgrade to hand verification.
+Write `raw/changed-files.txt`, then run the canonical `verify-citations.mjs` with the workflow result,
+mode, changed-files list, repo root, disposition ledger path, and `raw/verified-findings.json` output.
+Do not pass Codex adversarial files: a native run intentionally omits recursive Codex self-review. If
+the verifier errors, fix the invocation and rerun; never downgrade to hand verification.
 
 Read verified findings, dropped findings, reviewer status, and statistics. Use the canonical report-format categories and severity mapping, with these native differences:
 
@@ -125,6 +149,12 @@ Read verified findings, dropped findings, reviewer status, and statistics. Use t
 - omit the `codex-adversarial` reviewer row and Adversarial-Codex category;
 - state `Runtime: Codex native` and that recursive self-review was intentionally omitted;
 - point Raw Outputs to this run's `raw/` directory.
+
+Also harvest `openQuestions` and `previouslyAdjudicated`. Questions are independent, never deduped,
+always non-blocking, and excluded from verdicts, totals, categories, Themes, fix scope, and
+convergence. Render the canonical “Open Questions — intent rulings needed” section with both
+ready-to-paste user disposition commands; never auto-write a question to the ledger. Render
+`intent-confirmed` findings normally with their disposition tag and render `doc_basis` as evidence.
 
 Write the only human render to `report.md`, then transition the run once:
 
