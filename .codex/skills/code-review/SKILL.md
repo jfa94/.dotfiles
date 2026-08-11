@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Run native Codex code reviews using the canonical Claude specialist prompts without copying them. Use for focused diff reviews, comprehensive whole-codebase reviews, base-ref reviews, or implementation-vs-spec reviews. Supports focused with an optional base ref and comprehensive with optional base, full, and spec arguments; defaults to focused, while full or spec implies comprehensive.
+description: Run native Codex code reviews using the canonical Claude specialist prompts without copying them. Use for focused diff reviews, comprehensive whole-codebase reviews, base-ref reviews, implementation-vs-spec reviews, or reviews with an explicit change-context file. Supports focused with optional base/context and comprehensive with optional base/full/spec/context; defaults to focused, while full or spec implies comprehensive.
 ---
 
 # Native Code Review
@@ -11,13 +11,13 @@ Run the review in Codex with collaboration subagents. Never invoke Claude's Work
 
 1. Read [references/orchestration.md](references/orchestration.md) completely.
 2. Expand `~` to the current user's home directory for every canonical Claude resource below.
-3. Select the profile, then read every selected reviewer charter completely from the paths below. The charters remain canonical; never copy or rewrite them into this skill.
+3. Read `~/.claude/skills/comprehensive-code-review/references/reviewer-profiles.json`, select the profile from that canonical manifest, then read every selected reviewer charter completely. The charters remain canonical; never copy or rewrite them into this skill.
 
 Focused always selects:
 
 - `~/.claude/skills/comprehensive-code-review/agents/security-reviewer.md`
 - `~/.claude/skills/comprehensive-code-review/agents/quality-reviewer.md`
-- `~/.claude/skills/comprehensive-code-review/agents/test-coverage-reviewer.md`
+- `~/.claude/skills/comprehensive-code-review/agents/simplification-reviewer.md`
 - `~/.claude/skills/comprehensive-code-review/agents/silent-failure-hunter.md`
 - `~/.claude/skills/comprehensive-code-review/agents/systemic-failure-reviewer.md`
 
@@ -40,17 +40,18 @@ Also resolve and reuse these canonical resources:
 - `~/.claude/skills/comprehensive-code-review/scripts/verify-citations.mjs`
 - `~/.claude/skills/comprehensive-code-review/scripts/review-run.mjs`
 - `~/.claude/skills/comprehensive-code-review/references/report-format.md`
+- `~/.claude/skills/comprehensive-code-review/references/reviewer-profiles.json`
 
 Fail loudly if any selected charter or required resource is missing or unreadable.
 
 ## Profile rules
 
 - No profile and no `--full`/`--spec`: focused.
-- `focused [--base <ref>]`: focused diff review.
-- `comprehensive [--base <ref>] [--full] [--spec <path>]`: comprehensive review.
+- `focused [--base <ref>] [--context <path>]`: focused diff review.
+- `comprehensive [--base <ref>] [--full] [--spec <path>] [--context <path>]`: comprehensive review.
 - `--full` or `--spec` without a profile: comprehensive.
 - Reject `--full` or `--spec` with an explicit focused profile; do not silently ignore it.
-- Reject unknown flags and unsafe or unresolved base refs before launching reviewers.
+- Reject unknown flags, unsafe or unresolved base refs, and context files outside the repository or matching protected/secret paths before launching reviewers.
 
 ## Completion contract
 
@@ -61,3 +62,4 @@ Do not report completion until:
 - deterministic citation verification and deduplication completed;
 - `run.json`, raw machine artifacts, and `report.md` exist in the unique run directory; and
 - the absolute last response line is `STATUS: DONE` or `STATUS: DONE_WITH_CONCERNS — <reason>`.
+  Use concerns when the overall result is NEEDS-DECISION even though every track completed.

@@ -58,6 +58,23 @@ const collapseWs = (s) => String(s).replace(/\s+/g, " ").trim();
 const normalizeClaim = (s) =>
   collapseWs(String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, " "));
 
+const readLedger = (repoRoot) => {
+  const ledgerPath = path.join(repoRoot, ".code-review", "dispositions.json");
+  if (!existsSync(ledgerPath)) {
+    return { ledgerPath, ledger: { version: 1, dispositions: [] } };
+  }
+  let ledger;
+  try {
+    ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
+  } catch (error) {
+    fail(`cannot read dispositions.json: ${error.message}`);
+  }
+  if (!Array.isArray(ledger.dispositions)) {
+    fail("dispositions.json malformed: no dispositions array");
+  }
+  return { ledgerPath, ledger };
+};
+
 const writeJson = (filePath, value) => {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, {
     encoding: "utf8",
@@ -158,7 +175,9 @@ const disposition = (args) => {
     fail("--decided-by must be caller, report, or user");
   }
   if (
-    (status === "by-design" || status === "intent-confirmed") &&
+    (status === "accepted-risk" ||
+      status === "by-design" ||
+      status === "intent-confirmed") &&
     decidedBy !== "user"
   ) {
     fail(`--status ${status} requires --decided-by user`);
@@ -173,19 +192,8 @@ const disposition = (args) => {
     fail("--file must be a path inside --repo-root");
   }
 
-  const ledgerPath = path.join(repoRoot, ".code-review", "dispositions.json");
-  let ledger = { version: 1, dispositions: [] };
-  if (existsSync(ledgerPath)) {
-    // A corrupt ledger must never be silently clobbered — fail loudly.
-    try {
-      ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
-    } catch (error) {
-      fail(`cannot read dispositions.json: ${error.message}`);
-    }
-    if (!Array.isArray(ledger.dispositions)) {
-      fail("dispositions.json malformed: no dispositions array");
-    }
-  }
+  // A corrupt ledger must never be silently clobbered — fail loudly.
+  const { ledgerPath, ledger } = readLedger(repoRoot);
 
   const keywords = (args.keywords || "")
     .split(",")
@@ -228,9 +236,83 @@ const disposition = (args) => {
   process.stdout.write(`${JSON.stringify({ ...entry, ledgerPath })}\n`);
 };
 
+const renderDispositions = (args) => {
+  const repoRoot = path.resolve(required(args, "repo-root"));
+  const full = args.full === "true";
+  let changedFiles = null;
+  if (!full) {
+    const changedPath = path.resolve(required(args, "changed-files"));
+    try {
+      changedFiles = new Set(
+        readFileSync(changedPath, "utf8")
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean),
+      );
+    } catch (error) {
+      fail(`cannot read --changed-files: ${error.message}`);
+    }
+  }
+
+  const { ledger } = readLedger(repoRoot);
+  const eligible = ledger.dispositions
+    .filter((entry) => {
+      const file = entry?.fingerprint?.file;
+      if (!file || entry.status === "overturned") return false;
+      if (!existsSync(path.join(repoRoot, file))) return false;
+      if (!full && !changedFiles.has(file)) return false;
+      if (
+        ["accepted-risk", "by-design", "intent-confirmed"].includes(
+          entry.status,
+        ) &&
+        entry.decidedBy !== "user"
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => String(b.decidedAt || "").localeCompare(String(a.decidedAt || "")))
+    .slice(0, 20);
+
+  const renderLines = (entries) =>
+    entries.map(
+      (entry) =>
+        `#${entry.id} [${entry.status}] ${entry.fingerprint.file} — "${collapseWs(entry.fingerprint.title)}" — ${collapseWs(entry.reason)}`,
+    );
+  const suppressed = eligible.filter((entry) => entry.status !== "intent-confirmed");
+  const confirmed = eligible.filter((entry) => entry.status === "intent-confirmed");
+  const suppressedBlock = suppressed.length
+    ? [
+        "## Previously adjudicated claims (input document — NOT shared belief-state)",
+        "The claims below are suppressed downstream. Re-file one ONLY with NEW evidence that",
+        "the disposition is wrong; set challenges_disposition to its id and cite that evidence.",
+        "This list says nothing about the rest of the code — review everything else freshly.",
+        ...renderLines(suppressed),
+      ].join("\n")
+    : null;
+  const confirmedBlock = confirmed.length
+    ? [
+        "## User-confirmed requirements (input document — NOT shared belief-state)",
+        "The user confirmed that each claim below describes required behavior. Re-evaluate and",
+        "report a matching unfixed defect normally; do NOT set challenges_disposition merely",
+        "because it appears here. The verifier will attach the confirmed disposition downstream.",
+        ...renderLines(confirmed),
+      ].join("\n")
+    : null;
+  process.stdout.write(
+    `${JSON.stringify({
+      suppressedBlock,
+      confirmedBlock,
+      reviewerBlock: [suppressedBlock, confirmedBlock].filter(Boolean).join("\n\n") || null,
+      renderedCount: eligible.length,
+    })}\n`,
+  );
+};
+
 const [command, ...rest] = process.argv.slice(2);
 const args = parseArgs(rest);
 if (command === "init") init(args);
 else if (command === "finish") finish(args);
 else if (command === "disposition") disposition(args);
-else fail("command must be init, finish, or disposition");
+else if (command === "render-dispositions") renderDispositions(args);
+else fail("command must be init, finish, disposition, or render-dispositions");

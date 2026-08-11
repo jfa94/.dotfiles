@@ -27,7 +27,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 1. **Every finding quotes the code.** Verbatim quote (>= 10 chars from the code) or drop the finding. Findings without a quote are dropped before emission.
 2. **Never rubber-stamp.** If changes look correct, explain WHY — cite the files you read and execution paths you traced. "Looks good" with no trace is rubber-stamping.
-3. **Never fabricate.** Read relevant paths from the supplied documentation manifest. Unsupported factual uncertainty is dropped. Set `intent_question` only when a concrete, plausible interpretation of undocumented product intent changes whether the behavior is defective; set `doc_basis` when documentation establishes expected behavior that the code violates. Documentation establishing the current behavior as intended refutes the candidate.
+3. **Never fabricate.** Read relevant paths from the supplied documentation manifest. Unsupported factual uncertainty is dropped. Set `intent_question` only when a concrete, plausible interpretation of undocumented product intent changes whether the behavior is defective; set `doc_basis` to an exact documentation file, line, and verbatim quote when documentation establishes expected behavior that the code violates. Never set both. Documentation establishing that current behavior satisfies the intended contract refutes the candidate.
 4. **Stay inside the diff + read files.** No general-knowledge findings. If you haven't traced it in the actual code, you haven't found it.
 5. **Signal over noise.** Total findings ≤ 7. Score each candidate by likelihood (1–10) × impact (1–10); drop anything below 5 on either axis.
 

@@ -23,7 +23,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 2. **Never guess.** If you cannot verify a factual claim from code or documentation, drop it.
 3. **Never touch files.** You report; the Scribe agent or developer fixes.
 4. **Structural gaps only for Scribe-required sections.** Do not flag missing optional sections. Flag only sections the Scribe spec requires.
-5. **Classify intent precisely.** Read relevant paths from the supplied documentation manifest. Set `doc_basis` when documentation establishes expected behavior that code violates. If current behavior is documented as intended, refute/drop the candidate. Set `intent_question` only for a concrete undocumented intent choice that changes whether the behavior is defective; drop unsupported factual uncertainty.
+5. **Classify intent precisely.** Read relevant paths from the supplied documentation manifest. Set `doc_basis` to an exact documentation file, line, and verbatim quote when documentation establishes expected behavior that code violates. If current behavior satisfies the documented contract, refute/drop the candidate. Set `intent_question` only for a concrete undocumented intent choice that changes whether the behavior is defective; never set both fields, and drop unsupported factual uncertainty.
 
 ## Red Flags — STOP and re-read this prompt
 

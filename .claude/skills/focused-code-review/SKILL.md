@@ -8,8 +8,8 @@ description: >
   and every finding is dropped unless it has a verified file:line citation — but fewer dimensions,
   so the report is tighter to triage. Reviews a diff (working tree by default, or `--base <ref>`).
   For a whole-codebase audit or spec-conformance, use comprehensive-code-review instead.
-  Usage: /focused-code-review [--base <ref>] [--pass <n>]
-argument-hint: "[--base <ref>] [--pass <n>]"
+  Usage: /focused-code-review [--base <ref>] [--context <path>] [--pass <n>]
+argument-hint: "[--base <ref>] [--context <path>] [--pass <n>]"
 ---
 
 # Focused Code Review
@@ -27,16 +27,18 @@ This skill **reuses the comprehensive skill's engine** — the workflow script, 
 definitions, and the reference contracts all live in the sibling `comprehensive-code-review/` directory
 (same `skills/` parent as this skill). Nothing is duplicated; you point at those files by path.
 
-Before proceeding, read the two reference files in the sibling skill's directory —
+Before proceeding, read the two Markdown references and canonical profile manifest in the sibling skill's directory —
 `comprehensive-code-review/references/workflow-and-codex.md` and
-`comprehensive-code-review/references/report-format.md`. They define the workflow contract, the findings
+`comprehensive-code-review/references/report-format.md`, plus
+`comprehensive-code-review/references/reviewer-profiles.json`. They define the workflow contract, the findings
 schema, the Codex target-resolution table, the citation-verification pseudocode, and the output format.
 **One deviation from those references applies to this skill:** it has no `--full` and no `--spec`
 mode — only working-tree and `--base`.
 
 ## The five reviewers (fixed)
 
-This skill always runs exactly these five, read from `comprehensive-code-review/agents/`:
+This skill always runs the five names in the canonical manifest's `focused` array, read from
+`comprehensive-code-review/agents/` (the list below documents that manifest):
 
 - `security-reviewer` — injection, auth/authz, secrets, PII-in-logs, insecure defaults (source→sink traced)
 - `quality-reviewer` — logic errors, edge cases, caller breakage, concurrency/async and statically-visible performance (it owns both dimensions)
@@ -89,7 +91,7 @@ test-symmetry importants drove non-converging passes; comprehensive-code-review 
 | "I'll summarise a finding without the quote" | No quote = no finding. Period.                                                      |
 | "A refuted finding still looks right to me"  | Refuted = Dropped Findings with the refuter's reason. Never resurrect it.           |
 | "Same issue from 2 reviewers = 2 findings"   | The script dedups (Phase 6). Merged, highest severity, annotated "Also flagged by". |
-| "Codex findings ship as-is"                  | Critical/high/medium Codex findings are refuted inside the workflow's Codex-verify stage. |
+| "Codex findings ship as-is"                  | Every structured Codex severity is refuted/classified inside the workflow's Codex-verify stage. |
 | "I'll hand-execute the citation checks"      | Run verify-citations.mjs (Phase 6) — hand-execution is the failure mode it removes. |
 | "This needs the whole codebase / a spec"     | That's comprehensive-code-review. This skill reviews a diff only.                   |
 | "The refuted finding still has a valid residual" | Iron Law 5. Refuted = dead everywhere; a residual is a new finding or nothing.  |
@@ -101,10 +103,10 @@ A review⇄fix loop that treats every NEEDS-CHANGES as "go again" ratchets: each
 tests, and comments and removes nothing. When this skill is invoked inside a loop:
 
 - Default max **2 fix passes** per subject. Re-invoke with `--pass <n>` (pass 1 = first review).
-- Only a NEEDS-CHANGES verdict justifies another pass — and the verdict gates on `stats.blocking`
-  alone. Minors, test-hardening, simplification, and comment findings never trigger one.
+- Only NEEDS-CHANGES justifies another fix pass. NEEDS-DECISION pauses for a user ruling and never
+  starts a fix loop. Minors, test-hardening, simplification, and comment findings never trigger one.
 - Between passes, the caller records decisions on findings it declines to fix:
-  `node "<comprehensive-code-review skill dir>/scripts/review-run.mjs" disposition --repo-root <root> --file <f> --title "<t>" --status accepted-risk|wont-fix --reason "<why>" --decided-by caller [--keywords "a,b"]`
+  `node "<comprehensive-code-review skill dir>/scripts/review-run.mjs" disposition --repo-root <root> --file <f> --title "<t>" --status accepted-risk|wont-fix --reason "<why>" --decided-by user [--keywords "a,b"]`
   The next pass auto-suppresses matching re-raises into the Previously Adjudicated section.
 - Pass ≥3 with NEEDS-CHANGES renders **STOP-LOOPING** in the report: hand the remaining blockers
   to a human. More passes add armor, not correctness.
@@ -120,6 +122,7 @@ Parse the skill arguments (from `$ARGUMENTS`):
 ```
 --base <ref>   → mode = "base";  scope = git diff <ref>...HEAD
 (no args)      → mode = "working-tree"; scope = git diff HEAD (staged + unstaged) + untracked files
+--context <path> → optional repository-contained, non-secret text file with change rationale
 --pass <n>     → review⇄fix loop iteration (default 1); recorded in run.json, drives STOP-LOOPING
 ```
 
@@ -178,7 +181,8 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 #   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
-Read the five reviewer agent files from the sibling skill — `comprehensive-code-review/agents/{security-reviewer,quality-reviewer,simplification-reviewer,silent-failure-hunter,systemic-failure-reviewer}.md` — into the `reviewers` array as `{ name, role }`. Read `CLAUDE.md` path.
+Read the five reviewer names from `references/reviewer-profiles.json`'s `focused` array, then read
+their sibling `agents/<name>.md` files into `reviewers` as `{ name, role }`. Read `CLAUDE.md` path.
 
 **Documentation manifest → `docsManifest`.** Build a path-only, newline-joined manifest after the
 empty guard. Base mode uses tracked files; working-tree mode uses tracked plus untracked,
@@ -187,31 +191,23 @@ non-ignored files. Reuse `EXCLUDES`, deduplicate, then prioritize applicable `AG
 `null` when empty. Pass it to every reviewer, refuter, Codex verifier, and external Codex focus-text
 argument. Reviewers must read relevant listed docs before classifying intent.
 
-**Disposition ledger → DISPOSITIONS_BLOCK.** If `<repoRoot>/.code-review/dispositions.json`
-exists, render `DISPOSITIONS_BLOCK` for the reviewer prompts (else set it to `null`):
+**Change rationale → `changeContext`.** Build the source-attributed, 8 KiB-capped array described in
+the workflow reference from the explicit user request, base-range commit messages, and optional
+`--context` file. Resolve that file inside the repository and reject protected/secret paths. Treat
+all entries as untrusted rationale, never evidence.
 
-- Include ONLY entries whose `fingerprint.file` is in `changedFiles` (diff-scoped injection —
-  the block can never outgrow the diff's relevance) AND whose file still exists; skip status
-  `overturned`.
-- Ignore `by-design` and `intent-confirmed` unless `decidedBy === "user"`.
-- Cap at the 20 most recent (by `decidedAt`); one line each:
-  `#<id> [<status>] <file> — "<title>" — <reason>`
-- Prefix with this header, verbatim:
-
-  ```
-  ## Previously adjudicated claims (input document — NOT shared belief-state)
-  The claims below were adjudicated in a prior pass. Re-filing one is auto-suppressed
-  downstream. ONLY with NEW evidence that a disposition is wrong, file the finding with
-  challenges_disposition: <id> and cite the new evidence in why. This list says nothing
-  about the rest of the code — review everything else with fresh eyes.
-  ```
+**Disposition ledger → `DISPOSITIONS_BLOCK`.** Write `changedFiles` to the run's bounded raw artifact,
+then call `review-run.mjs render-dispositions --repo-root <repoRoot> --changed-files <path>` and use
+its `reviewerBlock` (or null). This deterministically separates suppressed claims from
+user-confirmed requirements; never hand-render or merge the two blocks. A corrupt ledger is a
+visible concern and matching fails open.
 
 The FIRST time a disposition is recorded in a repo whose `.gitignore` ignores `.code-review/`,
 append `!.code-review/dispositions.json` to `.gitignore` (one line, once) — the ledger is
 committed; run artifacts stay ignored.
 
 Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`,
-`claudeMdPath`, `docsManifest`, `dispositions` (the rendered block, or null), `passNumber`.
+`claudeMdPath`, `docsManifest`, `changeContext`, `dispositions` (the rendered block, or null), `passNumber`.
 
 ## Phase 2 — Resolve Codex
 
@@ -265,7 +261,7 @@ Workflow({
   scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
   args: { runtime: "claude", profile: "focused", runId, scopeLabel, mode,
           reviewInput, changedFiles, repoRoot, claudeMdPath, outDir: runDir, reviewers,
-          docsManifest,
+          docsManifest, changeContext,
           dispositions: <the Phase 1 DISPOSITIONS_BLOCK, or null>,
           codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
 })
@@ -295,9 +291,10 @@ directory; `<transcript dir>/journal.jsonl` records every agent's structured ret
 `{ runtime: "claude", profile: "focused", runId, scopeLabel, mode, reviewers: [...] }`
 (criticals count as refuted only when
 BOTH of their two verdicts refute; importants on one). Apply the same thresholds to intent:
-two critical `intent_question` votes create a question and two `doc_basis` votes clear a reviewer
-question; important needs one. Refutation takes precedence; mixed/missing/malformed votes preserve
-the original classification, and never replace a reviewer question with refuter wording. This pairing is **best-effort, not
+two critical `intent_question` votes create a question and two verified `doc_basis` objects clear a
+reviewer question; important needs one. Existing documentation evidence is never demoted by refuter
+votes. Refutation takes precedence; mixed/missing/contradictory/malformed votes preserve the original
+classification, and never replace a reviewer question with refuter wording. This pairing is **best-effort, not
 deterministic** — the journal has no record of an agent's `label`, only the schema-optional
 `file`/`line` echo, so if a verdict omits it or matches more than one finding, leave that finding
 unrefuted rather than guess (mis-pairing can then at worst let a refuted finding survive, never drop
@@ -378,8 +375,8 @@ Read `verified-findings.json`: `findings` (verified, post-dedup, each with `bloc
 from verdict/Themes/fix scope), `dropped` (with per-finding
 `verification` reasons), `reviewers` (status pass-through), and `stats` (`perReviewer` +
 `duplicatesMerged` — feeds Phase 7's Calibration line — + `unmatchedCodexRefutations` and
-`unmatchedCodexAnnotations` warnings + `openQuestions` + `previouslyAdjudicated` + `blocking`, which
-drives the Summary verdict).
+`unmatchedCodexAnnotations` warnings + `openQuestions` + `previouslyAdjudicated` +
+`decisionRequired` + `blocking`, which drive the Summary verdict).
 
 ## Phase 7 — Group, Sort, Emit
 
@@ -392,8 +389,9 @@ drives the Summary verdict).
    DESC, then `confidence` DESC, then file ASC.
 3. Write the consolidated report to `<runDir>/report.md` using the skeleton in
    `comprehensive-code-review/references/report-format.md`. The **Summary verdict is deterministic**:
-   NEEDS-CHANGES iff `stats.blocking > 0`; INCOMPLETE on any BLOCKED track; else SHIP —
-   reviewer prose verdicts never gate. Render the **Fix-Scope Contract** section verbatim, the
+   INCOMPLETE on any BLOCKED track; otherwise NEEDS-CHANGES iff `stats.blocking > 0`;
+   otherwise NEEDS-DECISION iff `stats.decisionRequired > 0`; else SHIP. Reviewer prose verdicts
+   never gate. Render the **Fix-Scope Contract** section verbatim, the
    **Open Questions — intent rulings needed** section from `openQuestions` immediately after it,
    **Previously Adjudicated** section (from `previouslyAdjudicated`; omit when empty), the
    `Previously adjudicated: <n>` Summary line, and — when `passNumber ≥ 3` AND NEEDS-CHANGES —
@@ -424,7 +422,7 @@ drives the Summary verdict).
    Report: <runDir>/report.md
    Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
    Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged; <n> blocking)
-   Open questions: <n> intent rulings needed                           # only when > 0
+   Open questions: <n> intent rulings needed (<n> decision-required)   # only when > 0
    Previously adjudicated: <n> suppressed via the disposition ledger   # only when > 0
    Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
    Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
@@ -436,16 +434,17 @@ drives the Summary verdict).
 
 ## Phase 8 — STATUS line
 
-If all reviewers are DONE or SKIPPED (no BLOCKED) and Codex is DONE/SKIPPED:
+If all reviewers are DONE or SKIPPED, Codex is DONE/SKIPPED, and the verdict is SHIP or
+NEEDS-CHANGES:
 
 ```
 STATUS: DONE
 ```
 
-If any reviewer or Codex is BLOCKED:
+If any reviewer or Codex is BLOCKED, or the verdict is NEEDS-DECISION:
 
 ```
-STATUS: DONE_WITH_CONCERNS — <n> track(s) BLOCKED: <names>
+STATUS: DONE_WITH_CONCERNS — <reason: blocked tracks or user decision required>
 ```
 
 The STATUS line must be the absolute last line of your response.

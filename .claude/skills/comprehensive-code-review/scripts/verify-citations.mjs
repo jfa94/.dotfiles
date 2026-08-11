@@ -178,10 +178,13 @@ function main() {
           typeof d.fingerprint.file === "string" &&
           typeof d.fingerprint.title === "string";
         if (!validShape) return false;
-        // These two rulings directly answer an intent question. Only an
-        // explicit user decision may activate them; older statuses retain
-        // their existing attribution semantics.
-        if (d.status === "by-design" || d.status === "intent-confirmed") {
+        // Intent and risk rulings suppress or promote actionable work. Only
+        // an explicit user decision may activate them.
+        if (
+          d.status === "accepted-risk" ||
+          d.status === "by-design" ||
+          d.status === "intent-confirmed"
+        ) {
           return d.decidedBy === "user";
         }
         return true;
@@ -422,6 +425,54 @@ function main() {
     }
   }
 
+  // Documentation can change intent classification only when it carries the
+  // same deterministic path/line/quote evidence required of code findings.
+  // Legacy string values remain readable but are never authoritative.
+  for (const f of verified) {
+    if (!f.doc_basis) continue;
+    const candidates = Array.isArray(f.doc_basis_candidates)
+      ? f.doc_basis_candidates
+      : [f.doc_basis];
+    const requiredBasisCount = Number.isInteger(f.doc_basis_required)
+      ? Math.max(1, f.doc_basis_required)
+      : 1;
+    const verifiedBases = candidates
+      .map((basis) => {
+        const validShape =
+          basis &&
+          typeof basis === "object" &&
+          typeof basis.file === "string" &&
+          Number.isInteger(basis.line) &&
+          typeof basis.verbatim === "string";
+        const result = validShape
+          ? verifyCitation(repoRoot, basis)
+          : { status: "dropped_documentation_basis_invalid" };
+        return { basis, result };
+      })
+      .filter(({ result }) =>
+        ["ok", "relocated_ok"].includes(result.status),
+      );
+    delete f.doc_basis_candidates;
+    delete f.doc_basis_required;
+    if (verifiedBases.length >= requiredBasisCount) {
+      const verifiedBasis = verifiedBases[0];
+      f.doc_basis = {
+        ...verifiedBasis.basis,
+        line: verifiedBasis.result.line,
+      };
+      f.documentation_verification = verifiedBasis.result.status;
+      delete f.intent_question;
+      delete f.prior_intent_question;
+    } else {
+      f.documentation_basis_error = "dropped_documentation_basis_unverified";
+      delete f.doc_basis;
+      if (f.prior_intent_question) {
+        f.intent_question = f.prior_intent_question;
+        delete f.prior_intent_question;
+      }
+    }
+  }
+
   // --- Adjudication split: a verified finding matching an active ledger entry
   // was already decided in a prior pass — reported separately, never
   // actionable — UNLESS it explicitly challenges that disposition by id.
@@ -460,14 +511,30 @@ function main() {
   for (const f of dispositionMatched) {
     if (f.intent_question) {
       openQuestions.push(
-        Object.assign({}, f, { open_question: true, blocking: false }),
+        Object.assign({}, f, {
+          open_question: true,
+          blocking: false,
+          decision_required: ["critical", "important"].includes(f.severity),
+        }),
       );
     } else {
       actionable.push(f);
     }
   }
 
-  // --- Dedup: same file AND same kind AND (lines ±3 OR identical collapsed verbatim) ---
+  const NONBLOCKING_REVIEWERS = new Set([
+    "test-coverage-reviewer",
+    "simplification-reviewer",
+    "comment-accuracy-reviewer",
+    "documentation-reviewer",
+  ]);
+  const wouldBlock = (finding) =>
+    finding.severity === "critical" ||
+    (finding.severity === "important" &&
+      !NONBLOCKING_REVIEWERS.has(finding.reviewer));
+
+  // --- Dedup: merge evidence and provenance, not just severity. Distinct
+  // active dispositions stay separate rather than silently losing a ruling.
   let duplicatesMerged = 0;
   const deduped = [];
   for (const f of actionable) {
@@ -476,41 +543,73 @@ function main() {
       (k) =>
         relKey(repoRoot, k.file) === relKey(repoRoot, f.file) &&
         (k.kind || "local") === fKind &&
+        !(
+          k.disposition_id &&
+          f.disposition_id &&
+          k.disposition_id !== f.disposition_id
+        ) &&
         (Math.abs(k.line - f.line) <= 3 ||
           (k.verbatim &&
             f.verbatim &&
             collapseWs(k.verbatim) === collapseWs(f.verbatim))),
     );
     if (twin) {
-      if (SEVERITY_RANK[f.severity] > SEVERITY_RANK[twin.severity]) {
-        twin.severity = f.severity;
+      const twinReviewers = twin.reviewers || [twin.reviewer];
+      const fReviewers = f.reviewers || [f.reviewer];
+      const reviewers = [...new Set([...twinReviewers, ...fReviewers])];
+      const twinWasBlocking = twin.source_blocking ?? wouldBlock(twin);
+      const fWasBlocking = f.source_blocking ?? wouldBlock(f);
+      const preferF =
+        SEVERITY_RANK[f.severity] > SEVERITY_RANK[twin.severity] ||
+        (SEVERITY_RANK[f.severity] === SEVERITY_RANK[twin.severity] &&
+          fWasBlocking &&
+          !twinWasBlocking);
+      const intentSource = [twin, f].find((item) => item.intent_confirmed);
+      const intentMetadata = intentSource
+        ? {
+            disposition_id: intentSource.disposition_id,
+            disposition_status: intentSource.disposition_status,
+            disposition_reason: intentSource.disposition_reason,
+          }
+        : null;
+      const docBasis = [twin, f].find((item) => item.doc_basis)?.doc_basis;
+      if (preferF) {
+        Object.assign(twin, f);
       }
-      twin.also_flagged_by = [
-        ...new Set([...(twin.also_flagged_by || []), f.reviewer]),
-      ];
+      twin.reviewers = reviewers;
+      twin.also_flagged_by = reviewers.filter((name) => name !== twin.reviewer);
+      twin.source_blocking = twinWasBlocking || fWasBlocking;
+      if (intentMetadata) {
+        twin.intent_confirmed = true;
+        Object.assign(twin, intentMetadata);
+      }
+      if (docBasis && !twin.doc_basis) twin.doc_basis = docBasis;
       duplicatesMerged++;
     } else {
-      deduped.push(f);
+      deduped.push(
+        Object.assign(f, {
+          reviewers: [f.reviewer],
+          source_blocking: wouldBlock(f),
+        }),
+      );
     }
   }
 
-  // --- Blocking: verdict gates on criticals + importants from blocking
-  // reviewers only (NEEDS-CHANGES iff stats.blocking > 0).
-  const NONBLOCKING_REVIEWERS = new Set([
-    "test-coverage-reviewer",
-    "simplification-reviewer",
-    "comment-accuracy-reviewer",
-    "documentation-reviewer",
-  ]);
+  // --- Blocking: preserve the OR of each merged source's original blocking
+  // classification. A later blocking reviewer can never disappear in dedup.
   let blocking = 0;
   for (const f of deduped) {
-    f.blocking =
-      f.severity === "critical" ||
-      (f.severity === "important" && !NONBLOCKING_REVIEWERS.has(f.reviewer));
+    f.blocking = Boolean(f.source_blocking);
+    delete f.source_blocking;
     if (f.blocking) blocking++;
   }
 
+  const decisionRequired = openQuestions.filter(
+    (finding) => finding.decision_required,
+  ).length;
+
   const output = {
+    schemaVersion: 2,
     scopeLabel: workflowResult.scopeLabel ?? null,
     mode: opts.mode,
     reviewers: (workflowResult.reviewers || []).map((r) => ({
@@ -534,6 +633,7 @@ function main() {
       unmatchedCodexAnnotations,
       previouslyAdjudicated: previouslyAdjudicated.length,
       openQuestions: openQuestions.length,
+      decisionRequired,
       blocking,
     },
   };

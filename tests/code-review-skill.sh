@@ -11,6 +11,11 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 [[ -f "$SKILL/SKILL.md" ]] || fail 'Codex skill missing'
 [[ -f "$SKILL/agents/openai.yaml" ]] || fail 'Codex UI metadata missing'
 [[ -f "$SKILL/references/orchestration.md" ]] || fail 'Codex orchestration reference missing'
+[[ -f "$CLAUDE_REVIEW/references/reviewer-profiles.json" ]] || fail 'shared reviewer profiles missing'
+
+jq -e '.version == 1 and .focused == ["security-reviewer","quality-reviewer","simplification-reviewer","silent-failure-hunter","systemic-failure-reviewer"]' \
+  "$CLAUDE_REVIEW/references/reviewer-profiles.json" >/dev/null \
+  || fail 'focused reviewer profile drifted'
 
 reviewers=(
   architecture-reviewer security-reviewer quality-reviewer test-coverage-reviewer
@@ -49,6 +54,7 @@ grep -Fq 'Open Questions — intent rulings needed' "$SKILL/references/orchestra
 
 node --test \
   "$CLAUDE_REVIEW/scripts/review-run.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/review-benchmark.test.mjs" \
   "$CLAUDE_REVIEW/scripts/verify-citations.test.mjs" \
   "$CLAUDE_REVIEW/scripts/review-fanout.workflow.test.mjs" \
   "$CLAUDE_REVIEW/scripts/codex-launch.test.mjs"

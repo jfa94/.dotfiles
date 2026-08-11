@@ -62,13 +62,15 @@ it discarded m candidate findings to respect its findings cap, so coverage below
 
 ## Summary
 
-**Overall: SHIP | NEEDS-CHANGES | INCOMPLETE**
+**Overall: SHIP | NEEDS-DECISION | NEEDS-CHANGES | INCOMPLETE**
 
-_(deterministic rule — INCOMPLETE: ≥1 reviewer track BLOCKED (judge from what completed; name the
+_(deterministic precedence — INCOMPLETE: ≥1 reviewer track BLOCKED (judge from what completed; name the
 missing tracks). NEEDS-CHANGES: `stats.blocking > 0` in verified-findings.json — ≥1 verified
 critical, or ≥1 verified important from a blocking reviewer (test-coverage, simplification,
 comment-accuracy, and documentation findings never block; important+theoretical is already
-downgraded to minor upstream). SHIP: none of the above. Reviewer prose verdicts
+downgraded to minor upstream). NEEDS-DECISION: no actionable blockers and
+`stats.decisionRequired > 0` — at least one unresolved critical/important intent question. SHIP:
+none of the above. Reviewer prose verdicts
 (REQUEST_CHANGES, VIOLATION, BLOCKED-as-verdict, …) are informational only and never gate.)_
 
 **Total findings: <N>** _(post-dedup; <n> duplicates merged across reviewers)_
@@ -77,8 +79,9 @@ downgraded to minor upstream). SHIP: none of the above. Reviewer prose verdicts
 - important: <n>
 - minor: <n>
 
-**Open questions: <n>** _(intent rulings needed; excluded from finding totals, verdict, categories,
-Themes, fix scope, blocking, and convergence. Omit when 0.)_
+**Open questions: <n>** _(intent rulings needed; excluded from finding totals, categories, Themes,
+fix scope, blocking, and convergence. Important/critical questions produce NEEDS-DECISION; minor
+questions remain non-gating. Omit when 0.)_
 
 **Previously adjudicated: <n>** _(matched the disposition ledger; excluded from the verdict — see
 Previously Adjudicated below. Omit this line when 0.)_
@@ -136,7 +139,7 @@ fix scope, or auto-write one to the ledger.)_
 - **Reviewer**: <reviewer>
 - **Quote**: `<verbatim; for Codex use “n/a — existence-checked”>`
 - **Rationale**: <why/body>
-- **Documentation basis**: <doc_basis; omit when absent>
+- **Documentation basis**: `<doc_basis.file>:<doc_basis.line>` — “<doc_basis.verbatim>” _(omit when absent)_
 - **Record as by design**:
   `node '<review-run.mjs path>' disposition --repo-root '<repoRoot>' --file '<file>' --title '<title>' --status by-design --reason 'User confirmed current behavior is by design' --decided-by user --keywords '<same comma-separated keywords>'`
 - **Confirm intended requirement**:
@@ -163,7 +166,7 @@ category, render `doc_basis` as a **Documentation basis** evidence bullet and re
 - **Reviewer**: architecture
 - **Quote**: `<verbatim ≥10 chars>`
 - **Why**: <reasoning from reviewer output>
-- **Documentation basis**: <doc_basis; omit when absent>
+- **Documentation basis**: `<doc_basis.file>:<doc_basis.line>` — “<doc_basis.verbatim>” _(omit when absent)_
 - **Disposition**: `#<id> intent-confirmed — <reason>` _(only when `intent_confirmed: true`)_
 - **Fix sketch**: <one sentence>
 - **Also flagged by**: <other reviewers, only when the finding was deduped across reviewers — omit otherwise>
@@ -341,7 +344,8 @@ the 4→3 collapse loses no signal.
   "fix_sketch": "<one sentence>",
   "intent_question": "<concrete undocumented intent choice; Open Questions only>",
   "open_question": "<true; Open Questions only>",
-  "doc_basis": "<documentation establishing violated expected behavior>",
+  "decision_required": "<true for critical/important Open Questions; false for minor>",
+  "doc_basis": { "file": "<documentation path>", "line": 1, "verbatim": "<exact quote>" },
   "intent_confirmed": "<true; user confirmed the intended requirement>",
   "disposition_id": "<ledger id; intent-confirmed findings and adjudicated entries>",
   "disposition_status": "<ledger status>",
@@ -366,7 +370,8 @@ the 4→3 collapse loses no signal.
 in the file (line-number drift); the finding is kept with the corrected line.
 
 Entries in `verified-findings.json`'s `previouslyAdjudicated[]` array are the same finding shape
-plus `disposition_id`, `disposition_status` (`accepted-risk|wont-fix|refuted|by-design`), and
+plus `disposition_id`, `disposition_status`
+(`accepted-risk|wont-fix|refuted|by-design|intent-confirmed`), and
 `disposition_reason` — they render only in the Previously Adjudicated section, never in Findings
 by Category.
 

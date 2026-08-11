@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "focused": [
+    "security-reviewer",
+    "quality-reviewer",
+    "simplification-reviewer",
+    "silent-failure-hunter",
+    "systemic-failure-reviewer"
+  ],
+  "comprehensive": [
+    "architecture-reviewer",
+    "security-reviewer",
+    "quality-reviewer",
+    "test-coverage-reviewer",
+    "type-design-reviewer",
+    "comment-accuracy-reviewer",
+    "documentation-reviewer",
+    "silent-failure-hunter",
+    "simplification-reviewer",
+    "systemic-failure-reviewer"
+  ],
+  "conditional": {
+    "implementation-reviewer": "spec"
+  }
+}

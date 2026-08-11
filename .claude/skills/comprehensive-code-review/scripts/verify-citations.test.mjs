@@ -122,6 +122,7 @@ const reviewer = (name, findings, over = {}) => ({
 const dispo = (over = {}) => ({
   id: 1,
   status: "accepted-risk",
+  decidedBy: "user",
   fingerprint: { file: "src/a.js", title: "t", keywords: [] },
   reason: "single-writer topology",
   ...over,
@@ -326,7 +327,7 @@ test("dedup: nearby findings merge, highest severity wins, also_flagged_by set",
   });
   assert.equal(out.findings.length, 1);
   assert.equal(out.findings[0].severity, "critical");
-  assert.deepEqual(out.findings[0].also_flagged_by, ["security"]);
+  assert.deepEqual(out.findings[0].also_flagged_by, ["quality"]);
   assert.equal(out.stats.duplicatesMerged, 1);
 });
 
@@ -592,7 +593,11 @@ test("Codex intent/doc annotations copy through and unmatched annotations warn s
         {
           ...codexFinding,
           title: "unmatched",
-          doc_basis: "README specifies retries must surface as failures.",
+          doc_basis: {
+            file: "README.md",
+            line: 1,
+            verbatim: "Retries must surface as failures.",
+          },
         },
       ],
     },
@@ -844,6 +849,8 @@ test("intent questions route after checks, remain independent, and never block o
   assert.equal(out.findings.length, 1);
   assert.equal(out.openQuestions.length, 2);
   assert.equal(out.stats.openQuestions, 2);
+  assert.equal(out.stats.decisionRequired, 2);
+  assert.ok(out.openQuestions.every((q) => q.decision_required));
   assert.equal(out.stats.duplicatesMerged, 0);
   assert.ok(out.openQuestions.every((q) => q.open_question && !q.blocking));
   assert.equal(out.stats.blocking, 1);
@@ -867,6 +874,85 @@ test("question routing still enforces citation, systemic, and reachability check
   assert.equal(out.openQuestions[0].severity, "minor");
   assert.equal(out.openQuestions[0].downgraded_from, "important");
   assert.equal(out.dropped.length, 2);
+  assert.equal(out.stats.decisionRequired, 0);
+});
+
+test("documentation basis is independently verified and invalid promotion restores its question", (t) => {
+  const question = "Should failed retries intentionally be treated as success?";
+  const out = run(t, {
+    files: {
+      "src/a.js": SRC,
+      "docs/contract.md": "Retry contract\nFailed retries must surface to callers.\n",
+    },
+    reviewers: [
+      reviewer("quality", [
+        finding({
+          title: "documented",
+          doc_basis: {
+            file: "docs/contract.md",
+            line: 2,
+            verbatim: "Failed retries must surface to callers.",
+          },
+        }),
+        finding({
+          title: "bad promoted citation",
+          line: 6,
+          verbatim: "console.log('big total');",
+          prior_intent_question: question,
+          doc_basis: {
+            file: "docs/contract.md",
+            line: 2,
+            verbatim: "This quote does not exist in the document.",
+          },
+        }),
+      ]),
+    ],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.deepEqual(out.findings[0].doc_basis, {
+    file: "docs/contract.md",
+    line: 2,
+    verbatim: "Failed retries must surface to callers.",
+  });
+  assert.equal(out.openQuestions.length, 1);
+  assert.equal(out.openQuestions[0].intent_question, question);
+  assert.match(out.openQuestions[0].documentation_basis_error, /unverified/);
+});
+
+test("critical documentation promotion requires every vote in its quorum to verify", (t) => {
+  const question = "Should failed retries intentionally be treated as success?";
+  const out = run(t, {
+    files: {
+      "src/a.js": SRC,
+      "docs/contract.md": "Failed retries must surface to callers.\n",
+    },
+    reviewers: [reviewer("quality", [finding({
+      severity: "critical",
+      prior_intent_question: question,
+      doc_basis: {
+        file: "docs/contract.md",
+        line: 1,
+        verbatim: "Failed retries must surface to callers.",
+      },
+      doc_basis_candidates: [
+        {
+          file: "docs/contract.md",
+          line: 1,
+          verbatim: "Failed retries must surface to callers.",
+        },
+        {
+          file: "docs/contract.md",
+          line: 1,
+          verbatim: "This independent vote hallucinated its quote.",
+        },
+      ],
+      doc_basis_required: 2,
+    })])],
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.openQuestions.length, 1);
+  assert.equal(out.openQuestions[0].intent_question, question);
+  assert.equal(out.stats.decisionRequired, 1);
 });
 
 test("by-design suppresses a question; intent-confirmed restores normal finding policy", (t) => {
@@ -981,4 +1067,41 @@ test("blocking matrix: importants from nonblocking reviewers never block; critic
   assert.equal(byTitle("gap").blocking, false);
   assert.equal(byTitle("simplify").blocking, true);
   assert.equal(out.stats.blocking, 1);
+});
+
+test("dedup preserves blocking when a blocking reviewer merges into a nonblocking finding", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("test-coverage-reviewer", [finding({ title: "same defect" })]),
+      reviewer("quality-reviewer", [finding({ title: "same defect" })]),
+    ],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.findings[0].blocking, true);
+  assert.deepEqual(new Set(out.findings[0].reviewers), new Set([
+    "test-coverage-reviewer",
+    "quality-reviewer",
+  ]));
+});
+
+test("dedup preserves verified documentation evidence when the primary finding changes", (t) => {
+  const basis = {
+    file: "docs/contract.md",
+    line: 1,
+    verbatim: "Addition must reject non-numeric operands.",
+  };
+  const out = run(t, {
+    files: {
+      "src/a.js": SRC,
+      "docs/contract.md": `${basis.verbatim}\n`,
+    },
+    reviewers: [
+      reviewer("documentation-reviewer", [finding({ severity: "minor", doc_basis: basis })]),
+      reviewer("security-reviewer", [finding({ severity: "critical" })]),
+    ],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.findings[0].reviewer, "security-reviewer");
+  assert.deepEqual(out.findings[0].doc_basis, basis);
 });

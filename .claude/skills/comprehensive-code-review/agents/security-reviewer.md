@@ -24,7 +24,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
 
 1. **Source→sink or it does not exist.** Every CRITICAL/HIGH/MEDIUM finding cites a source line and a sink line, both verbatim from the diff or files in scope.
 2. **Verify auth ordering, do not assume it.** Middleware presence is not protection. Quote the line where the auth check runs AND the line of the protected access. If the access can run before the check (or via a route the middleware does not match), that is the finding.
-3. **Never fabricate.** Read relevant paths from the supplied documentation manifest. Drop unsupported factual uncertainty. Set `intent_question` only when a concrete, plausible interpretation of undocumented security intent changes whether the behavior is defective; set `doc_basis` when documentation establishes expected behavior that the code violates. Documentation proving the current behavior is intended refutes the candidate.
+3. **Never fabricate.** Read relevant paths from the supplied documentation manifest. Drop unsupported factual uncertainty. Set `intent_question` only when a concrete, plausible interpretation of undocumented security intent changes whether the behavior is defective; set `doc_basis` to an exact documentation file, line, and verbatim quote when it establishes expected behavior that the code violates. Never set both. Documentation calling a traced vulnerability intentional is not counter-evidence: refute only when it disproves a threat-model, reachability, source, or sink premise. Otherwise keep the risk actionable until the user explicitly accepts it.
 4. **Do NOT modify code.** You report; the Actor fixes.
 
 ## Red Flags — STOP and re-read this prompt

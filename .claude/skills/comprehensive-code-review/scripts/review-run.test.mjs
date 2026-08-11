@@ -126,6 +126,7 @@ const dispositionCmd = (root, over = {}) => {
     title: "TOCTOU between stat and rename",
     status: "accepted-risk",
     reason: "single-writer topology",
+    "decided-by": "user",
     ...over,
   };
   return execFileSync(process.execPath, [
@@ -158,7 +159,7 @@ test("disposition creates ledger with id 1 and normalized repo-relative file", (
     "rename",
     "stat",
   ]);
-  assert.equal(ledger.dispositions[0].decidedBy, "caller");
+  assert.equal(ledger.dispositions[0].decidedBy, "user");
   assert.ok(ledger.dispositions[0].decidedAt);
 });
 
@@ -225,6 +226,50 @@ test("intent rulings require user attribution and paired commands upsert one cla
   assert.equal(ledger.dispositions[0].decidedBy, "user");
 });
 
+test("render-dispositions separates suppression from confirmed requirements and filters provenance", (t) => {
+  const root = fixture(t);
+  mkdirSync(path.join(root, "src"), { recursive: true });
+  writeFileSync(path.join(root, "src", "upload.ts"), "export const upload = true;\n");
+  dispositionCmd(root);
+  dispositionCmd(root, {
+    title: "Retries must surface",
+    status: "intent-confirmed",
+    reason: "User confirmed the requirement",
+    "decided-by": "user",
+  });
+  const ledger = readLedger(root);
+  ledger.dispositions.push({
+    id: 3,
+    status: "accepted-risk",
+    fingerprint: { file: "src/upload.ts", title: "Untrusted old ruling", keywords: [] },
+    reason: "legacy caller decision",
+    decidedBy: "caller",
+    decidedAt: new Date().toISOString(),
+  });
+  writeFileSync(
+    path.join(root, ".code-review", "dispositions.json"),
+    `${JSON.stringify(ledger, null, 2)}\n`,
+  );
+  const changed = path.join(root, "changed.txt");
+  writeFileSync(changed, "src/upload.ts\n");
+  const rendered = JSON.parse(
+    execFileSync(process.execPath, [
+      script,
+      "render-dispositions",
+      "--repo-root",
+      root,
+      "--changed-files",
+      changed,
+    ]),
+  );
+  assert.match(rendered.suppressedBlock, /TOCTOU between stat and rename/);
+  assert.doesNotMatch(rendered.suppressedBlock, /Retries must surface/);
+  assert.match(rendered.confirmedBlock, /Retries must surface/);
+  assert.match(rendered.confirmedBlock, /report a matching unfixed defect normally/);
+  assert.doesNotMatch(rendered.reviewerBlock, /Untrusted old ruling/);
+  assert.equal(rendered.renderedCount, 2);
+});
+
 test("disposition rejects bad status, empty title, file outside repo, corrupt ledger", (t) => {
   const root = fixture(t);
   const attempt = (over) =>
@@ -237,6 +282,7 @@ test("disposition rejects bad status, empty title, file outside repo, corrupt le
         title: "t",
         status: "accepted-risk",
         reason: "r",
+        "decided-by": "user",
         ...over,
       }).flatMap(([k, v]) => [`--${k}`, v]),
     ]);

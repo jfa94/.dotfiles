@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "recommendedRepetitions": 3,
+  "requiredRuntimes": ["claude", "codex"],
+  "cases": [
+    {
+      "id": "security-sql-injection",
+      "dimension": "security",
+      "polarity": "seeded",
+      "files": {
+        "src/users.js": "export async function find(db, name) {\n  return db.query(`SELECT * FROM users WHERE name = '${name}'`);\n}\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/users.js", "signals": ["sql", "inject", "query"] }]
+    },
+    {
+      "id": "security-path-traversal",
+      "dimension": "security",
+      "polarity": "seeded",
+      "files": {
+        "src/files.js": "import fs from 'node:fs';\nexport function read(root, requested) {\n  return fs.readFileSync(`${root}/${requested}`, 'utf8');\n}\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/files.js", "signals": ["travers", "path", "escape"] }]
+    },
+    {
+      "id": "silent-swallowed-error",
+      "dimension": "silent-failure",
+      "polarity": "seeded",
+      "files": {
+        "src/save.js": "export async function save(store, row) {\n  try { await store.put(row); } catch (_) { return true; }\n}\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/save.js", "signals": ["swallow", "failure", "success", "error"] }]
+    },
+    {
+      "id": "quality-missing-await",
+      "dimension": "quality",
+      "polarity": "seeded",
+      "files": {
+        "src/jobs.js": "export async function submit(queue, job) {\n  queue.publish(job);\n  return { accepted: true };\n}\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/jobs.js", "signals": ["await", "publish", "reject", "failure"] }]
+    },
+    {
+      "id": "quality-breaking-contract",
+      "dimension": "quality",
+      "polarity": "seeded",
+      "files": {
+        "src/api.js": "export function loadUser(id) { return { id }; }\n",
+        "docs/api.md": "Consumers import and call `getUser(id)`.\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/api.js", "signals": ["getuser", "contract", "breaking", "consumer"] }]
+    },
+    {
+      "id": "systemic-check-then-act-race",
+      "dimension": "systemic",
+      "polarity": "seeded",
+      "files": {
+        "src/worker.js": "export async function claim(db, id) {\n  const row = await db.get(id);\n  if (row.status !== 'ready') return false;\n  await db.update(id, { status: 'running' });\n  return true;\n}\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/worker.js", "signals": ["race", "atomic", "concurrent", "claim"] }]
+    },
+    {
+      "id": "simplification-dead-compatibility-branch",
+      "dimension": "simplification",
+      "polarity": "seeded",
+      "files": {
+        "src/format.js": "const VERSION = 2;\nexport function format(value) {\n  if (VERSION === 1) return String(value);\n  return JSON.stringify(value);\n}\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/format.js", "signals": ["dead", "constant", "branch", "simpl"] }]
+    },
+    {
+      "id": "documentation-verified-contract",
+      "dimension": "documentation",
+      "polarity": "seeded",
+      "files": {
+        "src/retry.js": "export async function retry(operation) {\n  try { return await operation(); } catch (_) { return null; }\n}\n",
+        "docs/retries.md": "Retry exhaustion must be returned to the caller as an error.\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/retry.js", "signals": ["retry", "error", "contract", "null"] }]
+    },
+    {
+      "id": "intent-undocumented-choice",
+      "dimension": "intent",
+      "polarity": "seeded",
+      "files": {
+        "src/archive.js": "export function archive(record) {\n  if (record.locked) return false;\n  record.archived = true;\n  return true;\n}\n"
+      },
+      "expected": [{ "kind": "question", "file": "src/archive.js", "signals": ["locked", "archive", "intent", "should"] }]
+    },
+    {
+      "id": "clean-parameterized-query",
+      "dimension": "security",
+      "polarity": "clean",
+      "files": {
+        "src/users.js": "export async function find(db, name) {\n  return db.query('SELECT * FROM users WHERE name = $1', [name]);\n}\n"
+      },
+      "expected": []
+    },
+    {
+      "id": "clean-observed-failure",
+      "dimension": "silent-failure",
+      "polarity": "clean",
+      "files": {
+        "src/save.js": "export async function save(store, row, logger) {\n  try { await store.put(row); return true; } catch (error) { logger.error(error); throw error; }\n}\n"
+      },
+      "expected": []
+    },
+    {
+      "id": "clean-atomic-claim",
+      "dimension": "systemic",
+      "polarity": "clean",
+      "files": {
+        "src/worker.js": "export async function claim(db, id) {\n  return db.updateWhere({ id, status: 'ready' }, { status: 'running' });\n}\n"
+      },
+      "expected": []
+    },
+    {
+      "id": "security-intended-vulnerability",
+      "dimension": "security",
+      "polarity": "seeded",
+      "files": {
+        "src/token.js": "export function matchesToken(actual, supplied) { return actual == supplied; }\n",
+        "docs/security.md": "Loose token comparison is intentional for compatibility.\n"
+      },
+      "expected": [{ "kind": "finding", "file": "src/token.js", "signals": ["token", "coerc", "comparison", "auth"] }]
+    },
+    {
+      "id": "clean-small-refactor",
+      "dimension": "quality",
+      "polarity": "clean",
+      "files": {
+        "src/math.js": "export function total(values) { return values.reduce((sum, value) => sum + value, 0); }\n"
+      },
+      "expected": []
+    }
+  ]
+}

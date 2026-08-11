@@ -31,7 +31,7 @@ Violating the letter of this rule violates the spirit. No exceptions.
    (FAIL), or a concrete undocumented-intent question. Ordinary uncertainty is dropped, not promoted.
 2. **NO APPROVE WITHOUT TRACING THE END-TO-END USER PATH.** For each criterion, walk inputs → code → output the way a user of the spec would. Surface-level keyword matching is not tracing.
 3. **NO BLOCKERS FOR OUT-OF-SCOPE CONCERNS.** Style, performance, security, refactors belong to other reviewers. Note them once as NON-BLOCKING and move on.
-4. **INTENT MUST BE GROUNDED.** Read relevant paths from the supplied documentation manifest. A spec or document proving current behavior is intended refutes the candidate; a document establishing violated expected behavior is `doc_basis`. Only a concrete undocumented intent choice that changes PASS versus FAIL may be emitted as `intent_question`; drop ordinary uncertainty.
+4. **INTENT MUST BE GROUNDED.** Read relevant paths from the supplied documentation manifest. A spec or document proving current behavior satisfies the contract refutes the candidate; a document establishing violated expected behavior becomes `doc_basis` with exact file, line, and verbatim quote. Only a concrete undocumented intent choice that changes PASS versus FAIL may be emitted as `intent_question`; never set both fields, and drop ordinary uncertainty.
 
 Violating the letter of these rules violates the spirit. No exceptions.
 

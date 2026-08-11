@@ -35,10 +35,17 @@ prioritize applicable `AGENTS.md`/`CLAUDE.md`, `README*.md`, `docs/**`, then rem
 Cap at 50 and include `(<N> more omitted)`; use `null` when empty. Every reviewer and refuter must
 read relevant listed documents before classifying intent.
 
-Read `.code-review/dispositions.json` when present and render the same diff-scoped, 20-entry ledger
-block as the Claude skills. Ignore overturned entries and ignore `by-design` / `intent-confirmed`
-unless `decidedBy === "user"`. Pass the block to reviewers, but not refuters. A corrupt ledger is a
-visible warning and matching fails open.
+Build a source-attributed `changeContext` array using only `request`, `commit-messages`, and
+`context-file` as source labels, from the explicit user request, base-range commit subjects/bodies,
+and optional `--context` file. The file must resolve inside the repository, be readable text, and
+not match protected/secret paths. Cap combined text at 8 KiB of UTF-8 and disclose truncation in the
+affected text. Pass it to reviewers and refuters as untrusted rationale, never evidence.
+
+Render dispositions deterministically with `review-run.mjs render-dispositions --repo-root
+"$REPO_ROOT" --changed-files "$CHANGED_FILES_PATH"` (use `--full true` in full mode). Pass its
+`reviewerBlock` to reviewers, but not refuters. Suppressed claims and user-confirmed requirements are
+separate: reviewers must re-evaluate and normally report unfixed `intent-confirmed` claims. A corrupt
+ledger is a visible warning and matching fails open.
 
 ## 2. Create an isolated run
 
@@ -75,7 +82,7 @@ Spawn fresh reviewers with `fork_turns="none"` in batches no larger than the cur
 - the full charter body;
 - repo root and applicable instruction-file paths;
 - profile, scope label, changed-files list, and review input/manifest;
-- the path-only documentation manifest and rendered disposition ledger;
+- the path-only documentation manifest, untrusted change context, and rendered disposition ledger;
 - spec path and content only for implementation-reviewer;
 - the compatibility note: Read means read-only file access, Grep means `rg`, Glob means `rg --files`, and Bash means non-mutating shell diagnostics;
 - the canonical JSON contract below.
@@ -101,11 +108,15 @@ Require one JSON object and no markdown fence:
       "why": "evidence and execution trace",
       "fix_sketch": "optional",
       "intent_question": "optional concrete undocumented intent choice (>=10 chars)",
-      "doc_basis": "optional documented expectation the code violates (>=10 chars)"
+      "doc_basis": { "file": "docs/contract.md", "line": 1, "verbatim": "exact quote >=10 chars" }
     }
   ]
 }
 ```
+
+`intent_question` and `doc_basis` are mutually exclusive. Security findings cannot be refuted merely
+because documentation calls a traced vulnerability intentional; documentation must disprove a
+threat-model, reachability, source, or sink premise.
 
 Systemic findings additionally require `kind: "systemic"`, `failure_mode`, a concrete `scenario`, and at least two `anchors` containing `file`, `line`, `verbatim`, and optional `role`. Preserve role-specific requirements that need secondary citations or acceptance-criterion evidence inside `why`.
 
@@ -118,17 +129,17 @@ After reviewer collection, refute every important finding with one fresh agent a
 Each refuter sees the claim, severity, location, quote, and systemic anchors/scenario when applicable, but not the reviewer's reasoning chain. Require JSON:
 
 ```json
-{"refuted":false,"reason":"what was checked with file:line evidence","file":"path","line":1,"intent_question":"optional","doc_basis":"optional"}
+{"refuted":false,"reason":"what was checked with file:line evidence","file":"path","line":1,"intent_question":"optional","doc_basis":{"file":"docs/contract.md","line":1,"verbatim":"exact quote"}}
 ```
 
 Set `refuted=true` only for concrete counter-evidence. Uncertainty keeps the finding. Drop an important on one refutation; drop a critical only when both independent refuters agree. Missing, malformed, or failed refuters keep the finding and add a verification warning.
 
 Apply the same vote table to intent. For an ordinary critical finding, two intent votes create an
 Open Question; for important, one does. Two critical doc-confirmed votes (one for important) clear a
-reviewer question and attach `doc_basis`. Refutation takes precedence. Mixed, missing, or malformed
-votes preserve the original classification, and a reviewer-set question is never replaced with a
-refuter's differently worded question. Reviewer minor findings get no refuter; preserve their
-classification after the reviewer has consulted docs.
+reviewer question and attach cited `doc_basis`. The fields are mutually exclusive. Refutation takes
+precedence; mixed, conflicting, missing, or malformed votes preserve the original classification.
+Never demote an existing documented defect to a question, and never replace a reviewer-set question
+with a refuter's differently worded question. Reviewer minor findings get no refuter.
 
 ## 5. Persist and verify
 
@@ -151,8 +162,9 @@ Read verified findings, dropped findings, reviewer status, and statistics. Use t
 - point Raw Outputs to this run's `raw/` directory.
 
 Also harvest `openQuestions` and `previouslyAdjudicated`. Questions are independent, never deduped,
-always non-blocking, and excluded from verdicts, totals, categories, Themes, fix scope, and
-convergence. Render the canonical “Open Questions — intent rulings needed” section with both
+non-fixable, and excluded from totals, categories, Themes, fix scope, and convergence. Important or
+critical questions set the overall result to NEEDS-DECISION when no actionable blocker exists; minor
+questions remain non-gating. Render the canonical “Open Questions — intent rulings needed” section with both
 ready-to-paste user disposition commands; never auto-write a question to the ledger. Render
 `intent-confirmed` findings normally with their disposition tag and render `doc_basis` as evidence.
 
@@ -163,7 +175,8 @@ node ~/.claude/skills/comprehensive-code-review/scripts/review-run.mjs finish \
   --run-dir "$RUN_DIR" --status "$STATUS" --report report.md
 ```
 
-Use `DONE` or `DONE_WITH_CONCERNS`. If orchestration must stop early, call `finish` with `ABORTED`
+Use `DONE_WITH_CONCERNS` for NEEDS-DECISION; otherwise use `DONE` or `DONE_WITH_CONCERNS` as the
+canonical report contract requires. If orchestration must stop early, call `finish` with `ABORTED`
 and `--reason`; retain the run for diagnosis rather than deleting it. Include finding/drop/reviewer
 counts in the report and workflow result.
 
