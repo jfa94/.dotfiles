@@ -182,8 +182,8 @@ link_skills_for_codex() {
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
 # so they're excluded from APT_PACKAGES and handled by install_gh_apt/install_node_apt.
 # Keep this list, PACMAN_PACKAGES below, and Brewfile in sync when adding a tool.
-APT_PACKAGES=(zsh git vim python3 cmake tmux direnv golang-go default-jdk build-essential python3-dev pipx unzip jq graphviz gnupg)
-PACMAN_PACKAGES=(zsh git vim python cmake tmux direnv go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq graphviz gnupg)
+APT_PACKAGES=(zsh git vim python3 cmake tmux direnv golang-go default-jdk build-essential python3-dev pipx unzip jq graphviz gnupg shellcheck)
+PACMAN_PACKAGES=(zsh git vim python cmake tmux direnv go jdk-openjdk base-devel nodejs npm github-cli python-pipx unzip jq graphviz gnupg shellcheck)
 
 install_gh_apt() {
   command -v gh &>/dev/null && return
@@ -365,6 +365,19 @@ install_posthog_cli() {
   pnpm add --global @posthog/cli
 }
 
+ensure_pnpm_cli() {
+  local executable="$1" package="$2"
+  command -v "$executable" &>/dev/null && return
+  command -v pnpm &>/dev/null || { warn "pnpm is required to install $package"; return 1; }
+  info "Installing $package..."
+  pnpm add --global "$package"
+  command -v "$executable" &>/dev/null
+}
+
+install_typescript() { ensure_pnpm_cli tsc typescript; }
+install_typescript_language_server() { ensure_pnpm_cli typescript-language-server typescript-language-server; }
+install_npm_check_updates() { ensure_pnpm_cli ncu npm-check-updates; }
+
 version_at_least() {
   local actual="$1" minimum="$2"
   awk -v actual="$actual" -v minimum="$minimum" '
@@ -481,6 +494,30 @@ install_codex() {
   codex_status="freshly installed"
 }
 
+install_claude_code() {
+  command -v claude &>/dev/null && return
+  info "Installing Claude Code..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  command -v claude &>/dev/null
+}
+
+verify_homebrew_cli() {
+  local kind="$1" package="$2" executable="$3"
+  local active active_target expected expected_target
+  if ! brew list "--$kind" "$package" &>/dev/null; then
+    error "Homebrew $kind '$package' is not installed"
+    return 1
+  fi
+  active="$(command -v "$executable" 2>/dev/null || true)"
+  expected="$(brew --prefix)/bin/$executable"
+  active_target="$(realpath "$active" 2>/dev/null || true)"
+  expected_target="$(realpath "$expected" 2>/dev/null || true)"
+  if [[ -z "$active_target" || "$active_target" != "$expected_target" ]]; then
+    error "$executable is not Homebrew-owned: ${active:-missing} (expected $expected)"
+    return 1
+  fi
+}
+
 install_docker() {
   command -v docker &>/dev/null && return
   info "Installing Docker..."
@@ -541,6 +578,10 @@ install_packages_linux() {
     else
       optional_status+=" $tool=missing"
     fi
+  done
+
+  for js_cli in typescript typescript_language_server npm_check_updates; do
+    if "install_$js_cli"; then :; else warn "$js_cli install failed"; fi
   done
 }
 
@@ -784,8 +825,8 @@ if [[ "$OS" == "macos" ]]; then
     fi
   fi
 
-  info "Running brew bundle..."
-  if brew bundle --file="$DOTFILES_DIR/Brewfile"; then
+  info "Running brew bundle without upgrading installed packages..."
+  if brew bundle install --no-upgrade --file="$DOTFILES_DIR/Brewfile"; then
     pkg_summary="Homebrew: $brew_status"
   else
     warn "brew bundle failed; continuing with remaining sections"
@@ -804,32 +845,40 @@ if ! install_posthog_cli || ! command -v posthog-cli &>/dev/null; then
 fi
 
 aws_status="installed"
-if ! install_aws; then
-  aws_status="FAILED"
-  setup_failed=1
-fi
-
 uv_status="installed"
-if ! install_uv; then
-  uv_status="FAILED"
-  setup_failed=1
+codex_status="installed"
+if [[ "$OS" == "macos" ]]; then
+  if ! verify_homebrew_cli formula awscli aws; then aws_status="FAILED"; setup_failed=1; fi
+  if ! verify_homebrew_cli formula uv uv || ! verify_homebrew_cli formula uv uvx; then uv_status="FAILED"; setup_failed=1; fi
+  if ! verify_homebrew_cli cask codex codex; then codex_status="FAILED"; setup_failed=1; fi
+else
+  if ! install_aws; then aws_status="FAILED"; setup_failed=1; fi
+  if ! install_uv; then uv_status="FAILED"; setup_failed=1; fi
+  # Linux retains OpenAI's managed standalone layout. Install after package
+  # setup (curl is now available) and before Codex plugin installation.
+  codex_status="not installed"
+  if ! install_codex; then codex_status="FAILED"; setup_failed=1; fi
 fi
-
-# Codex must use OpenAI's managed standalone layout. Install after package
-# setup (curl is now available) and before Codex plugin installation.
-codex_status="not installed"
-install_codex
 
 # =============================================================================
 # Section 7: Install Claude Code
 # =============================================================================
 
-claude_status="already installed"
-
-if ! command -v claude &>/dev/null; then
-  info "Installing Claude Code..."
-  curl -fsSL https://claude.ai/install.sh | bash
-  claude_status="freshly installed"
+claude_status="installed"
+if [[ "$OS" == "macos" ]]; then
+  if ! verify_homebrew_cli cask claude-code@latest claude; then
+    claude_status="FAILED"
+    setup_failed=1
+  fi
+elif ! command -v claude &>/dev/null; then
+  if install_claude_code; then
+    claude_status="freshly installed"
+  else
+    claude_status="FAILED"
+    setup_failed=1
+  fi
+else
+  claude_status="already installed"
 fi
 
 # =============================================================================

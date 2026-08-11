@@ -31,15 +31,33 @@ The script:
   source names prevent this repository from loading user-level configuration
   a second time as project-local configuration.
 - Installs Homebrew (if missing) and the `Brewfile` packages.
-- Installs the Claude Code CLI and the plugins/marketplaces listed in `.claude/plugins.txt`.
-- Installs Codex CLI with OpenAI's standalone installer, then installs the plugins listed in `.codex/plugins.txt`.
+- Installs Claude Code and Codex through Homebrew on macOS, or their official
+  standalone installers on Linux, then installs their declared plugins.
 - Sets up vim plugin/undo directories.
 
 Agent credentials use tracked 1Password references with process-scoped
 injection; see [docs/agent-credentials.md](docs/agent-credentials.md). No
 plaintext provider token is sourced into the interactive shell.
 
-It is idempotent — re-running skips anything already linked. If conflicts are detected, you’ll be prompted to replace, skip, or decide file-by-file. New files added to the repo are only deployed on a re-run.
+It is idempotent — re-running skips anything already linked and runs
+`brew bundle install --no-upgrade`, so it installs missing Brewfile entries
+without upgrading existing ones. If conflicts are detected, you’ll be prompted
+to replace, skip, or decide file-by-file. New files added to the repo are only
+deployed on a re-run.
+
+### macOS Homebrew ownership
+
+The Brewfile is intentionally selective. It owns the chosen developer tools,
+Docker Desktop, 1Password, and the chosen desktop apps; it does not mirror every
+Homebrew package already installed on a machine. Setup never runs
+`brew bundle cleanup`, so unlisted packages and applications are left alone.
+
+Moving an existing `/Applications/*.app` under cask ownership is a one-time
+migration, not setup behavior. Preserve its Library data, stage the old bundle,
+rename the backup so it no longer ends in `.app`, install the cask, and verify
+login, licensing, permissions, helpers, and local data before deleting the
+staged copy. This prevents Launch Services from indexing both copies. Do not use
+`--zap` for these migrations.
 
 ### Shared Claude and Codex skills
 
@@ -63,9 +81,11 @@ work before Codex can execute every step.
 The script also runs on Linux (`apt` on Ubuntu/Debian, `pacman` on Arch/CachyOS)
 — no `xcode-select` step, but `sudo` and `curl` are required. Packages install
 via the native package manager instead of Homebrew; a few tools not in the
-default repos use their official installers. This includes a signed 1Password
-CLI install and a checksum-verified Stripe CLI release; the 1Password desktop
-app and CLI integration remain per-machine interactive steps. Docker is
+default repos use their official installers. TypeScript, its language server,
+npm-check-updates, and PostHog CLI install through pnpm only when their
+executables are missing. This includes a signed 1Password CLI install and a
+checksum-verified Stripe CLI release; the 1Password desktop app and CLI
+integration remain per-machine interactive steps. Docker is
 installed from Docker's official apt repo (Ubuntu/Debian/WSL2) or via `pacman`
 (Arch/CachyOS); setup also adds the current user to the `docker` group (re-login
 required) and starts the daemon (`systemctl`, or `service` when systemd is off,
@@ -83,13 +103,14 @@ Codex re-auths per session via `codex login --device-auth`.
 
 ## Codex CLI
 
-Codex uses OpenAI's standalone installer on macOS and Linux. It installs managed
-releases under `~/.codex/packages/standalone`, exposes `codex` through
-`~/.local/bin`, and owns future CLI updates; Codex is intentionally absent from
-the `Brewfile` and Linux native package lists.
+On macOS, Codex is owned by the Homebrew `codex` cask. On Linux, OpenAI's
+standalone installer owns releases under `~/.codex/packages/standalone` and
+exposes `codex` through `~/.local/bin`. Changing the executable owner does not
+move or recreate `~/.codex`, which contains the existing user configuration and
+authentication state.
 
-Setup refuses an active Homebrew or npm installation to avoid ambiguous duplicate
-CLIs. Remove the old package first, then re-run setup:
+Linux setup refuses an active Homebrew or npm installation to avoid ambiguous
+duplicate CLIs. Remove the old package first, then re-run setup:
 
 ```zsh
 brew uninstall --cask codex

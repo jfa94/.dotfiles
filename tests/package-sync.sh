@@ -33,22 +33,53 @@ direnv|direnv|direnv|direnv
 jq|jq|jq|jq
 graphviz|graphviz|graphviz|graphviz
 gnupg|-|gnupg|gnupg
+shellcheck|shellcheck|shellcheck|shellcheck
 gh|gh|bootstrap|github-cli
 node|node|bootstrap|nodejs
 npm|-|-|npm
 deno|deno|optional|optional
 pnpm|pnpm|optional|optional
+typescript|typescript|direct|direct
+typescript_language_server|typescript-language-server|direct|direct
+npm_check_updates|npm-check-updates|direct|direct
 stripe|stripe-cli|direct|direct
 onepassword_cli|1password-cli|direct|direct
 posthog_cli|direct|direct|direct
 trufflehog|trufflehog|optional|optional
 semgrep|semgrep|optional|optional
 supabase|supabase/tap/supabase|optional|optional
-aws|direct|direct|direct
-uv|direct|direct|direct
-docker|docker|direct|direct
+aws|awscli|direct|direct
+uv|uv|direct|direct
+docker|-|direct|direct
 docker-desktop|docker-desktop|-|-
-codex|direct|direct|direct
+codex|codex|direct|direct
+claude_code|claude-code@latest|direct|direct
+onepassword_app|1password|-|-
+alt_tab|alt-tab|-|-
+appcleaner|appcleaner|-|-
+arc|arc|-|-
+balenaetcher|balenaetcher|-|-
+betterdisplay|betterdisplay|-|-
+bettermouse|bettermouse|-|-
+chatgpt|chatgpt|-|-
+claude_desktop|claude|-|-
+clop|clop|-|-
+devutils|devutils|-|-
+figma|figma|-|-
+google_chrome|google-chrome|-|-
+iterm2|iterm2|-|-
+microsoft_auto_update|microsoft-auto-update|-|-
+microsoft_excel|microsoft-excel|-|-
+microsoft_powerpoint|microsoft-powerpoint|-|-
+microsoft_word|microsoft-word|-|-
+notion|notion|-|-
+ollama_app|ollama-app|-|-
+pycharm|pycharm|-|-
+raycast|raycast|-|-
+shottr|shottr|-|-
+swish|swish|-|-
+tor_browser|tor-browser|-|-
+whatsapp|whatsapp|-|-
 "
 
 # --- ponytail: single-line array/for-loop assumption; re-write this parser
@@ -64,7 +95,10 @@ read -ra ACTUAL_PACMAN <<< "$pacman_str"
 optional_str=$(sed -n 's/.*for tool in \(.*\); do.*/\1/p' "$SETUP" | head -1)
 read -ra ACTUAL_OPTIONAL <<< "$optional_str"
 
-mapfile -t ACTUAL_BREW < <(grep -oE '^(brew|cask) "[^"]+"' "$BREWFILE" | sed -E 's/^(brew|cask) "(.*)"/\2/')
+ACTUAL_BREW=()
+while IFS= read -r package; do
+  ACTUAL_BREW+=("$package")
+done < <(grep -oE '^(brew|cask) "[^"]+"' "$BREWFILE" | sed -E 's/^(brew|cask) "(.*)"/\2/')
 
 contains() {
   local needle="$1"; shift

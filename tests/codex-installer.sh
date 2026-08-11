@@ -14,9 +14,11 @@ assert_contains "$SETUP" 'install_codex()'
 assert_contains "$SETUP" 'brew uninstall --cask codex'
 assert_contains "$SETUP" 'npm uninstall -g @openai/codex'
 assert_contains "$SETUP" 'export PATH="$HOME/.local/bin:'
+assert_contains "$ROOT/Brewfile" 'cask "codex"'
+assert_contains "$SETUP" 'verify_homebrew_cli cask codex codex'
 
 path_line=$(grep -nF 'export PATH="$HOME/.local/bin:' "$SETUP" | head -1 | cut -d: -f1)
-install_line=$(grep -n '^install_codex$' "$SETUP" | head -1 | cut -d: -f1)
+install_line=$(grep -nF 'if ! install_codex; then' "$SETUP" | head -1 | cut -d: -f1)
 [[ "$path_line" -lt "$install_line" ]] || fail 'install_codex must run after ~/.local/bin enters PATH'
 
 if grep -Fq '# >>> Codex installer >>>' "$PROFILE"; then
