@@ -148,3 +148,15 @@ enabled = true
 
 [plugins."chrome@openai-bundled"]
 enabled = true
+
+[marketplaces.posthog]
+source_type = "git"
+source = "https://github.com/PostHog/ai-plugin.git"
+
+[marketplaces.agent-toolkit-for-aws]
+source_type = "git"
+source = "https://github.com/aws/agent-toolkit-for-aws.git"
+
+[marketplaces.javier-plugins]
+source_type = "git"
+source = "https://github.com/jfa94/web-designer.git"

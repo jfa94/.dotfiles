@@ -256,6 +256,22 @@ NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
 FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")
 [[ "$FILTERED_CONFIG" == *'notify = '* && "$FILTERED_CONFIG" != *'[hooks.state'* ]]
+# Sections after [hooks.state] survive; volatile marketplace keys do not.
+FILTERED_SAMPLE=$("$ROOT/.codex/strip-hooks-state.sh" <<'EOF'
+notify = ["x"]
+
+[hooks.state."a"]
+trusted_hash = "sha256:x"
+
+[marketplaces.m]
+last_updated = "2026-01-01T00:00:00Z"
+last_revision = "abc"
+source_type = "git"
+source = "https://example.com/m.git"
+EOF
+)
+[[ "$FILTERED_SAMPLE" == *'[marketplaces.m]'* && "$FILTERED_SAMPLE" == *'source = '* ]]
+[[ "$FILTERED_SAMPLE" != *'trusted_hash'* && "$FILTERED_SAMPLE" != *'last_updated'* && "$FILTERED_SAMPLE" != *'last_revision'* ]]
 [[ ! -e "$ROOT/.codex/config.toml" ]]
 grep -q 'CODEX_USER_CONFIG=".codex/user-config.toml"' "$ROOT/setup.sh"
 grep -Fxq 'aws-core@agent-toolkit-for-aws' "$ROOT/.codex/plugins.txt"
