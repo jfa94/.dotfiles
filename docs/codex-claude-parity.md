@@ -68,6 +68,8 @@ AWS setup registers `aws/agent-toolkit-for-aws`, installs `aws-core`, `uv`/`uvx`
 
 Claude retains `/focused-code-review` and `/comprehensive-code-review` under `.claude/skills/`. Codex exposes its own `$code-review` router from `.codex/skills/code-review`; this keeps the Codex interface out of Claude Code while avoiding copied reviewer prompts. Claude-owned agents, prompts, and verification assets remain canonical under `.claude/skills/comprehensive-code-review/` and the Codex router references them directly.
 
+Both sides link skills per directory rather than per file. `setup.sh` links each `.claude/skills/<name>/` directory containing a `SKILL.md` to `~/.claude/skills/<name>`, and `~/.agents/skills` already worked this way for Codex. Supporting assets a skill gains later — reviewer profiles, prompts, verification scripts — are visible to both runtimes immediately, so a Codex `$code-review` run cannot see a partially linked Claude skill.
+
 Both runtimes use the same intent classification contract. Proven defects remain findings,
 documented intended behavior is refuted, and concrete undocumented intent choices become independent
 Open Questions. Each prompt receives the same prioritized path-only documentation manifest. The

@@ -15,6 +15,13 @@ source names `.codex/user-config.toml` and `.codex/user-hooks.json`, then linked
 to the runtime paths `~/.codex/config.toml` and `~/.codex/hooks.json`. This keeps
 the delivery clone from also treating the same files as project-local config.
 
+Claude skills are an exception to the path-for-path file linking. Section 3 of
+`cloud-setup.sh` skips every tracked path under `.claude/skills/*/*`, then links
+each skill directory containing a `SKILL.md` as one symlink into
+`~/.claude/skills/<name>` (mirroring `link_claude_skills` in `setup.sh`). Files
+added to a skill after the last setup run therefore appear at runtime without
+re-running setup.
+
 Key facts (spike-verified 2026-08):
 
 - Build and session both run as root with `HOME=/root`; a `~/.claude` created

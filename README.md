@@ -25,7 +25,7 @@ chmod +x ~/.dotfiles/setup.sh && ~/.dotfiles/setup.sh
 The script:
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
-- Symlinks Claude Code config into `~/.claude/` (settings, hooks, skills, agents, statusline), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
+- Symlinks Claude Code config into `~/.claude/` (settings, hooks, agents, statusline per file; each `.claude/skills/<name>` as one directory link, so new skill files need no re-run), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
 - Symlinks the authored `.codex/user-config.toml` and `.codex/user-hooks.json`
   to `~/.codex/config.toml` and `~/.codex/hooks.json`. The non-discovered
   source names prevent this repository from loading user-level configuration
@@ -61,8 +61,9 @@ staged copy. This prevents Launch Services from indexing both copies. Do not use
 
 ### Shared Claude and Codex skills
 
-Setup maintains a real `~/.agents/skills` directory containing individual
-symlinks. Compatible shared skills link from `.claude/skills`; the Codex-only
+Setup links each `.claude/skills/<name>` into `~/.claude/skills` as a single
+directory symlink, and maintains a real `~/.agents/skills` directory containing
+individual symlinks. Compatible shared skills link from `.claude/skills`; the Codex-only
 `code-review` skill links from `.codex/skills/code-review`. Claude's
 `comprehensive-code-review` and `focused-code-review` skills are deliberately
 excluded because they depend on Claude Workflow APIs. Nothing is copied.
