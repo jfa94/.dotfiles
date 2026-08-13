@@ -959,7 +959,12 @@ if (
         entry.text.length === 0,
     ) ||
     input.changeContext.reduce(
-      (bytes, entry) => bytes + new TextEncoder().encode(entry.text).length,
+      (bytes, entry) =>
+        bytes +
+        (typeof TextEncoder !== "undefined"
+          ? new TextEncoder().encode(entry.text).length
+          : // workflow sandbox lacks TextEncoder; %XX-escape trick counts UTF-8 bytes
+            encodeURIComponent(entry.text).replace(/%[0-9A-Fa-f]{2}/g, "x").length),
       0,
     ) > 8192)
 ) {
