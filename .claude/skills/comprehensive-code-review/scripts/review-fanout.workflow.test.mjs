@@ -206,10 +206,13 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   assert.deepEqual(reviewerSchema.allOf, [
     { not: { required: ["intent_question", "doc_basis"] } },
   ]);
+  // Top-level oneOf/allOf/anyOf are rejected by the API for tool input
+  // schemas; exclusivity is enforced in applyVerificationVotes instead.
   const refuterSchema = prompts.find((p) => p.options.label.includes(":2:")).options.schema;
-  assert.deepEqual(refuterSchema.allOf, [
-    { not: { required: ["intent_question", "doc_basis"] } },
-  ]);
+  for (const key of ["allOf", "oneOf", "anyOf"]) {
+    assert.equal(key in refuterSchema, false, `refuter schema has top-level ${key}`);
+  }
+  assert.equal(refuterSchema.properties.intent_question.minLength, 10);
   const codexRunnerSchema = prompts.find((p) => p.options.label === "codex:adversarial").options
     .schema.properties.findings.items.properties;
   assert.equal("intent_question" in codexRunnerSchema, false);

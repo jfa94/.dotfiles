@@ -127,10 +127,13 @@ const VERIFIER_MODEL = "sonnet";
 // truncation-prone model would burn the single retry and null the persist.
 const PERSIST_MODEL = "sonnet";
 
+// No top-level allOf here: the API rejects oneOf/allOf/anyOf at the top level
+// of a tool input_schema (FINDINGS_SCHEMA's copy is legal — nested in items).
+// intent_question/doc_basis exclusivity is enforced by applyVerificationVotes,
+// which ignores votes that set both.
 const VERIFY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  allOf: [{ not: { required: ["intent_question", "doc_basis"] } }],
   required: ["refuted", "reason"],
   properties: {
     refuted: { type: "boolean" },
