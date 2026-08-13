@@ -59,8 +59,13 @@ node --test \
   "$CLAUDE_REVIEW/scripts/review-fanout.workflow.test.mjs" \
   "$CLAUDE_REVIEW/scripts/codex-launch.test.mjs"
 
+# Installed runtime: the skill must be a directory symlink into the repo so
+# every canonical resource the Codex skill requires resolves, always current.
 installed_review="$HOME/.claude/skills/comprehensive-code-review"
-if [[ -d "$installed_review" ]]; then
+if [[ -e "$installed_review" ]]; then
+  [[ -L "$installed_review" ]] || fail 'installed review skill is not a directory symlink'
+  [[ -r "$installed_review/references/reviewer-profiles.json" ]] \
+    || fail 'installed reviewer profiles missing'
   [[ -r "$installed_review/scripts/review-run.mjs" ]] \
     || fail 'installed canonical run-state helper missing'
 fi

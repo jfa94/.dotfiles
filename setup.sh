@@ -177,6 +177,18 @@ link_skills_for_codex() {
   link_file "$codex_src" "$skills_dest/code-review" "~/.agents/skills/code-review"
 }
 
+# Claude Code skills are linked per-directory (like ~/.agents/skills), not per
+# file: new tracked files inside a skill then appear at runtime without
+# re-running setup. The Section 4 loop excludes .claude/skills/*/* for this.
+link_claude_skills() {
+  local src name
+  mkdir -p "$HOME/.claude/skills"
+  while IFS= read -r src; do
+    name="$(basename "$src")"
+    link_file "$src" "$HOME/.claude/skills/$name" "~/.claude/skills/$name"
+  done < <(find "$DOTFILES_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | sort)
+}
+
 # --- Linux package lists (native, in-repo packages only) ---
 # Name deltas: python3<->python, golang-go<->go, default-jdk<->jdk-openjdk.
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
@@ -653,6 +665,8 @@ for prefix in .claude .codex .config; do
     # Codex-only skills are exposed through ~/.agents/skills, not duplicated
     # under ~/.codex/skills by the path-for-path config linker.
     [[ "$path" == .codex/skills/* ]] && continue
+    # Claude skill contents ride the per-skill directory links (see below).
+    [[ "$path" == .claude/skills/*/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
     rel="${path#"$prefix"/}"
@@ -665,6 +679,17 @@ for prefix in .claude .codex .config; do
     fi
   done < <(git -C "$DOTFILES_DIR" ls-files -z -- "$prefix")
 done
+
+# Per-skill directory links (link_claude_skills).
+while IFS= read -r skill_src; do
+  skill_dest="$HOME/.claude/skills/$(basename "$skill_src")"
+  if [[ -L "$skill_dest" && "$(readlink "$skill_dest")" == "$skill_src" ]]; then
+    continue
+  fi
+  if [[ -e "$skill_dest" || -L "$skill_dest" ]]; then
+    conflicts+=("~/.claude/skills/$(basename "$skill_src")")
+  fi
+done < <(find "$DOTFILES_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print 2>/dev/null)
 
 codex_config_src="$DOTFILES_DIR/$CODEX_USER_CONFIG"
 codex_config_dest="$HOME/.codex/config.toml"
@@ -748,6 +773,7 @@ for prefix in .claude .codex .config; do
   info "Creating ~/$prefix symlinks..."
   while IFS= read -r -d '' path; do
     [[ "$path" == .codex/skills/* ]] && continue
+    [[ "$path" == .claude/skills/*/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
     rel="${path#"$prefix"/}"
@@ -760,6 +786,7 @@ done
 link_codex_user_config
 link_codex_user_hooks
 
+link_claude_skills
 link_skills_for_codex
 
 # Ensure hook scripts are executable (git may not preserve +x on all systems)

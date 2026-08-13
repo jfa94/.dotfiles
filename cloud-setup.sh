@@ -70,11 +70,19 @@ CODEX_LEGACY_HOOKS=".codex/hooks.json"
 link_count=0
 while IFS= read -r -d '' path; do
   [[ "$path" == .codex/skills/* ]] && continue
+  # Claude skill contents ride the per-skill directory links below.
+  [[ "$path" == .claude/skills/*/* ]] && continue
   [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
   [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
   mkdir -p "$HOME/$(dirname "$path")"
   ln -sfn "$DOTFILES_DIR/$path" "$HOME/$path" && ((link_count++))
 done < <(git -C "$DOTFILES_DIR" ls-files -z -- .claude .codex)
+
+# keep in sync with setup.sh link_claude_skills (per-skill directory links)
+mkdir -p "$HOME/.claude/skills"
+while IFS= read -r skill_src; do
+  ln -sfn "$skill_src" "$HOME/.claude/skills/$(basename "$skill_src")" && ((link_count++))
+done < <(find "$DOTFILES_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print 2>/dev/null)
 
 if [[ -f "$DOTFILES_DIR/$CODEX_USER_CONFIG" ]]; then
   mkdir -p "$HOME/.codex"

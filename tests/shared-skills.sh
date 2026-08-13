@@ -10,6 +10,7 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 # Exercise production helpers without running package installation.
 eval "$(sed -n '/^link_file() {/,/^}/p' "$SETUP")"
 eval "$(sed -n '/^link_skills_for_codex() {/,/^}/p' "$SETUP")"
+eval "$(sed -n '/^link_claude_skills() {/,/^}/p' "$SETUP")"
 
 info() { :; }
 success() { :; }
@@ -100,7 +101,33 @@ link_skills_for_codex
 [[ ! -e "$HOME/.agents/skills/deleted" ]] || fail 'stale owned link was retained'
 [[ -L "$HOME/.agents/skills/unowned" ]] || fail 'unowned link was pruned'
 
+# Claude skills link per-directory into ~/.claude/skills.
+HOME="$tmp/claude-fresh"
+MODE=replace
+reset_tracking
+link_claude_skills
+[[ "$(readlink "$HOME/.claude/skills/shared")" == "$DOTFILES_DIR/.claude/skills/shared" ]] || fail 'claude skill dir link is wrong'
+[[ -f "$HOME/.claude/skills/shared/references/guide.md" ]] || fail 'nested claude skill resource is unavailable'
+[[ -L "$HOME/.claude/skills/comprehensive-code-review" ]] || fail 'comprehensive skill dir not linked for Claude'
+
+# Re-running is idempotent.
+link_claude_skills
+[[ ${#linked[@]} -eq 3 ]] || fail 'claude skill rerun recreated links'
+
+# Legacy per-file layout (real dir of file links) migrates to a dir link,
+# preserving prior contents in .bak.
+HOME="$tmp/claude-migrate"
+mkdir -p "$HOME/.claude/skills/shared"
+ln -s "$DOTFILES_DIR/.claude/skills/shared/SKILL.md" "$HOME/.claude/skills/shared/SKILL.md"
+touch "$HOME/.claude/skills/shared/stray.bak"
+MODE=replace
+reset_tracking
+link_claude_skills
+[[ -L "$HOME/.claude/skills/shared" ]] || fail 'legacy per-file skill dir was not replaced'
+[[ -f "$HOME/.claude/skills/shared.bak/stray.bak" ]] || fail 'migration did not back up prior skill dir'
+
 [[ ! -e "$ROOT/.agents/skills" ]] || fail 'repo contains a duplicate .agents skill tree'
+[[ "$(grep -c '^link_claude_skills$' "$SETUP")" -eq 1 ]] || fail 'setup does not invoke claude skill linking exactly once'
 [[ "$(grep -c '^link_skills_for_codex$' "$SETUP")" -eq 1 ]] || fail 'setup does not invoke skill linking exactly once'
 if grep -Eq '(cp|rsync).*(\.claude/skills|\.codex/skills|\.agents/skills)' "$SETUP"; then
   fail 'setup copies skills'
