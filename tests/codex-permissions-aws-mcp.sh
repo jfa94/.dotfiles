@@ -100,6 +100,15 @@ CLAUDE_SECRET_RE=$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.claude/hooks/pre-c
 }
 grep -qF "(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)\$" "$ROOT/.codex/hooks/pre-commit-check.sh"
 PASS=$((PASS + 2))
+
+# Same drift risk for the cache/artifact rm exemption in dangerous-patterns-check.sh.
+CODEX_ARTIFACT_RE=$(grep -oE "^ARTIFACT='[^']*'" "$ROOT/.codex/hooks/dangerous-patterns-check.sh")
+CLAUDE_ARTIFACT_RE=$(grep -oE "^ARTIFACT='[^']*'" "$ROOT/.claude/hooks/dangerous-patterns-check.sh")
+[[ -n "$CODEX_ARTIFACT_RE" && "$CODEX_ARTIFACT_RE" == "$CLAUDE_ARTIFACT_RE" ]] || {
+  echo "FAIL dangerous-patterns-check ARTIFACT drifted between .codex and .claude hooks" >&2
+  exit 1
+}
+PASS=$((PASS + 1))
 assert_protected_write "$ROOT/.env.local" deny
 assert_protected_write "$ROOT/.env.example" allow
 assert_shell_command "cat $ROOT/.env.local" allow

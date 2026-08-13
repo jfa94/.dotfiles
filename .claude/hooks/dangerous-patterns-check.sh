@@ -30,11 +30,11 @@ for PAT in \
   fi
 done
 
-# Dangerous patterns. rm targeting / tolerates any flag order; chmod covers
-# -R 777; curl/wget pipes only deny when the pipe target is an actual shell
-# word (sh/bash/zsh/dash, optionally sudo) — not shasum, .shell, etc.
+# Dangerous patterns. chmod covers -R 777; curl/wget pipes only deny when the
+# pipe target is an actual shell word (sh/bash/zsh/dash, optionally sudo) —
+# not shasum, .shell, etc. rm targeting / lives below, after the artifact/tmp
+# exemption so that exemption gets first look.
 for PAT in \
-  "${RECURSIVE_RM}[[:space:]]+/([[:space:]]|\$|\\*)" \
   'DROP TABLE' \
   'DROP DATABASE' \
   'DROP SCHEMA' \
@@ -47,6 +47,54 @@ for PAT in \
     exit 0
   fi
 done
+
+# Regenerable caches / build / test artifacts: a single rm whose every operand
+# is a known throwaway path. Anchored ^…$ so compounds, pipes, redirects and
+# command substitution never reach it; path segments must start alphanumeric,
+# which rules out `..` traversal. Absolute form is limited to tmp roots and
+# requires a subpath, so bare /tmp still gates below.
+ARTIFACT='node_modules/\.cache|\.cache|\.turbo|\.vite|\.parcel-cache|\.eslintcache|coverage|\.nyc_output|\.stryker-tmp|\.vitest|test-results|playwright-report|blob-report|dist|build|out|\.next|\.output'
+SEG='/[[:alnum:]][[:alnum:]._-]*'
+SAFE_RM="(\"?((\./)?(${ARTIFACT})(${SEG})*|/(private/)?(tmp|var/tmp)(${SEG})+)/?\"?)"
+if printf '%s' "$CMD" | grep -qE "^[[:space:]]*rm([[:space:]]+-[a-zA-Z]+)+([[:space:]]+${SAFE_RM})+[[:space:]]*$"; then
+  jq -cn --arg r 'regenerable cache/build artifact — auto-allowed' \
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":$r}}'
+  exit 0
+fi
+
+# Recursive rm targeting any other absolute path. settings.json's blanket
+# "Bash(rm -rf /*)" deny was narrowed to the bare-root case so the tmp-scratch
+# exemption above stays reachable; this backstops everything else (/etc,
+# /usr, a resolved ~, …) that the narrowing gave up. Split into command
+# segments (on ; && || | & and newlines, after stripping quoted substrings)
+# and only inspect segments that are themselves an rm invocation — otherwise
+# an unrelated absolute path anywhere else on the line (an earlier `cd`, a
+# `git log -- /abs/path`, even literal "rm -rf" text inside a search string)
+# would falsely condemn a same-line rm targeting a perfectly safe operand.
+# The one real cost: an rm target quoted for an embedded space loses its
+# operand to the quote-strip too and falls through to the ask tier below
+# instead of a hard deny.
+STRIPPED_RM=$(printf '%s\n' "$CMD" | tr '\n' ';' | sed -E 's/"[^"]*"//g' | sed -E "s/'[^']*'//g")
+while IFS= read -r RM_SEG; do
+  RM_SEG="${RM_SEG#"${RM_SEG%%[![:space:]]*}"}"
+  case "$RM_SEG" in
+    rm[[:space:]]*|sudo[[:space:]]rm[[:space:]]*) ;;
+    *) continue ;;
+  esac
+  if printf '%s' "$RM_SEG" | grep -qE "^(sudo[[:space:]]+)?${RECURSIVE_RM}"; then
+    IFS=' ' read -ra RM_TOKS <<< "$RM_SEG"
+    for TOK in "${RM_TOKS[@]}"; do
+      case "$TOK" in
+        /tmp/?*|/private/tmp/?*|/var/tmp/?*) ;;
+        /*)
+          jq -cn --arg r "recursive rm targeting absolute path '$TOK' — blocked" \
+            '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
+          exit 0
+          ;;
+      esac
+    done
+  fi
+done < <(printf '%s\n' "$STRIPPED_RM" | sed -E 's/(&&|\|\||[;&|])/\n/g')
 
 # Backstop for shell writes that bypass the Edit/Write protected-files gate:
 # redirects, tee, sed -i, mv/cp/rm targeting .env* / credentials / secrets paths.

@@ -357,7 +357,7 @@
       "Bash(git -C * rebase --no-verify*)",
       "Bash(git push --no-verify*)",
       "Bash(git -C * push --no-verify*)",
-      "Bash(rm -rf /*)",
+      "Bash(rm -rf /)",
       "Bash(rm -rf ~*)",
       "Bash(rm -rf $HOME*)",
       "Bash(pnpm publish*)",
@@ -594,7 +594,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,

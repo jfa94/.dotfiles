@@ -52,8 +52,14 @@ ACTUAL_BASH_HOOKS=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .h
 while IFS='|' read -r name hook command expected; do
   assert_decision "$name" "$hook" "$command" "$expected"
 done <<'CASES'
-rm grouped rf|dangerous-patterns-check.sh|rm -rf build|deny
-rm grouped fr|dangerous-patterns-check.sh|rm -fr build|deny
+rm grouped rf|dangerous-patterns-check.sh|rm -rf src|deny
+rm grouped fr|dangerous-patterns-check.sh|rm -fr src|deny
+rm cache exempt|dangerous-patterns-check.sh|rm -rf node_modules/.cache/dependency-cruiser|allow
+rm artifact multi|dangerous-patterns-check.sh|rm -rf coverage .stryker-tmp|allow
+rm traversal escape|dangerous-patterns-check.sh|rm -rf node_modules/.cache/../../src|deny
+rm compound escape|dangerous-patterns-check.sh|rm -rf coverage && rm -rf /etc|deny
+rm bare tmp|dangerous-patterns-check.sh|rm -rf /tmp|deny
+rm absolute path|dangerous-patterns-check.sh|rm -rf /etc|deny
 force arbitrary position|dangerous-patterns-check.sh|git push origin main --force-with-lease|deny
 force refspec|dangerous-patterns-check.sh|git push origin +main|deny
 git bypass|dangerous-patterns-check.sh|git -C /tmp/repo commit -n -m bad|deny
