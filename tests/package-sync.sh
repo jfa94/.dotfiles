@@ -52,8 +52,8 @@ aws|awscli|direct|direct
 uv|uv|direct|direct
 docker|-|direct|direct
 docker-desktop|docker-desktop|-|-
-codex|codex|direct|direct
-claude_code|claude-code@latest|direct|direct
+codex|direct|direct|direct
+claude_code|direct|direct|direct
 onepassword_app|1password|-|-
 alt_tab|alt-tab|-|-
 appcleaner|appcleaner|-|-

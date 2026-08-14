@@ -507,7 +507,17 @@ install_codex() {
 }
 
 install_claude_code() {
-  command -v claude &>/dev/null && return
+  local claude_path=""
+  claude_path="$(command -v claude 2>/dev/null || true)"
+  if [[ -n "$claude_path" ]]; then
+    # Reject a Homebrew-owned claude: its self-updater cannot run there.
+    if [[ "$(realpath "$claude_path" 2>/dev/null || true)" == *"/Caskroom/"* ]]; then
+      error "Claude Code is Homebrew-managed: $claude_path"
+      error "Remove it first ('brew uninstall --cask claude-code@latest'), then re-run setup."
+      return 1
+    fi
+    return 0
+  fi
   info "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash
   command -v claude &>/dev/null
@@ -873,39 +883,33 @@ fi
 
 aws_status="installed"
 uv_status="installed"
-codex_status="installed"
 if [[ "$OS" == "macos" ]]; then
   if ! verify_homebrew_cli formula awscli aws; then aws_status="FAILED"; setup_failed=1; fi
   if ! verify_homebrew_cli formula uv uv || ! verify_homebrew_cli formula uv uvx; then uv_status="FAILED"; setup_failed=1; fi
-  if ! verify_homebrew_cli cask codex codex; then codex_status="FAILED"; setup_failed=1; fi
 else
   if ! install_aws; then aws_status="FAILED"; setup_failed=1; fi
   if ! install_uv; then uv_status="FAILED"; setup_failed=1; fi
-  # Linux retains OpenAI's managed standalone layout. Install after package
-  # setup (curl is now available) and before Codex plugin installation.
-  codex_status="not installed"
-  if ! install_codex; then codex_status="FAILED"; setup_failed=1; fi
 fi
+
+# All platforms use OpenAI's managed standalone layout (self-updating).
+# Install after package setup (curl is now available) and before Codex
+# plugin installation.
+codex_status="not installed"
+if ! install_codex; then codex_status="FAILED"; setup_failed=1; fi
 
 # =============================================================================
 # Section 7: Install Claude Code
 # =============================================================================
 
-claude_status="installed"
-if [[ "$OS" == "macos" ]]; then
-  if ! verify_homebrew_cli cask claude-code@latest claude; then
-    claude_status="FAILED"
-    setup_failed=1
-  fi
-elif ! command -v claude &>/dev/null; then
-  if install_claude_code; then
-    claude_status="freshly installed"
-  else
-    claude_status="FAILED"
-    setup_failed=1
-  fi
-else
+# All platforms use Anthropic's native installer (self-updating).
+if command -v claude &>/dev/null; then
   claude_status="already installed"
+else
+  claude_status="freshly installed"
+fi
+if ! install_claude_code; then
+  claude_status="FAILED"
+  setup_failed=1
 fi
 
 # =============================================================================

@@ -31,8 +31,8 @@ The script:
   source names prevent this repository from loading user-level configuration
   a second time as project-local configuration.
 - Installs Homebrew (if missing) and the `Brewfile` packages.
-- Installs Claude Code and Codex through Homebrew on macOS, or their official
-  standalone installers on Linux, then installs their declared plugins.
+- Installs Claude Code and Codex through their official standalone installers
+  on every platform (self-updating), then installs their declared plugins.
 - Sets up vim plugin/undo directories.
 
 Agent credentials use tracked 1Password references with process-scoped
@@ -102,19 +102,19 @@ connectors remain authoritative when their project binding is verified; setup
 does not add duplicate unscoped MCP servers. AWS CLI is deliberately excluded;
 Codex re-auths per session via `codex login --device-auth`.
 
-## Codex CLI
+## Claude Code and Codex CLIs
 
-On macOS, Codex is owned by the Homebrew `codex` cask. On Linux, OpenAI's
-standalone installer owns releases under `~/.codex/packages/standalone` and
-exposes `codex` through `~/.local/bin`. Changing the executable owner does not
-move or recreate `~/.codex`, which contains the existing user configuration and
-authentication state.
+Both CLIs are owned by their vendors' standalone installers on every platform,
+so their built-in auto-updaters work (Homebrew casks block them). OpenAI's
+installer owns releases under `~/.codex/packages/standalone`; both expose their
+binaries through `~/.local/bin`. Changing the executable owner does not move or
+recreate `~/.codex` or `~/.claude`, which hold configuration and auth state.
 
-Linux setup refuses an active Homebrew or npm installation to avoid ambiguous
+Setup refuses an active Homebrew or npm installation to avoid ambiguous
 duplicate CLIs. Remove the old package first, then re-run setup:
 
 ```zsh
-brew uninstall --cask codex
+brew uninstall --cask codex claude-code@latest
 # or
 npm uninstall -g @openai/codex
 ```

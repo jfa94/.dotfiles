@@ -16,12 +16,14 @@ command. Secrets therefore never persist in the interactive parent shell. Use
 Credentialed MCP servers are optional, so Codex still starts without their
 variables.
 
-On macOS, Homebrew owns the Codex, Claude Code, AWS, uv, Stripe, Supabase, and
-1Password CLI executables. Package migration must change only those executables:
-it must not rewrite this environment file, `~/.codex`, AWS profiles, generated
-1Password plugin aliases, or project MCP files. Linux retains the documented
-native/official installers. Setup does not perform `op plugin init`,
-`direnv allow`, provider login, or project-agent configuration.
+On macOS, Homebrew owns the AWS, uv, Stripe, Supabase, and 1Password CLI
+executables; Linux retains the documented native/official installers for them.
+Codex and Claude Code are owned by their vendors' standalone installers on every
+platform, so their built-in auto-updaters keep working. Package migration must
+change only those executables: it must not rewrite this environment file,
+`~/.codex`, `~/.claude`, AWS profiles, generated 1Password plugin aliases, or
+project MCP files. Setup does not perform `op plugin init`, `direnv allow`,
+provider login, or project-agent configuration.
 
 On macOS, resolved values are cached in the explicit login Keychain under
 service `agent-env-cache`, with the full `op://` reference as the account. A

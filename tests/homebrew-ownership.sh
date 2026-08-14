@@ -11,7 +11,7 @@ for formula in awscli uv shellcheck typescript typescript-language-server npm-ch
   grep -Fqx "brew \"$formula\"" "$BREWFILE" || fail "missing formula: $formula"
 done
 
-for cask in 1password codex claude-code@latest microsoft-auto-update ollama-app pycharm; do
+for cask in 1password microsoft-auto-update ollama-app pycharm; do
   grep -Fqx "cask \"$cask\"" "$BREWFILE" || fail "missing cask: $cask"
 done
 
@@ -28,8 +28,12 @@ grep -Fq 'brew bundle install --no-upgrade --file="$DOTFILES_DIR/Brewfile"' "$SE
   || fail 'brew bundle is not presence-only'
 grep -Fq 'verify_homebrew_cli formula awscli aws' "$SETUP" \
   || fail 'macOS AWS ownership is not checked'
-grep -Fq 'verify_homebrew_cli cask claude-code@latest claude' "$SETUP" \
-  || fail 'macOS Claude ownership is not checked'
+# Claude Code and Codex are vendor-installer-owned on every platform; a
+# Homebrew-managed binary must make setup fail loud.
+grep -Fq "brew uninstall --cask claude-code@latest" "$SETUP" \
+  || fail 'setup.sh lost the Homebrew-managed Claude rejection'
+grep -Fq "brew uninstall --cask codex" "$SETUP" \
+  || fail 'setup.sh lost the Homebrew-managed Codex rejection'
 
 # JavaScript CLIs stay presence-only on Linux: each installer runs once even
 # when setup invokes it repeatedly.
