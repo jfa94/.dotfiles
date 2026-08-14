@@ -94,6 +94,7 @@ fabric.properties
 .claude/read-once/.last-cleanup
 .claude-plugin-data/
 .code-review/
+!.code-review/dispositions.json
 .code-reviews/
 .comprehensive-code-review/
 .focused-code-review/
