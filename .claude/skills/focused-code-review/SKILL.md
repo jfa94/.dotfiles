@@ -10,6 +10,12 @@ description: >
   For a whole-codebase audit or spec-conformance, use comprehensive-code-review instead.
   Usage: /focused-code-review [--base <ref>] [--context <path>] [--pass <n>]
 argument-hint: "[--base <ref>] [--context <path>] [--pass <n>]"
+hooks:
+  PreToolUse:
+    - matcher: Workflow
+      hooks:
+        - type: command
+          command: 'node "$HOME/.claude/skills/comprehensive-code-review/scripts/validate-workflow-launch.mjs"'
 ---
 
 # Focused Code Review
@@ -167,29 +173,30 @@ EXCLUDES=(
 ```bash
 # mode = base
 CHANGED_FILES=$(git diff --name-only <ref>...HEAD -- . "${EXCLUDES[@]}")
-# reviewInput = the diff (git diff <ref>...HEAD -- . "${EXCLUDES[@]}"). Diff <=2000 lines -> inline it;
+# reviewInput = the diff (git diff <ref>...HEAD -- . "${EXCLUDES[@]}"). Diff <=2000 lines -> write it directly to review-input.txt;
 #   >2000 lines -> manifest mode (write full-diff.patch + risk-ranked manifest, never truncated) per the reference.
 # Empty guard: if diff empty -> print "Nothing to review: no changes vs <ref> (build outputs excluded)." STATUS: DONE. Stop.
 
 # mode = working-tree
 CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files --others --exclude-standard -- . "${EXCLUDES[@]}"; } | sort -u )
 # reviewInput = the diff (git diff HEAD -- . "${EXCLUDES[@]}" — staged + unstaged; bare `git diff` misses staged changes).
-#   Diff <=2000 lines -> inline it; >2000 lines -> manifest mode per the reference (never truncated).
+#   Diff <=2000 lines -> write it directly to review-input.txt; >2000 lines -> manifest mode per the reference (never truncated).
 #   Untracked files carry no diff hunks — append to
 #   reviewInput: "Untracked files in the changed-files list have no diff; Read them directly."
 # Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: working tree matches HEAD
 #   and no untracked files (build outputs excluded)." STATUS: DONE. Stop.
 ```
 
-Read the five reviewer names from `references/reviewer-profiles.json`'s `focused` array, then read
-their sibling `agents/<name>.md` files into `reviewers` as `{ name, role }`. Read `CLAUDE.md` path.
+Read the five reviewer names from `references/reviewer-profiles.json`'s `focused` array, then build
+`reviewers` as `{ name, charterPath }`, using each sibling `agents/<name>.md` absolute path. Validate
+every charter is readable, but never copy its body into Workflow args. Read `CLAUDE.md` path.
 
 **Documentation manifest → `docsManifest`.** Build a path-only, newline-joined manifest after the
 empty guard. Base mode uses tracked files; working-tree mode uses tracked plus untracked,
 non-ignored files. Reuse `EXCLUDES`, deduplicate, then prioritize applicable `AGENTS.md`/`CLAUDE.md`,
-`README*.md`, `docs/**`, and remaining Markdown. Cap at 50 and append `(<N> more omitted)`; use
-`null` when empty. Pass it to every reviewer, refuter, Codex verifier, and external Codex focus-text
-argument. Reviewers must read relevant listed docs before classifying intent.
+`README*.md`, `docs/**`, and remaining Markdown. Cap at 50 and append `(<N> more omitted)`; omit the
+artifact when empty. Pass its absolute path to every reviewer, refuter, Codex verifier, and external
+Codex focus-text argument. Reviewers must read relevant listed docs before classifying intent.
 
 **Change rationale → `changeContext`.** Build the source-attributed, 8 KiB-capped array described in
 the workflow reference from the explicit user request, base-range commit messages, and optional
@@ -206,8 +213,23 @@ The FIRST time a disposition is recorded in a repo whose `.gitignore` ignores `.
 append `!.code-review/dispositions.json` to `.gitignore` (one line, once) — the ledger is
 committed; run artifacts stay ignored.
 
-Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`,
-`claudeMdPath`, `docsManifest`, `changeContext`, `dispositions` (the rendered block, or null), `passNumber`.
+Materialize every bulk launch input under the current run before calling Workflow:
+
+```text
+<runDir>/raw/changed-files.txt
+<runDir>/raw/inputs/review-input.txt
+<runDir>/raw/inputs/docs-manifest.txt       # omit when none
+<runDir>/raw/inputs/change-context.json     # omit when none
+<runDir>/raw/inputs/dispositions.txt        # omit when none
+```
+
+Write command-produced diff/inventory data directly to these files rather than placing it in a
+tool argument. The context file is the validated source-attributed JSON array; the dispositions
+file contains only `reviewerBlock`. Read every artifact back, require JSON artifacts to parse, and
+use absolute paths. Record `scopeLabel`, `mode`, `repoRoot`, `passNumber`, reviewer charter paths,
+and an `inputs` object containing `reviewInputPath`, `changedFilesPath`, nullable
+`docsManifestPath`, `changeContextPath`, `dispositionsPath`, `specPath: null`, and the nullable
+repository-contained `claudeMdPath`.
 
 ## Phase 2 — Resolve Codex
 
@@ -260,15 +282,17 @@ using the sibling skill's script:
 Workflow({
   scriptPath: "<comprehensive-code-review skill dir>/scripts/review-fanout.workflow.js",
   args: { runtime: "claude", profile: "focused", runId, scopeLabel, mode,
-          reviewInput, changedFiles, repoRoot, claudeMdPath, outDir: runDir, reviewers,
-          docsManifest, changeContext,
-          dispositions: <the Phase 1 DISPOSITIONS_BLOCK, or null>,
+          repoRoot, outDir: runDir, reviewers,
+          inputs: { reviewInputPath, changedFilesPath, docsManifestPath,
+                    changeContextPath, dispositionsPath, specPath: null, claudeMdPath },
           codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
 })
 ```
 
-The `args` values are the records gathered in Phases 1–3. Pass them as real JSON. `repoRoot` MUST be the
-absolute repo root. `outDir` is required and must be `.code-review/runs/<runId>`. Do not pass a `spec`.
+The `args` values are the compact records and absolute artifact paths gathered in Phases 1–3. Pass
+them as real JSON; the serialized Workflow tool input must stay at or below 8 KiB. `repoRoot` MUST
+be the absolute repo root. `outDir` is required and must be `.code-review/runs/<runId>`. Do not pass
+a spec.
 
 Do NOT launch Codex yourself (no Bash call, backgrounded or otherwise) and do NOT hand-dispatch
 reviewer Task calls — the workflow owns both tracks precisely so they can never serialize.

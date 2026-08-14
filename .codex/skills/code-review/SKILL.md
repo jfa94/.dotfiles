@@ -11,7 +11,7 @@ Run the review in Codex with collaboration subagents. Never invoke Claude's Work
 
 1. Read [references/orchestration.md](references/orchestration.md) completely.
 2. Expand `~` to the current user's home directory for every canonical Claude resource below.
-3. Read `~/.claude/skills/comprehensive-code-review/references/reviewer-profiles.json`, select the profile from that canonical manifest, then read every selected reviewer charter completely. The charters remain canonical; never copy or rewrite them into this skill.
+3. Read `~/.claude/skills/comprehensive-code-review/references/reviewer-profiles.json`, select the profile from that canonical manifest, then read every selected reviewer charter completely. The charters remain canonical; never copy them into this skill or re-emit their bodies in spawned tasks—pass canonical paths and require each reviewer to read its charter.
 
 Focused always selects:
 

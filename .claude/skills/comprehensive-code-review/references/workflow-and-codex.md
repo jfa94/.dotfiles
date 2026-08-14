@@ -31,17 +31,17 @@ Workflow({
     scopeLabel:
       "<human-readable scope, e.g. 'ENTIRE CODEBASE (current state)' or 'abc123...HEAD'>",
     mode: "full" | "base" | "working-tree",
-    reviewInput:
-      "<full mode: the whole-codebase instruction; diff modes: the diff text>",
-    changedFiles: "<newline-joined file list>",
     repoRoot: "<absolute repo root>",
     outDir: ".code-review/runs/<runId>",
-    claudeMdPath: "<path to CLAUDE.md or 'not found'>",
-    docsManifest: null | "<path-only prioritized documentation manifest, max 50 + omitted count>",
-    changeContext: null | [ { source: "request|commit-messages|context-file", text: "<untrusted rationale>" } ],
-    spec: null | { path: "<spec path>", content: "<spec file content>" },
-    dispositions:
-      null | "<deterministically rendered suppression + user-confirmed-requirements blocks (SKILL.md Phase 1)>",
+    inputs: {
+      reviewInputPath: "<absolute path to raw/inputs/review-input.txt>",
+      changedFilesPath: "<absolute path to raw/changed-files.txt>",
+      claudeMdPath: null | "<absolute repository-contained CLAUDE.md path>",
+      docsManifestPath: null | "<absolute path to raw/inputs/docs-manifest.txt>",
+      changeContextPath: null | "<absolute path to raw/inputs/change-context.json>",
+      specPath: null | "<absolute path to raw/inputs/spec>",
+      dispositionsPath: null | "<absolute path to raw/inputs/dispositions.txt>",
+    },
     codex: null | {
       cmd: "<absolute path to codex-companion.mjs (CODEX_CMD)>",
       launcher: "<absolute path to this skill's scripts/codex-launch.mjs>",
@@ -53,16 +53,16 @@ Workflow({
     reviewers: [
       {
         name: "architecture-reviewer",
-        role: "<full body of agents/architecture-reviewer.md>",
+        charterPath: "<absolute canonical path to agents/architecture-reviewer.md>",
       },
       {
         name: "quality-reviewer",
-        role: "<full body of agents/quality-reviewer.md>",
+        charterPath: "<absolute canonical path to agents/quality-reviewer.md>",
       },
       // ... one entry per reviewer ...
       {
         name: "systemic-failure-reviewer",
-        role: "<full body of agents/systemic-failure-reviewer.md>",
+        charterPath: "<absolute canonical path to agents/systemic-failure-reviewer.md>",
       },
       // include implementation-reviewer ONLY if --spec is valid (Phase 4)
     ],
@@ -70,9 +70,12 @@ Workflow({
 });
 ```
 
-The workflow validates `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, and `outDir` before
-dispatch. Persisted workflow and Codex-verification results echo all five identity/scope fields;
-harvesters reject any mismatch as stale/foreign.
+The Workflow tool input stays at or below 8 KiB. The workflow validates `runtime`, `profile`,
+`runId`, `scopeLabel`, `mode`, `outDir`, the path-only input shape, and the absence of legacy inline
+fields before dispatch. A skill-scoped PreToolUse hook independently verifies the exact bundled
+script, canonical roster/charters, current-run artifact containment/readability, and bundled Codex
+launcher before auto-allowing the call. Persisted workflow and Codex-verification results echo all
+five identity/scope fields; harvesters reject any mismatch as stale/foreign.
 
 `codex: null` (Codex unavailable) makes the workflow report the track SKIPPED; reviewers run
 regardless. The orchestrator never launches Codex itself — the old two-call contract (backgrounded
@@ -130,9 +133,10 @@ These behaviors live inside the workflow, not the skill:
   cannot be demoted to a question, and a reviewer question is never replaced with a refuter's wording.
 - **Diffless reviewers**: `documentation-reviewer` audits current state, not the change; the workflow
   withholds the diff from it (it gets the changed-files list only) to avoid context dilution.
-- **Spec scoping**: `args.spec` (when provided) is included ONLY in implementation-reviewer's prompt —
-  broadcasting it to every reviewer would cost spec × N tokens and duplicate the acceptance-criteria pass.
-- **Dispositions splicing**: `args.dispositions` comes from `review-run.mjs render-dispositions`.
+- **Spec scoping**: `args.inputs.specPath` (when provided) is read ONLY by implementation-reviewer —
+  broadcasting its content would cost spec × N tokens and duplicate the acceptance-criteria pass.
+- **Dispositions splicing**: `args.inputs.dispositionsPath` points to the output from
+  `review-run.mjs render-dispositions`.
   Suppressed claims require new evidence plus `challenges_disposition`; `intent-confirmed` claims
   live in a separate user-confirmed-requirements block that reviewers re-evaluate and report normally.
   It is an INPUT DOCUMENT, not shared belief-state. Refuters and the Codex track never see it. Reviewer
@@ -142,10 +146,11 @@ These behaviors live inside the workflow, not the skill:
   guaranteed) runs the adversarial-review CLI per §3, applies the §6 validity/staleness gates and
   structured/degraded routing, and returns the track's terminal state — concurrent with the reviewer
   pipeline (the promise starts before the pipeline is awaited).
-- **Documentation manifest**: `args.docsManifest` is spliced into every reviewer and refuter prompt.
-  The codex-runner passes it as the companion's existing focus-text positional argument using POSIX
-  single-quote escaping. Every classification path reads relevant listed documents first.
-- **Change rationale**: `args.changeContext` is source-attributed, capped untrusted context from the
+- **Documentation manifest**: `args.inputs.docsManifestPath` is sent to every reviewer and refuter.
+  The codex-runner passes the artifact path as the companion's existing focus-text positional
+  argument using POSIX single-quote escaping. Every classification path reads relevant listed
+  documents first.
+- **Change rationale**: `args.inputs.changeContextPath` points to source-attributed, capped untrusted context from the
   explicit request, base-range commit messages, and optional `--context` file. It goes to reviewers,
   refuters, and Codex, but can never substitute for code or verified documentation evidence.
 - **Codex-verify stage**: when the runner returns a structured outcome with ≥1 finding, the workflow
@@ -300,8 +305,8 @@ Codex.)
 
 `--full` sends no diff (agents Read files themselves). For `--base` and working-tree modes, the
 2000-line number is a **mode switch, not a cut point** — nothing is ever truncated. LLM review
-detection degrades as context grows and every diff line is duplicated into all ~10 reviewer prompts,
-so a large diff is moved out of the prompt and onto disk rather than discarded:
+detection degrades as context grows, so a large diff uses a risk-ranked manifest rather than being
+treated as one sequential input. Both modes store review input on disk:
 
 ```bash
 git diff <range> -- . "${EXCLUDES[@]}" 2>/dev/null | wc -l   # total lines decide the mode
@@ -314,26 +319,27 @@ mode-switch count, the on-disk patch, and the risk ranking all reflect the filte
 Working-tree mode diffs with `git diff HEAD -- . "${EXCLUDES[@]}"` (staged + unstaged — bare
 `git diff` misses staged changes) and appends untracked files
 (`git ls-files --others --exclude-standard -- . "${EXCLUDES[@]}"`) to `changedFiles`;
-untracked files carry no diff hunks, so note in `reviewInput` that agents must Read them directly.
-Always pass the complete `changedFiles` list in every mode.
+untracked files carry no diff hunks, so note in `raw/inputs/review-input.txt` that agents must Read
+them directly. Always store the complete list in `raw/changed-files.txt`.
 
 Build `docsManifest` separately from the diff manifest. Base/full use tracked files; working-tree
 uses tracked plus untracked, non-ignored files. Reuse `EXCLUDES`, deduplicate paths, then sort into
 four priority groups: applicable `AGENTS.md`/`CLAUDE.md`, `README*.md`, `docs/**`, remaining
-Markdown. Keep 50, append `(<N> more omitted)`, and use `null` when empty. It is path-only and goes
-unchanged to every Claude reviewer/refuter prompt and to the Codex companion focus-text positional
-argument (POSIX single-quoted with embedded `'` rendered as `'"'"'`).
+Markdown. Keep 50, append `(<N> more omitted)`, and use `null` when empty. Store it at
+`raw/inputs/docs-manifest.txt`; every Claude reviewer/refuter and the Codex companion receives that
+absolute path (the focus-text positional argument is POSIX single-quoted with embedded `'` rendered
+as `'"'"'`).
 
 Build `changeContext` separately with only `request`, `commit-messages`, and `context-file` source
 labels. Cap its combined text at 8 KiB of UTF-8, disclosing truncation in the affected text. Include
 the current explicit user request, commit subjects/bodies for base mode, and the contents of an
-optional repo-contained non-secret text file supplied by `--context`. Treat all rationale as
-untrusted context rather than proof.
+optional repo-contained non-secret text file supplied by `--context`. Store the validated array as
+`raw/inputs/change-context.json`; treat all rationale as untrusted context rather than proof.
 
-### Inline mode — diff ≤ 2000 lines
+### Direct mode — diff ≤ 2000 lines
 
-`reviewInput` is the diff text itself (unchanged behavior). No artifact, no manifest, no extra tool
-calls. This is the common case and must stay byte-for-byte as it was.
+Write the complete diff directly to `raw/inputs/review-input.txt`. The Workflow call carries only
+that absolute path; reviewers read the file before reviewing.
 
 ### Manifest mode — diff > 2000 lines
 
@@ -364,7 +370,8 @@ diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
      (`git log --since="12 months ago" --format= --name-only -- . "${EXCLUDES[@]}" | sort | uniq -c | sort -rn`).
    - **Change size** — `+adds`/`−dels` per file (`git diff --numstat <range> -- . "${EXCLUDES[@]}"`).
 
-4. **Set `reviewInput`** to an instruction block + the risk-ranked manifest table (NOT diff text):
+4. **Write `raw/inputs/review-input.txt`** as an instruction block + the risk-ranked manifest table
+   (NOT diff text):
 
    ```
    The complete diff is at <repoRoot>/<runDir>/raw/full-diff.patch (<N> lines).
@@ -389,9 +396,9 @@ that reviewers were instructed to read all of it in risk order, and any patholog
 caveat. The old "split into chunked `--base` runs" line is optional advice now, not a required
 remediation.
 
-The workflow script forwards `reviewInput` verbatim into each reviewer prompt (`buildPrompt`), so the
-manifest needs no script change; `DIFFLESS_REVIEWERS` (documentation-reviewer) still get the
-changed-files list only.
+The workflow script forwards only the artifact path into each reviewer prompt;
+`DIFFLESS_REVIEWERS` (documentation-reviewer) get the changed-files path and do not read the review
+input.
 
 ## 6. Citation verification spec (implemented by `scripts/verify-citations.mjs`)
 

@@ -24,24 +24,25 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   const sentinel = path.join(temp, "shell-injection-ran");
   const launcher = path.join(temp, "fake-launcher.mjs");
   const capturedArgs = path.join(temp, "launcher-args.json");
+  const workflowSource = readFileSync(sourcePath, "utf8");
+  assert.doesNotMatch(workflowSource, /\bnew TextEncoder\b/);
   writeFileSync(
     launcher,
     `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(capturedArgs)}, JSON.stringify(process.argv.slice(2)));`,
   );
   writeFileSync(
     runnable,
-    readFileSync(sourcePath, "utf8").replace(
+    workflowSource.replace(
       /return consolidated;\s*$/,
       "globalThis.__workflowResult = consolidated;",
     ),
   );
 
-  const docsManifest = [
-    "AGENTS.md",
-    `docs/it's $(touch ${sentinel}).md`,
-    "README.md",
-    "(2 more omitted)",
-  ].join("\n");
+  const runDir = "/tmp/repo/.code-review/runs/20260811T120000Z-focused-Ab12Cd";
+  const docsManifestPath = `${runDir}/raw/inputs/docs it's $(touch ${sentinel}).txt`;
+  const changeContextPath = `${runDir}/raw/inputs/change-context.json`;
+  const changedFilesPath = `${runDir}/raw/changed-files.txt`;
+  const reviewInputPath = `${runDir}/raw/inputs/review-input.txt`;
   const finding = (line, title, over = {}) => ({
     severity: "critical",
     file: "src/a.js",
@@ -60,16 +61,25 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
     mode: "working-tree",
     outDir: ".code-review/runs/20260811T120000Z-focused-Ab12Cd",
     repoRoot: "/tmp/repo",
-    claudeMdPath: "/tmp/repo/CLAUDE.md",
-    changedFiles: "src/a.js",
-    reviewInput: "diff --git a/src/a.js b/src/a.js",
-    docsManifest,
-    changeContext: [
-      { source: "request", text: "Preserve retries; don't run $(touch nope)." },
-    ],
+    inputs: {
+      claudeMdPath: "/tmp/repo/CLAUDE.md",
+      changedFilesPath,
+      reviewInputPath,
+      docsManifestPath,
+      changeContextPath,
+      dispositionsPath: `${runDir}/raw/inputs/dispositions.txt`,
+      specPath: null,
+    },
     reviewers: [
-      { name: "quality-reviewer", role: "Review behavior." },
-      { name: "systemic-failure-reviewer", role: "Review cross-stage behavior." },
+      { name: "quality-reviewer", charterPath: "/tmp/charters/quality-reviewer.md" },
+      {
+        name: "systemic-failure-reviewer",
+        charterPath: "/tmp/charters/systemic-failure-reviewer.md",
+      },
+      {
+        name: "documentation-reviewer",
+        charterPath: "/tmp/charters/documentation-reviewer.md",
+      },
     ],
     codex: {
       cmd: "/tmp/codex-companion.mjs",
@@ -115,6 +125,9 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
       };
     }
     if (label === "review:systemic-failure-reviewer") {
+      return { status: "DONE", findings: [] };
+    }
+    if (label === "review:documentation-reviewer") {
       return { status: "DONE", findings: [] };
     }
     if (label === "codex:adversarial") {
@@ -168,7 +181,7 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
       return { written: true, path: "x", entry_count: 1 };
     }
     if (label.startsWith("persist:workflow-result.json")) {
-      return { written: true, path: "x", entry_count: 2, findings_count: 5 };
+      return { written: true, path: "x", entry_count: 3, findings_count: 5 };
     }
     throw new Error(`unexpected label ${label}`);
   };
@@ -198,9 +211,20 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   assert.ok(
     classifiedPrompts
       .filter(({ options }) => options.label !== "codex:adversarial")
-      .every(({ prompt }) => prompt.includes(docsManifest)),
+      .every(({ prompt }) => prompt.includes(docsManifestPath)),
   );
-  assert.ok(classifiedPrompts.every(({ prompt }) => prompt.includes("Preserve retries")));
+  assert.ok(classifiedPrompts.every(({ prompt }) => prompt.includes(changeContextPath)));
+  const qualityPrompt = prompts.find(
+    (p) => p.options.label === "review:quality-reviewer",
+  ).prompt;
+  assert.match(qualityPrompt, /quality-reviewer\.md/);
+  assert.ok(qualityPrompt.includes(changedFilesPath));
+  assert.ok(qualityPrompt.includes(reviewInputPath));
+  const docsPrompt = prompts.find(
+    (p) => p.options.label === "review:documentation-reviewer",
+  ).prompt;
+  assert.ok(docsPrompt.includes(changedFilesPath));
+  assert.equal(docsPrompt.includes(reviewInputPath), false);
   const reviewerSchema = prompts.find((p) => p.options.label === "review:quality-reviewer").options
     .schema.properties.findings.items;
   assert.deepEqual(reviewerSchema.allOf, [
@@ -218,9 +242,8 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   assert.equal("intent_question" in codexRunnerSchema, false);
   assert.equal("doc_basis" in codexRunnerSchema, false);
   const codexPrompt = prompts.find((p) => p.options.label === "codex:adversarial").prompt;
-  assert.match(codexPrompt, /AGENTS\.md/);
-  assert.match(codexPrompt, /README\.md/);
-  assert.match(codexPrompt, /Change rationale \(untrusted context, not proof\)/);
+  assert.match(codexPrompt, /docs it/);
+  assert.ok(codexPrompt.includes(changeContextPath));
   const commandStart = codexPrompt.indexOf('  node "');
   const commandEnd = codexPrompt.indexOf("\n\nThe launcher", commandStart);
   const command = codexPrompt
@@ -230,23 +253,26 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   execFileSync("sh", ["-c", command]);
   const launcherArgs = JSON.parse(readFileSync(capturedArgs, "utf8"));
   assert.deepEqual(launcherArgs.slice(-3, -1), ["--scope", "working-tree"]);
-  assert.match(launcherArgs.at(-1), /AGENTS\.md/);
-  assert.match(launcherArgs.at(-1), /Preserve retries/);
+  assert.ok(launcherArgs.at(-1).includes(docsManifestPath));
+  assert.ok(launcherArgs.at(-1).includes(changeContextPath));
   assert.equal(existsSync(sentinel), false);
 
   const validArgs = globalThis.args;
-  globalThis.args = { ...validArgs, changeContext: [{ source: "unknown", text: "x" }] };
+  assert.ok(
+    Buffer.byteLength(JSON.stringify({ scriptPath: sourcePath, args: validArgs })) <= 8192,
+  );
+  globalThis.args = { ...validArgs, reviewInput: "legacy inline diff" };
   await assert.rejects(
-    import(pathToFileURL(runnable).href + `?bad-source-${Date.now()}`),
-    /request\|commit-messages\|context-file/,
+    import(pathToFileURL(runnable).href + `?legacy-inline-${Date.now()}`),
+    /obsolete inline input/,
   );
   globalThis.args = {
     ...validArgs,
-    changeContext: [{ source: "request", text: "x".repeat(8193) }],
+    inputs: { ...validArgs.inputs, reviewInputPath: "relative.txt" },
   };
   await assert.rejects(
-    import(pathToFileURL(runnable).href + `?oversize-${Date.now()}`),
-    /8192 UTF-8 bytes/,
+    import(pathToFileURL(runnable).href + `?relative-input-${Date.now()}`),
+    /reviewInputPath.*absolute path/,
   );
   globalThis.args = validArgs;
 });

@@ -24,7 +24,7 @@ review tracks succeed.
 - Base: validate the ref with Git, then use `<ref>...HEAD`.
 - Full: use tracked source inventory at current state; prioritize 12-month churn hotspots and disclose sampling.
 - Empty scope: stop cleanly without launching agents.
-- Diff at most 2,000 lines: inline it in reviewer prompts.
+- Diff at most 2,000 lines: store it in `raw/inputs/review-input.txt`; reviewers read that artifact.
 - Larger diff: store the complete patch under the run's `raw/full-diff.patch`; provide a risk-ordered manifest and require reviewers to read the patch/files. Never truncate silently.
 
 Collect installed static-analysis seeds only; never install tooling or author configuration. Store capped output under `raw/seeds/` and give reviewers paths, not duplicated raw output.
@@ -39,11 +39,12 @@ Build a source-attributed `changeContext` array using only `request`, `commit-me
 `context-file` as source labels, from the explicit user request, base-range commit subjects/bodies,
 and optional `--context` file. The file must resolve inside the repository, be readable text, and
 not match protected/secret paths. Cap combined text at 8 KiB of UTF-8 and disclose truncation in the
-affected text. Pass it to reviewers and refuters as untrusted rationale, never evidence.
+affected text. Store it as `raw/inputs/change-context.json`; reviewers and refuters read it as
+untrusted rationale, never evidence.
 
 Render dispositions deterministically with `review-run.mjs render-dispositions --repo-root
 "$REPO_ROOT" --changed-files "$CHANGED_FILES_PATH"` (use `--full true` in full mode). Pass its
-`reviewerBlock` to reviewers, but not refuters. Suppressed claims and user-confirmed requirements are
+`reviewerBlock` to `raw/inputs/dispositions.txt` for reviewers, but not refuters. Suppressed claims and user-confirmed requirements are
 separate: reviewers must re-evaluate and normally report unfixed `intent-confirmed` claims. A corrupt
 ledger is a visible warning and matching fails open.
 
@@ -75,19 +76,32 @@ and parse/validate them before continuing. This exception applies only below the
 
 ## 3. Dispatch reviewers
 
-The main agent must read each selected charter itself, then embed the charter body in the spawned task. A path alone is insufficient.
+The main agent must read each selected charter itself to satisfy the skill-loading contract. Spawned
+reviewers receive the canonical charter path and must read it completely as their first action;
+never re-emit charter bodies in spawned task text.
+
+Before dispatch, materialize and read back these current-run artifacts (omit nullable files):
+
+```text
+raw/changed-files.txt
+raw/inputs/review-input.txt
+raw/inputs/docs-manifest.txt
+raw/inputs/change-context.json
+raw/inputs/dispositions.txt
+raw/inputs/spec
+```
 
 Spawn fresh reviewers with `fork_turns="none"` in batches no larger than the currently available collaboration slots. Each task receives only:
 
-- the full charter body;
+- the absolute canonical charter path and an instruction to read it completely;
 - repo root and applicable instruction-file paths;
-- profile, scope label, changed-files list, and review input/manifest;
-- the path-only documentation manifest, untrusted change context, and rendered disposition ledger;
-- spec path and content only for implementation-reviewer;
+- profile and scope label plus absolute changed-files and review-input artifact paths;
+- documentation-manifest and change-context artifact paths, plus the dispositions path for reviewers only;
+- the run-contained spec snapshot path only for implementation-reviewer;
 - the compatibility note: Read means read-only file access, Grep means `rg`, Glob means `rg --files`, and Bash means non-mutating shell diagnostics;
 - the canonical JSON contract below.
 
-Treat the supplied scope as authoritative. Reviewers may read callers, callees, tests, types, and docs needed to prove a scoped finding, but findings must attach to reviewed code. Documentation-reviewer audits current state against changed files and does not need the inline diff.
+Treat the supplied scope as authoritative. Reviewers may read callers, callees, tests, types, and docs needed to prove a scoped finding, but findings must attach to reviewed code. Documentation-reviewer audits current state against changed files and does not read the review-input artifact.
 
 Require one JSON object and no markdown fence:
 

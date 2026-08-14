@@ -9,6 +9,12 @@ description: >
   with verified file:line citations.
   Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>]
 argument-hint: "[--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>]"
+hooks:
+  PreToolUse:
+    - matcher: Workflow
+      hooks:
+        - type: command
+          command: 'node "$HOME/.claude/skills/comprehensive-code-review/scripts/validate-workflow-launch.mjs"'
 ---
 
 # Comprehensive Code Review
@@ -106,7 +112,7 @@ Orchestrator-level (yours, not a reviewer's):
 
 - **Hotspot/churn risk**: high-churn files with diffuse ownership (flag if CODEOWNERS absent)
 - **Diff reviewability**: detection degrades past ~400 lines; at 2000 lines the skill switches from
-  inline diff to manifest mode (full diff on disk + risk-ordered read-all, never truncated — Phase 1) —
+  a direct diff artifact to manifest mode (full diff on disk + risk-ordered read-all, never truncated — Phase 1) —
   note the switch in Scope, and disclose any pathological partial coverage
 
 ---
@@ -147,7 +153,7 @@ All later `<runDir>` references mean the returned `RUN_DIR`.
 
 **Build-output exclusion.** Generated/minified output (committed or untracked) is skipped so
 reviewers see only hand-written code. Define `EXCLUDES` once and append `-- . "${EXCLUDES[@]}"`
-to _every_ file/diff gathering command below (full / base / working-tree, inline and manifest).
+to _every_ file/diff gathering command below (full / base / working-tree, direct and manifest).
 The positive `.` is required so the exclude-only pathspecs resolve against the whole repo;
 `top`+`glob` anchoring catches nested monorepo paths (`packages/x/dist/…`), not just repo-root.
 This same list is reused by the manifest commands in `references/workflow-and-codex.md` §5 and
@@ -189,14 +195,14 @@ HOTSPOTS=$(git log --since="12 months ago" --format= --name-only -- . "${EXCLUDE
 
 # mode = base
 CHANGED_FILES=$(git diff --name-only <ref>...HEAD -- . "${EXCLUDES[@]}")
-# reviewInput = the diff (git diff <ref>...HEAD -- . "${EXCLUDES[@]}"). Diff <=2000 lines -> inline it;
+# reviewInput = the diff (git diff <ref>...HEAD -- . "${EXCLUDES[@]}"). Diff <=2000 lines -> write it directly to review-input.txt;
 #   >2000 lines -> manifest mode (write full-diff.patch + risk-ranked manifest, never truncated) per the reference.
 # Empty guard: if diff empty -> print "Nothing to review: no changes vs <ref> (build outputs excluded)." STATUS: DONE. Stop.
 
 # mode = working-tree
 CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files --others --exclude-standard -- . "${EXCLUDES[@]}"; } | sort -u )
 # reviewInput = the diff (git diff HEAD -- . "${EXCLUDES[@]}" — staged + unstaged; bare `git diff` misses staged changes).
-#   Diff <=2000 lines -> inline it; >2000 lines -> manifest mode per the reference (never truncated).
+#   Diff <=2000 lines -> write it directly to review-input.txt; >2000 lines -> manifest mode per the reference (never truncated).
 #   Untracked files carry no diff hunks — append to
 #   reviewInput: "Untracked files in the changed-files list have no diff; Read them directly."
 # Empty guard: if CHANGED_FILES is empty -> print "Nothing to review: working tree matches HEAD
@@ -204,16 +210,18 @@ CHANGED_FILES=$( { git diff HEAD --name-only -- . "${EXCLUDES[@]}"; git ls-files
 ```
 
 Read and validate version 1 of `references/reviewer-profiles.json`. Load its `comprehensive` names
-from `agents/<name>.md` into `reviewers` as `{ name, role }`; add its conditional implementation
-reviewer only when `--spec` is present. This shared manifest is the sole roster authority for both
-runtimes. Read `CLAUDE.md` and the spec file when supplied.
+into `reviewers` as `{ name, charterPath }`, where `charterPath` is the absolute path to
+`agents/<name>.md`; add its conditional implementation reviewer only when `--spec` is present.
+Validate every charter is readable, but never copy its body into Workflow args. This shared
+manifest is the sole roster authority for both runtimes. Read `CLAUDE.md` and the spec file when
+supplied.
 
 **Documentation manifest → `docsManifest`.** Build a path-only, newline-joined manifest after the
 empty guard. In base/full modes, select from tracked files. In working-tree mode, select from tracked
 plus untracked, non-ignored files. Apply the same `EXCLUDES`, deduplicate paths, and order them:
 applicable `AGENTS.md`/`CLAUDE.md` first, then `README*.md`, then `docs/**`, then remaining Markdown.
-Cap at 50 paths and append `(<N> more omitted)` when capped; set `docsManifest = null` when no path
-qualifies. Pass this same value to every reviewer, refuter, Codex verifier, and the external Codex
+Cap at 50 paths and append `(<N> more omitted)` when capped; omit the artifact when no path qualifies.
+Pass its absolute artifact path to every reviewer, refuter, Codex verifier, and the external Codex
 focus-text argument. The manifest contains paths only; each reviewer must read relevant listed docs
 before classifying intent.
 
@@ -232,9 +240,24 @@ The FIRST time a disposition is recorded in a repo whose `.gitignore` ignores `.
 append `!.code-review/dispositions.json` to `.gitignore` (one line, once) — the ledger is
 committed; run artifacts stay ignored.
 
-Record `scopeLabel` (human-readable), `mode`, `reviewInput`, `changedFiles`, `repoRoot`,
-`claudeMdPath`, `docsManifest`, `changeContext`, `spec`, `dispositions` (the rendered blocks, or
-null), `passNumber`.
+Materialize every bulk launch input under the current run before calling Workflow:
+
+```text
+<runDir>/raw/changed-files.txt
+<runDir>/raw/inputs/review-input.txt
+<runDir>/raw/inputs/docs-manifest.txt       # omit when none
+<runDir>/raw/inputs/change-context.json     # omit when none
+<runDir>/raw/inputs/dispositions.txt        # omit when none
+<runDir>/raw/inputs/spec                     # comprehensive --spec only
+```
+
+Write command-produced diff/inventory data directly to these files rather than placing it in a
+tool argument. The context file is the validated source-attributed JSON array; the dispositions
+file contains only `reviewerBlock`. Snapshot a valid supplied spec into `raw/inputs/spec`. Read every
+artifact back, require JSON artifacts to parse, and use absolute paths. Record `scopeLabel`, `mode`,
+`repoRoot`, `passNumber`, the reviewer charter paths, and an `inputs` object containing
+`reviewInputPath`, `changedFilesPath`, nullable `docsManifestPath`, `changeContextPath`,
+`dispositionsPath`, `specPath`, and the nullable repository-contained `claudeMdPath`.
 
 ## Phase 1b — Static-Analysis Seeds (installed tools only)
 
@@ -253,7 +276,7 @@ changed files where the tool supports file args (under `--full`, run repo-wide).
 Route seeds to disk — do NOT inline raw output (it would be copied into every reviewer prompt). For
 each tool that produced output: `mkdir -p <outDir>/raw/seeds` and write the capped output to
 `<runDir>/raw/seeds/<tool>.txt` (mirrors `raw/full-diff.patch`).
-Then append to `reviewInput` ONLY a compact manifest — never the raw output:
+Then append to `raw/inputs/review-input.txt` ONLY a compact manifest — never the raw output:
 
 ```
 ## Static-analysis seeds (candidate leads — Read the file for your lens, then trace + quote yourself)
@@ -314,7 +337,9 @@ codex = { cmd: <CODEX_CMD>, launcher: "<this skill's base directory>/scripts/cod
 
 If `SPEC_PATH` is null → exclude implementation-reviewer from `reviewers`; mark it SKIPPED ("no --spec provided").
 If `SPEC_PATH` is set but the file does not exist → exclude it; mark SKIPPED ("spec file not found: <path>").
-Otherwise → include `{ name: "implementation-reviewer", role: <file body> }` in `reviewers`, and set `spec = { path, content }`.
+Otherwise → snapshot it to `<runDir>/raw/inputs/spec`, include
+`{ name: "implementation-reviewer", charterPath: <absolute canonical charter path> }`, and set
+`inputs.specPath` to the absolute snapshot path. Never inline the spec or charter body.
 
 ## Phase 5 — Launch the Workflow (single call)
 
@@ -328,15 +353,16 @@ agent runs the CLI inside the workflow), AND the Codex-verify refutation pass, a
 Workflow({
   scriptPath: "<this skill's base directory>/scripts/review-fanout.workflow.js",
   args: { runtime: "claude", profile: "comprehensive", runId, scopeLabel, mode,
-          reviewInput, changedFiles, repoRoot, claudeMdPath, spec, reviewers, outDir: runDir,
-          docsManifest, changeContext,
-          dispositions: <the Phase 1 DISPOSITIONS_BLOCK, or null>,
+          repoRoot, reviewers, outDir: runDir,
+          inputs: { reviewInputPath, changedFilesPath, docsManifestPath,
+                    changeContextPath, dispositionsPath, specPath, claudeMdPath },
           codex: <the Phase 3 codex object, or null when CODEX_AVAILABLE=false> }
 })
 ```
 
-The `args` values are the records gathered in Phases 1–4. Pass them as real JSON. `repoRoot` MUST be
-the absolute repo root. `outDir` is required and must be `.code-review/runs/<runId>`.
+The `args` values are the compact records and absolute artifact paths gathered in Phases 1–4. Pass
+them as real JSON; the serialized Workflow tool input must stay at or below 8 KiB. `repoRoot` MUST
+be the absolute repo root. `outDir` is required and must be `.code-review/runs/<runId>`.
 
 Do NOT launch Codex yourself (no Bash call, backgrounded or otherwise) and do NOT hand-dispatch
 reviewer Task calls — the workflow owns both tracks precisely so they can never serialize.

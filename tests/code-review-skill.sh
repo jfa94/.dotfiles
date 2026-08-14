@@ -12,6 +12,7 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 [[ -f "$SKILL/agents/openai.yaml" ]] || fail 'Codex UI metadata missing'
 [[ -f "$SKILL/references/orchestration.md" ]] || fail 'Codex orchestration reference missing'
 [[ -f "$CLAUDE_REVIEW/references/reviewer-profiles.json" ]] || fail 'shared reviewer profiles missing'
+[[ -f "$CLAUDE_REVIEW/scripts/validate-workflow-launch.mjs" ]] || fail 'workflow launch validator missing'
 
 jq -e '.version == 1 and .focused == ["security-reviewer","quality-reviewer","simplification-reviewer","silent-failure-hunter","systemic-failure-reviewer"]' \
   "$CLAUDE_REVIEW/references/reviewer-profiles.json" >/dev/null \
@@ -51,12 +52,22 @@ grep -Fq 'path-only documentation manifest' "$SKILL/references/orchestration.md"
   || fail 'native docs manifest contract missing'
 grep -Fq 'Open Questions — intent rulings needed' "$SKILL/references/orchestration.md" \
   || fail 'native Open Questions routing missing'
+grep -Fq 'never re-emit charter bodies' "$SKILL/references/orchestration.md" \
+  || fail 'native path-only charter contract missing'
+grep -Fq 'validate-workflow-launch.mjs' "$CLAUDE_REVIEW/SKILL.md" \
+  || fail 'comprehensive skill-scoped Workflow validator missing'
+grep -Fq 'validate-workflow-launch.mjs' "$ROOT/.claude/skills/focused-code-review/SKILL.md" \
+  || fail 'focused skill-scoped Workflow validator missing'
+if jq -e '.permissions.allow[]? | select(. == "Workflow")' "$ROOT/.claude/settings.json" >/dev/null; then
+  fail 'global Workflow permission is forbidden; use the skill-scoped validator'
+fi
 
 node --test \
   "$CLAUDE_REVIEW/scripts/review-run.test.mjs" \
   "$CLAUDE_REVIEW/scripts/review-benchmark.test.mjs" \
   "$CLAUDE_REVIEW/scripts/verify-citations.test.mjs" \
   "$CLAUDE_REVIEW/scripts/review-fanout.workflow.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/validate-workflow-launch.test.mjs" \
   "$CLAUDE_REVIEW/scripts/codex-launch.test.mjs"
 
 # Installed runtime: the skill must be a directory symlink into the repo so

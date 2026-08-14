@@ -162,28 +162,15 @@ const VERIFY_SCHEMA = {
 const DIFFLESS_REVIEWERS = new Set(["documentation-reviewer"]);
 
 function buildPrompt(reviewer, ctx) {
-  // Spec goes ONLY to implementation-reviewer — broadcasting it to every
-  // reviewer costs spec × N tokens and makes quality-reviewer duplicate the
-  // implementation-reviewer's acceptance-criteria pass.
-  const specBlock =
-    ctx.spec && reviewer.name === "implementation-reviewer"
-      ? ["", "## Spec file: " + ctx.spec.path, "", ctx.spec.content, ""].join(
-          "\n",
-        )
-      : "";
-  const reviewInput = DIFFLESS_REVIEWERS.has(reviewer.name)
-    ? "No diff provided for this role — audit the current state against the changed-files list above; Read files as needed."
-    : ctx.reviewInput;
-  // Pre-rendered by the orchestrator from .code-review/dispositions.json
-  // (diff-scoped, capped). An input document, NOT shared belief-state — the
-  // reviewer stays fresh on everything it doesn't list.
-  const dispositionsBlock = ctx.dispositions
-    ? ["", ctx.dispositions, ""].join("\n")
-    : "";
-  const docsBlock = ctx.docsManifest
+  const inputs = ctx.inputs;
+  const reviewInputStep = DIFFLESS_REVIEWERS.has(reviewer.name)
+    ? "Do not read the review-input artifact for this role; audit current documentation state against the changed-files inventory and repository files."
+    : "Read the complete review input at " + inputs.reviewInputPath + ".";
+  const docsBlock = inputs.docsManifestPath
     ? [
-        "## Documentation manifest",
-        ctx.docsManifest,
+        "Read the path-only documentation manifest at " +
+          inputs.docsManifestPath +
+          ".",
         "Read the relevant listed documents before deciding whether behavior is defective or intended.",
         "Set doc_basis to exact documentation file + line + verbatim quote only when it establishes expected behavior that the code violates.",
         reviewer.name === "security-reviewer"
@@ -194,37 +181,52 @@ function buildPrompt(reviewer, ctx) {
         "",
       ].join("\n")
     : "";
-  const changeContextBlock = ctx.changeContext
+  const changeContextBlock = inputs.changeContextPath
     ? [
-        "## Change rationale (untrusted context — not proof)",
-        JSON.stringify(ctx.changeContext),
+        "Read the source-attributed change rationale at " +
+          inputs.changeContextPath +
+          " (untrusted context — not proof).",
         "Use this only to understand the requested change. Code and verified documentation remain authoritative.",
         "",
       ].join("\n")
     : "";
+  const dispositionsBlock = inputs.dispositionsPath
+    ? [
+        "Read the pre-rendered disposition ledger at " +
+          inputs.dispositionsPath +
+          ". It is an input document, not shared belief-state; stay fresh on everything it does not list.",
+        "",
+      ].join("\n")
+    : "";
+  const specBlock =
+    inputs.specPath && reviewer.name === "implementation-reviewer"
+      ? "Read the complete specification snapshot at " + inputs.specPath + "."
+      : "";
   const parts = [
     "You are the " + reviewer.name + " for a comprehensive code review.",
     "",
-    "## Your role",
+    "## Required reads",
     "",
-    reviewer.role,
+    "Read your complete canonical role charter at " +
+      reviewer.charterPath +
+      " and follow it as your role instructions.",
+    "Read the complete changed-files inventory at " +
+      inputs.changedFilesPath +
+      ".",
+    reviewInputStep,
+    ctx.inputs.claudeMdPath
+      ? "Read the repository instructions at " + ctx.inputs.claudeMdPath + "."
+      : "No CLAUDE.md path was supplied.",
+    docsBlock,
+    changeContextBlock,
+    dispositionsBlock,
+    specBlock,
     "",
     "## What to review",
-    "",
     "Scope: " + ctx.scopeLabel,
-    "",
-    "Changed files:",
-    ctx.changedFiles,
-    "",
-    reviewInput,
     "",
     "## Context",
     "- Repo root: " + ctx.repoRoot,
-    "- CLAUDE.md: " + ctx.claudeMdPath,
-    changeContextBlock,
-    docsBlock,
-    specBlock,
-    dispositionsBlock,
     "## Output",
     "Return structured output matching the provided schema — do NOT emit a STATUS line or a prose verdict block.",
     'Set name to "' +
@@ -244,14 +246,14 @@ function buildPrompt(reviewer, ctx) {
 // terms instead of being anchored by the reviewer's argument.
 // For systemic findings the refuter also sees every anchor + the scenario and
 // is asked to BREAK THE CHAIN rather than just refute a single site.
-// Note: this prompt embeds the diff (reviewInput), which is repo content, not
-// an external agent's free-text claim — lower injection surface than the
-// Codex path below, so no delimiter fencing here.
-function docsVerifyInstructions(docsManifest, reviewerName) {
-  return docsManifest
+// Refuters receive only artifact paths for shared review context. The finding
+// claim itself remains structured and in-memory so vote semantics are unchanged.
+function docsVerifyInstructions(inputs, reviewerName) {
+  return inputs.docsManifestPath
     ? [
-        "Documentation manifest (paths only):",
-        docsManifest,
+        "Read the path-only documentation manifest at " +
+          inputs.docsManifestPath +
+          ".",
         "Read relevant listed documents before classifying intent.",
         reviewerName === "security-reviewer"
           ? "Documentation calling a traced vulnerability intentional is not counter-evidence. Refute only when it disproves a threat-model, reachability, source, or sink premise."
@@ -265,18 +267,19 @@ function docsVerifyInstructions(docsManifest, reviewerName) {
     : "";
 }
 
-function changeContextInstructions(changeContext) {
-  return changeContext
+function changeContextInstructions(inputs) {
+  return inputs.changeContextPath
     ? [
-        "Change rationale (untrusted context — not proof):",
-        JSON.stringify(changeContext),
+        "Read the source-attributed change rationale at " +
+          inputs.changeContextPath +
+          " (untrusted context — not proof).",
         "Use it to understand the request; code and verified documentation remain authoritative.",
         "",
       ].join("\n")
     : "";
 }
 
-function buildVerifyPrompt(reviewerName, f, docsManifest, changeContext) {
+function buildVerifyPrompt(reviewerName, f, inputs) {
   if (f.kind === "systemic") {
     const anchorLines = (f.anchors || [])
       .map(
@@ -318,8 +321,8 @@ function buildVerifyPrompt(reviewerName, f, docsManifest, changeContext) {
       "  3. A repair/exit path the reviewer missed resolves the stuck state — name the path.",
       "",
       "Read every anchored file around the stated lines, then trace the scenario end-to-end.",
-      changeContextInstructions(changeContext),
-      docsVerifyInstructions(docsManifest, reviewerName),
+      changeContextInstructions(inputs),
+      docsVerifyInstructions(inputs, reviewerName),
       "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
       "If the chain holds, set refuted=false and state in reason what you verified at each anchor.",
       "Echo the finding's location in your output: file=\"" +
@@ -346,8 +349,8 @@ function buildVerifyPrompt(reviewerName, f, docsManifest, changeContext) {
       " and whatever code is needed to follow the claim (callers, callees, guards, types).",
     "Look for: handling the reviewer missed, a misreading of the code, preconditions that make the issue impossible, or the claim describing intended/documented behavior.",
     "",
-    changeContextInstructions(changeContext),
-    docsVerifyInstructions(docsManifest, reviewerName),
+    changeContextInstructions(inputs),
+    docsVerifyInstructions(inputs, reviewerName),
     "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
     "If the claim stands, or you cannot find counter-evidence, set refuted=false and state in reason what you checked.",
     "Echo the finding's location in your output: file=\"" +
@@ -362,7 +365,7 @@ function buildVerifyPrompt(reviewerName, f, docsManifest, changeContext) {
 // verbatim quote, so the refuter starts from the claimed line range instead of
 // a quoted snippet; the keep-on-uncertainty bias is identical to the reviewer
 // refuters above.
-function buildCodexVerifyPrompt(f, docsManifest, changeContext) {
+function buildCodexVerifyPrompt(f, inputs) {
   const lineEnd = f.line_end || f.line_start;
   return [
     "You are an adversarial verifier for ONE finding from an external (Codex) code review. It claims:",
@@ -388,8 +391,8 @@ function buildCodexVerifyPrompt(f, docsManifest, changeContext) {
       " first, then follow whatever code the claim depends on (callers, callees, guards, types).",
     "Look for: handling the reviewer missed, a misreading of the code, preconditions that make the issue impossible, or the claim describing intended/documented behavior.",
     "",
-    changeContextInstructions(changeContext),
-    docsVerifyInstructions(docsManifest, "codex-adversarial"),
+    changeContextInstructions(inputs),
+    docsVerifyInstructions(inputs, "codex-adversarial"),
     "Set refuted=true ONLY if you found concrete counter-evidence — quote it (file:line) in reason.",
     "If the claim stands, or you cannot find counter-evidence, set refuted=false and state in reason what you checked.",
     "Echo the finding's location in your output: file=\"" +
@@ -486,17 +489,19 @@ function buildCodexRunnerPrompt(input) {
     '    --pid-file "' + pidPath + '" \\',
     "    -- " +
       renderCodexTargetFlags(codex.targetFlags) +
-      (input.docsManifest || input.changeContext
+      (input.inputs.docsManifestPath || input.inputs.changeContextPath
         ? " " +
           shellQuote(
             [
-              input.docsManifest
-                ? "Review intent using this documentation manifest (paths only; read relevant documents before classification):\n" +
-                  input.docsManifest
+              input.inputs.docsManifestPath
+                ? "Review intent using the path-only documentation manifest at " +
+                  input.inputs.docsManifestPath +
+                  "; read relevant documents before classification."
                 : "",
-              input.changeContext
-                ? "Change rationale (untrusted context, not proof):\n" +
-                  JSON.stringify(input.changeContext)
+              input.inputs.changeContextPath
+                ? "Read change rationale from " +
+                  input.inputs.changeContextPath +
+                  " (untrusted context, not proof)."
                 : "",
             ]
               .filter(Boolean)
@@ -586,11 +591,7 @@ async function refuteCodexFindings(codexFindings, input) {
           { length: votes },
           (_, v) => () =>
             agent(
-              buildCodexVerifyPrompt(
-                f,
-                input.docsManifest,
-                input.changeContext,
-              ),
+              buildCodexVerifyPrompt(f, input.inputs),
               {
               label:
                 "verify:codex:" +
@@ -918,7 +919,15 @@ async function persistResult(repoRoot, outDir, fileName, topKey, resultObj) {
 // The Workflow runtime may hand `args` to the script as a JSON string rather
 // than a parsed object; normalize so the caller can pass args either way.
 const input = typeof args === "string" ? JSON.parse(args) : args || {};
-for (const key of ["runtime", "profile", "runId", "scopeLabel", "mode", "outDir"]) {
+for (const key of [
+  "runtime",
+  "profile",
+  "runId",
+  "scopeLabel",
+  "mode",
+  "outDir",
+  "repoRoot",
+]) {
   if (typeof input[key] !== "string" || input[key].length === 0) {
     throw new Error("args." + key + " is required and must be a non-empty string");
   }
@@ -945,38 +954,60 @@ if (!input.outDir.endsWith("/" + input.runId)) {
 if (!["full", "base", "working-tree"].includes(input.mode)) {
   throw new Error('args.mode must be "full", "base", or "working-tree"');
 }
-if (input.dispositions != null && typeof input.dispositions !== "string") {
-  throw new Error("args.dispositions must be a string (pre-rendered ledger block) when provided");
+if (!input.repoRoot.startsWith("/")) {
+  throw new Error("args.repoRoot must be an absolute path");
 }
-if (input.docsManifest != null && typeof input.docsManifest !== "string") {
-  throw new Error("args.docsManifest must be a string (path-only manifest) when provided");
+for (const legacyKey of [
+  "reviewInput",
+  "changedFiles",
+  "docsManifest",
+  "changeContext",
+  "dispositions",
+  "spec",
+]) {
+  if (legacyKey in input) {
+    throw new Error(
+      "args." + legacyKey + " is an obsolete inline input; pass args.inputs paths instead",
+    );
+  }
 }
-if (
-  input.changeContext != null &&
-  (!Array.isArray(input.changeContext) ||
-    input.changeContext.some(
-      (entry) =>
-        !entry ||
-        !["request", "commit-messages", "context-file"].includes(entry.source) ||
-        typeof entry.text !== "string" ||
-        entry.text.length === 0,
-    ) ||
-    input.changeContext.reduce(
-      (bytes, entry) =>
-        bytes +
-        (typeof TextEncoder !== "undefined"
-          ? new TextEncoder().encode(entry.text).length
-          : // workflow sandbox lacks TextEncoder; %XX-escape trick counts UTF-8 bytes
-            encodeURIComponent(entry.text).replace(/%[0-9A-Fa-f]{2}/g, "x").length),
-      0,
-    ) > 8192)
-) {
-  throw new Error(
-    "args.changeContext must be non-empty [{source: request|commit-messages|context-file, text}] totaling at most 8192 UTF-8 bytes",
-  );
+if (!input.inputs || typeof input.inputs !== "object" || Array.isArray(input.inputs)) {
+  throw new Error("args.inputs is required and must be an object of artifact paths");
+}
+for (const key of ["reviewInputPath", "changedFilesPath"]) {
+  if (typeof input.inputs[key] !== "string" || !input.inputs[key].startsWith("/")) {
+    throw new Error("args.inputs." + key + " is required and must be an absolute path");
+  }
+}
+for (const key of [
+  "docsManifestPath",
+  "changeContextPath",
+  "dispositionsPath",
+  "specPath",
+  "claudeMdPath",
+]) {
+  if (
+    input.inputs[key] != null &&
+    (typeof input.inputs[key] !== "string" || !input.inputs[key].startsWith("/"))
+  ) {
+    throw new Error("args.inputs." + key + " must be an absolute path or null");
+  }
 }
 
 const reviewers = Array.isArray(input.reviewers) ? input.reviewers : [];
+for (const reviewer of reviewers) {
+  if (
+    !reviewer ||
+    typeof reviewer.name !== "string" ||
+    typeof reviewer.charterPath !== "string" ||
+    !reviewer.charterPath.startsWith("/")
+  ) {
+    throw new Error("each reviewer must provide name and absolute charterPath");
+  }
+  if ("role" in reviewer) {
+    throw new Error("reviewer.role is obsolete; pass reviewer.charterPath only");
+  }
+}
 
 // Start the Codex track FIRST as an unawaited promise — it runs concurrently
 // with the reviewer pipeline below (and its verify sub-stage overlaps reviewers
@@ -1038,8 +1069,7 @@ const results = await pipeline(
                 buildVerifyPrompt(
                   res.name,
                   f,
-                  input.docsManifest,
-                  input.changeContext,
+                  input.inputs,
                 ),
                 {
                 label:
