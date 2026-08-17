@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -7,6 +14,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { validateWorkflowLaunch } from "./validate-workflow-launch.mjs";
+
+const CODEX_CACHE_ROOT_ENV = "VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillDir = path.dirname(scriptDir);
@@ -16,6 +25,22 @@ const launcherPath = path.join(scriptDir, "codex-launch.mjs");
 const profiles = JSON.parse(
   readFileSync(path.join(skillDir, "references", "reviewer-profiles.json"), "utf8"),
 );
+
+function fakeCodexCache(t) {
+  const cacheRoot = mkdtempSync(path.join(tmpdir(), "codex-cache-"));
+  const previous = process.env[CODEX_CACHE_ROOT_ENV];
+  t.after(() => {
+    rmSync(cacheRoot, { recursive: true, force: true });
+    if (previous === undefined) delete process.env[CODEX_CACHE_ROOT_ENV];
+    else process.env[CODEX_CACHE_ROOT_ENV] = previous;
+  });
+  process.env[CODEX_CACHE_ROOT_ENV] = cacheRoot;
+  const scriptsDir = path.join(cacheRoot, "1.2.3", "scripts");
+  mkdirSync(scriptsDir, { recursive: true });
+  const cmd = path.join(scriptsDir, "codex-companion.mjs");
+  writeFileSync(cmd, "export {};\n");
+  return { cacheRoot, cmd };
+}
 
 function fixture(t, profile = "focused", withSpec = false) {
   const repoRoot = mkdtempSync(path.join(tmpdir(), "workflow-launch-"));
@@ -36,8 +61,7 @@ function fixture(t, profile = "focused", withSpec = false) {
   const names = [...profiles[profile]];
   const specPath = withSpec ? write("raw/inputs/spec", "# Spec\n") : null;
   if (withSpec) names.push("implementation-reviewer");
-  const codexCmd = path.join(repoRoot, "codex-companion.mjs");
-  writeFileSync(codexCmd, "export {};\n");
+  const { cmd: codexCmd } = fakeCodexCache(t);
   const args = {
     runtime: "claude",
     profile,
@@ -110,6 +134,73 @@ test("rejects roster, path, launcher, and payload regressions", (t) => {
   const oversized = structuredClone(toolInput);
   oversized.args.scopeLabel = "x".repeat(9000);
   assert.match(validateWorkflowLaunch(oversized).reason, /exceeds 8192 bytes/);
+});
+
+test("rejects codex.cmd outside the installed plugin cache layout", (t) => {
+  const { repoRoot, toolInput } = fixture(t);
+
+  const arbitraryRepoFile = path.join(repoRoot, "codex-companion.mjs");
+  writeFileSync(arbitraryRepoFile, "export {};\n");
+  const arbitrary = structuredClone(toolInput);
+  arbitrary.args.codex.cmd = arbitraryRepoFile;
+  assert.match(validateWorkflowLaunch(arbitrary).reason, /codex\.cmd must be/);
+
+  const { cacheRoot } = fakeCodexCache(t);
+  const wrongBasenamePath = path.join(cacheRoot, "1.2.3", "scripts", "not-codex.mjs");
+  writeFileSync(wrongBasenamePath, "export {};\n");
+  const wrongBasename = structuredClone(toolInput);
+  wrongBasename.args.codex.cmd = wrongBasenamePath;
+  assert.match(validateWorkflowLaunch(wrongBasename).reason, /codex\.cmd must be/);
+
+  const wrongDepthDir = path.join(cacheRoot, "1.2.3");
+  mkdirSync(wrongDepthDir, { recursive: true });
+  const wrongDepthPath = path.join(wrongDepthDir, "codex-companion.mjs");
+  writeFileSync(wrongDepthPath, "export {};\n");
+  const wrongDepth = structuredClone(toolInput);
+  wrongDepth.args.codex.cmd = wrongDepthPath;
+  assert.match(validateWorkflowLaunch(wrongDepth).reason, /codex\.cmd must be/);
+
+  const missingScriptsDir = path.join(cacheRoot, "1.2.3", "other", "nested");
+  mkdirSync(missingScriptsDir, { recursive: true });
+  const missingScriptsPath = path.join(missingScriptsDir, "codex-companion.mjs");
+  writeFileSync(missingScriptsPath, "export {};\n");
+  const missingScripts = structuredClone(toolInput);
+  missingScripts.args.codex.cmd = missingScriptsPath;
+  assert.match(validateWorkflowLaunch(missingScripts).reason, /codex\.cmd must be/);
+
+  const outsideCacheDir = mkdtempSync(path.join(tmpdir(), "codex-escape-"));
+  t.after(() => rmSync(outsideCacheDir, { recursive: true, force: true }));
+  const escapeTarget = path.join(outsideCacheDir, "codex-companion.mjs");
+  writeFileSync(escapeTarget, "export {};\n");
+  const symlinkScriptsDir = path.join(cacheRoot, "9.9.9", "scripts");
+  mkdirSync(symlinkScriptsDir, { recursive: true });
+  const symlinkPath = path.join(symlinkScriptsDir, "codex-companion.mjs");
+  symlinkSync(escapeTarget, symlinkPath);
+  const escaping = structuredClone(toolInput);
+  escaping.args.codex.cmd = symlinkPath;
+  assert.match(validateWorkflowLaunch(escaping).reason, /codex\.cmd must be/);
+});
+
+test("distinguishes a missing run directory from a run path that is a file", (t) => {
+  const { repoRoot, toolInput } = fixture(t);
+
+  const missingRunDir = structuredClone(toolInput);
+  missingRunDir.args.runId = "20260814T120000Z-focused-Zz99Yy";
+  missingRunDir.args.outDir = `.code-review/runs/${missingRunDir.args.runId}`;
+  assert.match(validateWorkflowLaunch(missingRunDir).reason, /run directory does not exist/);
+
+  const runsDir = path.join(repoRoot, ".code-review", "runs");
+  mkdirSync(runsDir, { recursive: true });
+  const fileRunId = "20260814T120000Z-focused-Ff11Gg";
+  const fileRunPath = path.join(runsDir, fileRunId);
+  writeFileSync(fileRunPath, "not a directory\n");
+  const runIsFile = structuredClone(toolInput);
+  runIsFile.args.runId = fileRunId;
+  runIsFile.args.outDir = `.code-review/runs/${fileRunId}`;
+  assert.match(
+    validateWorkflowLaunch(runIsFile).reason,
+    /run directory path is not a directory/,
+  );
 });
 
 test("leaves unrelated workflows undecided and emits hook decisions", (t) => {

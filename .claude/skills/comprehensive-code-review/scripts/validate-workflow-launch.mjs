@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +12,23 @@ const launcherPath = path.join(scriptDir, "codex-launch.mjs");
 const profilesPath = path.join(skillDir, "references", "reviewer-profiles.json");
 const agentsDir = path.join(skillDir, "agents");
 const MAX_TOOL_INPUT_BYTES = 8192;
+// Installed-plugin layout documented in references/workflow-and-codex.md §3:
+// ~/.claude/plugins/cache/openai-codex/codex/<version>/scripts/codex-companion.mjs
+const CODEX_CACHE_ROOT = path.join(
+  os.homedir(),
+  ".claude",
+  "plugins",
+  "cache",
+  "openai-codex",
+  "codex",
+);
+// Test seam: production hook input never sets this env var; tests point it at a tmp cache
+// root, read at call time so it also crosses the CLI's spawned-subprocess boundary.
+const CODEX_CACHE_ROOT_OVERRIDE_ENV = "VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT";
+
+function codexCacheRoot() {
+  return process.env[CODEX_CACHE_ROOT_OVERRIDE_ENV] || CODEX_CACHE_ROOT;
+}
 
 function canonical(candidate) {
   try {
@@ -43,7 +61,7 @@ function parseArgs(value) {
   return value;
 }
 
-function validateRunInput(repoRoot, runDir, label, candidate, required = false) {
+function validateRunInput(runDir, label, candidate, required = false) {
   if (candidate == null) {
     if (required) throw new Error(`inputs.${label} is required`);
     return;
@@ -56,9 +74,24 @@ function validateRunInput(repoRoot, runDir, label, candidate, required = false) 
     throw new Error(`inputs.${label} must stay inside the current run directory`);
   }
   if (!readableFile(resolved)) throw new Error(`inputs.${label} is not a readable file`);
-  if (!isWithin(repoRoot, resolved)) {
-    throw new Error(`inputs.${label} must stay inside the repository`);
+  // runDir is already proven within repoRoot by the caller, so containment in runDir
+  // transitively guarantees containment in repoRoot — no separate repoRoot check needed.
+}
+
+// Installed-plugin layout: <cacheRoot>/<version>/scripts/codex-companion.mjs
+function validateCodexCmd(candidate) {
+  const invalid = () => new Error("codex.cmd must be an absolute readable companion path");
+  if (typeof candidate !== "string" || candidate.length === 0 || !path.isAbsolute(candidate)) {
+    throw invalid();
   }
+  if (!readableFile(candidate)) throw invalid();
+  const resolved = canonical(candidate);
+  if (path.basename(resolved) !== "codex-companion.mjs") throw invalid();
+  const cacheRoot = canonical(codexCacheRoot());
+  if (!isWithin(cacheRoot, resolved)) throw invalid();
+  const relative = path.relative(cacheRoot, resolved);
+  const segments = relative.split(path.sep);
+  if (segments.length !== 3 || segments[1] !== "scripts") throw invalid();
 }
 
 function validateChangeContext(candidate) {
@@ -127,14 +160,26 @@ export function validateWorkflowLaunch(toolInput) {
     if (!isWithin(repoRoot, runDir) || !isWithin(path.join(repoRoot, ".code-review", "runs"), runDir)) {
       throw new Error("run directory escapes .code-review/runs");
     }
-    if (!statSync(runDir).isDirectory()) throw new Error("run directory does not exist");
+    let runDirStat;
+    try {
+      runDirStat = statSync(runDir);
+    } catch (error) {
+      if (error?.code === "ENOENT") throw new Error("run directory does not exist");
+      throw error;
+    }
+    if (!runDirStat.isDirectory()) throw new Error("run directory path is not a directory");
+
+    const inputs = args.inputs;
+    if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) {
+      throw new Error("args.inputs must be an object");
+    }
 
     const profiles = JSON.parse(readFileSync(profilesPath, "utf8"));
     if (profiles.version !== 1 || !Array.isArray(profiles[args.profile])) {
       throw new Error("reviewer profile manifest is invalid");
     }
     const expectedNames = [...profiles[args.profile]];
-    if (args.inputs?.specPath != null) {
+    if (inputs.specPath != null) {
       if (args.profile !== "comprehensive") {
         throw new Error("specPath is only valid for comprehensive reviews");
       }
@@ -160,10 +205,6 @@ export function validateWorkflowLaunch(toolInput) {
       }
     });
 
-    const inputs = args.inputs;
-    if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) {
-      throw new Error("args.inputs must be an object");
-    }
     for (const legacyKey of [
       "reviewInput",
       "changedFiles",
@@ -176,15 +217,15 @@ export function validateWorkflowLaunch(toolInput) {
         throw new Error(`args.${legacyKey} is an obsolete inline input`);
       }
     }
-    validateRunInput(repoRoot, runDir, "reviewInputPath", inputs.reviewInputPath, true);
-    validateRunInput(repoRoot, runDir, "changedFilesPath", inputs.changedFilesPath, true);
+    validateRunInput(runDir, "reviewInputPath", inputs.reviewInputPath, true);
+    validateRunInput(runDir, "changedFilesPath", inputs.changedFilesPath, true);
     for (const key of [
       "docsManifestPath",
       "changeContextPath",
       "dispositionsPath",
       "specPath",
     ]) {
-      validateRunInput(repoRoot, runDir, key, inputs[key]);
+      validateRunInput(runDir, key, inputs[key]);
     }
     validateChangeContext(inputs.changeContextPath);
     if (inputs.claudeMdPath != null) {
@@ -201,9 +242,7 @@ export function validateWorkflowLaunch(toolInput) {
       if (!samePath(args.codex.launcher || "", launcherPath)) {
         throw new Error("codex.launcher is not the bundled launcher");
       }
-      if (!path.isAbsolute(args.codex.cmd || "") || !readableFile(args.codex.cmd)) {
-        throw new Error("codex.cmd must be an absolute readable companion path");
-      }
+      validateCodexCmd(args.codex.cmd);
       const workingTree = args.codex.targetFlags === "--scope working-tree";
       const branch = /^--base [A-Za-z0-9._/@{}~^-]+$/.test(args.codex.targetFlags || "");
       if (!workingTree && !branch) throw new Error("codex.targetFlags is unsafe");
