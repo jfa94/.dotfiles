@@ -49,3 +49,7 @@
 ### Secret Safety
 
 - MUST load the `aws-secrets-manager` skill first for any secret, credential, API key, token, or password task. MUST NOT call `secretsmanager get-secret-value` or `batch-get-secret-value`, and MUST NOT hit the Secrets Manager Agent daemon directly. MUST use `{{resolve:secretsmanager:secret-id:SecretString:json-key}}` with `asm-exec` so the secret resolves at runtime without entering context.
+
+## PostHog
+
+Project-native MCP is split into two servers, both wrapping every PostHog operation behind a single `exec` tool: `posthog` (read-only, server-enforced — writes fail with "Unknown tool", not a permission error) and `posthog_write` (unrestricted, prompts on every call). Use `posthog` for reads. Only reach for `posthog_write` when a write is actually intended — expect a confirmation prompt.

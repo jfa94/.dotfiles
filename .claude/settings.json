@@ -310,31 +310,7 @@
       "mcp__supabase__get_edge_function",
       "mcp__supabase__list_storage_buckets",
       "mcp__supabase__get_storage_config",
-      "mcp__plugin_posthog_posthog__logs-query",
-      "mcp__plugin_posthog_posthog__logs-list-attributes",
-      "mcp__plugin_posthog_posthog__logs-list-attribute-values",
-      "mcp__plugin_posthog_posthog__insights-get-all",
-      "mcp__plugin_posthog_posthog__insight-get",
-      "mcp__plugin_posthog_posthog__query-run",
-      "mcp__plugin_posthog_posthog__dashboards-get-all",
-      "mcp__plugin_posthog_posthog__dashboard-get",
-      "mcp__plugin_posthog_posthog__feature-flag-get-all",
-      "mcp__plugin_posthog_posthog__feature-flag-get-definition",
-      "mcp__plugin_posthog_posthog__list-errors",
-      "mcp__plugin_posthog_posthog__error-details",
-      "mcp__plugin_posthog_posthog__experiment-get-all",
-      "mcp__plugin_posthog_posthog__experiment-get",
-      "mcp__plugin_posthog_posthog__experiment-results-get",
-      "mcp__plugin_posthog_posthog__surveys-get-all",
-      "mcp__plugin_posthog_posthog__survey-get",
-      "mcp__plugin_posthog_posthog__survey-stats",
-      "mcp__plugin_posthog_posthog__posthog_organizations_get",
-      "mcp__plugin_posthog_posthog__posthog_projects_get",
-      "mcp__plugin_posthog_posthog__posthog_event_definitions_list",
-      "mcp__plugin_posthog_posthog__posthog_properties_list",
-      "mcp__plugin_posthog_posthog__posthog_entity_search",
-      "mcp__plugin_posthog_posthog__docs-search",
-      "mcp__plugin_posthog_posthog__get-llm-total-costs-for-project"
+      "mcp__posthog__exec"
     ],
     "deny": [
       "Bash(git push --force*)",
@@ -374,7 +350,8 @@
       "mcp__supabase__pause_project",
       "mcp__supabase__rebase_branch",
       "mcp__supabase__reset_branch",
-      "mcp__supabase__restore_project"
+      "mcp__supabase__restore_project",
+      "mcp__posthog_write__exec"
     ]
   },
   "model": "opusplan",
@@ -584,7 +561,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,

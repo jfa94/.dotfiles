@@ -50,10 +50,15 @@ AGENT_PROJECTS_ROOT="$SCRATCH" bash "$SCRIPT"
 jq -e '.mcpServers.supabase.url == "https://example.test"' "$SCRATCH/outsidey/.mcp.json" >/dev/null
 jq -e '.mcpServers.posthog.url | contains("readonly=true&project_id=107700")' "$SCRATCH/outsidey/.mcp.json" >/dev/null
 jq -e '.mcpServers.posthog.headersHelper | contains("op-read-locked")' "$SCRATCH/outsidey/.mcp.json" >/dev/null
+jq -e '.mcpServers.posthog_write.type == "http"' "$SCRATCH/outsidey/.mcp.json" >/dev/null
+jq -e '.mcpServers.posthog_write.url == "https://mcp.posthog.com/mcp?mode=cli&project_id=107700"' "$SCRATCH/outsidey/.mcp.json" >/dev/null
+jq -e '.mcpServers.posthog_write.url | contains("readonly") | not' "$SCRATCH/outsidey/.mcp.json" >/dev/null
+jq -e '.mcpServers.posthog_write.headersHelper | contains("op-read-locked")' "$SCRATCH/outsidey/.mcp.json" >/dev/null
 grep -Fqx 'POSTHOG_CLI_PROJECT_ID=107700' "$SCRATCH/outsidey/.agent-env"
 # shellcheck disable=SC2016  # Assert the literal deferred expansion.
 grep -Fqx 'export AGENT_ENV_FILE="$(expand_path .agent-env)"' "$SCRATCH/outsidey/.envrc"
-grep -Fqx 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$SCRATCH/outsidey/.codex/config.toml"
+[[ $(grep -Fxc 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$SCRATCH/outsidey/.codex/config.toml") -eq 2 ]]
+grep -Fqx '[mcp_servers.posthog_write]' "$SCRATCH/outsidey/.codex/config.toml"
 
 for repo in "${repos[@]:1}"; do
   grep -Fqx 'export AGENT_ENV_FILE=/dev/null' "$SCRATCH/$repo/.envrc"

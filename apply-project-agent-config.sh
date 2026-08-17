@@ -47,10 +47,12 @@ outsidey_env=$'SUPABASE_ACCESS_TOKEN=op://Credentials/Supabase Outsidey Access T
 outsidey_envrc=$'export AGENT_ENV_FILE="$(expand_path .agent-env)"\nexport AWS_PROFILE="Outsidey"'
 outsidey_envrc_old=$'export AGENT_ENV_FILE="$HOME/.config/agent-env/outsidey.env"\nexport AWS_PROFILE="Outsidey"'
 posthog_url='https://mcp.posthog.com/mcp?mode=cli&readonly=true&project_id=107700'
+posthog_write_url='https://mcp.posthog.com/mcp?mode=cli&project_id=107700'
 # shellcheck disable=SC2016  # Preserve command substitution for Claude's helper.
 posthog_helper='printf '\''{"Authorization":"Bearer %s"}'\'' "$("$HOME/.config/agent-env/op-read-locked" '\''op://Credentials/PostHog API Key/credential'\'')"'
 posthog_toml=$'[mcp_servers.posthog]\nurl = "https://mcp.posthog.com/mcp?mode=cli&readonly=true&project_id=107700"\nbearer_token_env_var = "POSTHOG_MCP_TOKEN"\nrequired = false'
 posthog_toml_old=$'[mcp_servers.posthog]\nenabled = false'
+posthog_write_toml=$'[mcp_servers.posthog_write]\nurl = "https://mcp.posthog.com/mcp?mode=cli&project_id=107700"\nbearer_token_env_var = "POSTHOG_MCP_TOKEN"\nrequired = false'
 almunia_envrc=$'export AGENT_ENV_FILE=/dev/null\nexport AWS_PROFILE="Almunia"'
 almunia_envrc_old=$'export AGENT_ENV_FILE="$HOME/.config/agent-env/almunia.env"\nexport AWS_PROFILE="Almunia"'
 almunia_codex=$'[shell_environment_policy.set]\nAWS_PROFILE = "Almunia"\n\n[mcp_servers.supabase]\nenabled = false\n\n[mcp_servers.posthog]\nenabled = false'
@@ -66,8 +68,9 @@ write_known_file "$OUTSIDEY/.envrc" "$outsidey_envrc_old" "$outsidey_envrc"
 mcp_file="$OUTSIDEY/.mcp.json"
 [[ -f "$mcp_file" ]] || fail "missing $mcp_file"
 mcp_tmp=$(mktemp "${mcp_file}.tmp.XXXXXX")
-jq --arg url "$posthog_url" --arg helper "$posthog_helper" \
-  '.mcpServers.posthog = {type: "http", url: $url, headersHelper: $helper}' \
+jq --arg url "$posthog_url" --arg wurl "$posthog_write_url" --arg helper "$posthog_helper" \
+  '.mcpServers.posthog = {type: "http", url: $url, headersHelper: $helper}
+   | .mcpServers.posthog_write = {type: "http", url: $wurl, headersHelper: $helper}' \
   "$mcp_file" > "$mcp_tmp"
 chmod 600 "$mcp_tmp"
 mv "$mcp_tmp" "$mcp_file"
@@ -100,6 +103,35 @@ elif [[ "$current_posthog" != "$posthog_toml" ]]; then
   fail "refusing to replace unexpected PostHog config in $codex_file"
 fi
 
+current_posthog_write=$(awk '
+  /^\[mcp_servers\.posthog_write\]$/ { capture=1 }
+  capture && /^\[/ && $0 != "[mcp_servers.posthog_write]" { exit }
+  capture { print }
+' "$codex_file")
+if [[ -z "$current_posthog_write" ]]; then
+  codex_tmp=$(mktemp "${codex_file}.tmp.XXXXXX")
+  awk '
+    function print_block() {
+      print "[mcp_servers.posthog_write]"
+      print "url = \"https://mcp.posthog.com/mcp?mode=cli&project_id=107700\""
+      print "bearer_token_env_var = \"POSTHOG_MCP_TOKEN\""
+      print "required = false"
+      print ""
+    }
+    /^\[mcp_servers\.posthog\]$/ { in_posthog=1 }
+    in_posthog && /^\[/ && $0 != "[mcp_servers.posthog]" {
+      print_block()
+      in_posthog=0
+    }
+    { print }
+    END { if (in_posthog) print_block() }
+  ' "$codex_file" > "$codex_tmp"
+  chmod 600 "$codex_tmp"
+  mv "$codex_tmp" "$codex_file"
+elif [[ "$current_posthog_write" != "$posthog_write_toml" ]]; then
+  fail "refusing to replace unexpected PostHog write config in $codex_file"
+fi
+
 for name in "${ALMUNIA_REPOS[@]}"; do
   repo="$PROJECTS_ROOT/$name"
   write_known_file "$repo/.envrc" "$almunia_envrc_old" "$almunia_envrc"
@@ -109,10 +141,13 @@ done
 jq -e --arg url "$posthog_url" \
   '.mcpServers.posthog.type == "http" and .mcpServers.posthog.url == $url' \
   "$mcp_file" >/dev/null
+jq -e --arg wurl "$posthog_write_url" \
+  '.mcpServers.posthog_write.type == "http" and .mcpServers.posthog_write.url == $wurl' \
+  "$mcp_file" >/dev/null
 grep -Fqx 'POSTHOG_CLI_PROJECT_ID=107700' "$OUTSIDEY/.agent-env"
 # shellcheck disable=SC2016  # Assert the literal deferred expansion.
 grep -Fqx 'export AGENT_ENV_FILE="$(expand_path .agent-env)"' "$OUTSIDEY/.envrc"
-grep -Fqx 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$codex_file"
+[[ $(grep -Fxc 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$codex_file") -eq 2 ]]
 
 for name in "${ALMUNIA_REPOS[@]}"; do
   repo="$PROJECTS_ROOT/$name"

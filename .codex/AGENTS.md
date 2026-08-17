@@ -32,7 +32,7 @@
 - Do not force-push, bypass repository safeguards, weaken protected-file or dangerous-command controls, or publish packages.
 - Treat external writes as authorization-sensitive. Outside the dotfiles repository, pushing branches and merging or closing pull requests require explicit confirmation. Read-only inspection is allowed when relevant.
 - Authorization is scoped to the stated target and action; do not infer permission for adjacent repositories, accounts, deployments, messages, purchases, or other consequential operations.
-- The user authorizes reads from the Outsidey PostHog project `107700` and Supabase list/read operations. PostHog writes and all Supabase mutations still require explicit confirmation.
+- The user authorizes reads from the Outsidey PostHog project `107700` and Supabase list/read operations. Use the `posthog` MCP server for PostHog reads (server-enforced read-only; write calls fail as unknown tools). PostHog writes go through the separate `posthog_write` server and, like all Supabase mutations, still require explicit confirmation — Codex has no Claude-style `ask` permission tier, so this relies on Codex's own MCP approval prompt.
 
 ## Technology Defaults
 
