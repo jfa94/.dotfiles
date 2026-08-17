@@ -385,16 +385,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/claude-dir-check.sh",
-            "statusMessage": "Checking .claude/ directory access"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/.claude/hooks/protected-files-check.sh",
             "statusMessage": "Checking protected files & migrations"
           }
@@ -594,7 +584,7 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
