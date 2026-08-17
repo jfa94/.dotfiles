@@ -22,8 +22,11 @@ const CODEX_CACHE_ROOT = path.join(
   "openai-codex",
   "codex",
 );
-// Test seam: production hook input never sets this env var; tests point it at a tmp cache
-// root, read at call time so it also crosses the CLI's spawned-subprocess boundary.
+// Test seam: read from the process environment (not hook input), so tests point it at a
+// tmp cache root and it also crosses the CLI's spawned-subprocess boundary. This is an
+// unguarded security override: anything that seeds the CLI's process environment (a
+// settings.json `env` block, a shell profile, etc.) can repoint the trusted cache root and
+// weaken the launch validation below — keep it out of any checked-in settings file.
 const CODEX_CACHE_ROOT_OVERRIDE_ENV = "VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT";
 
 function codexCacheRoot() {

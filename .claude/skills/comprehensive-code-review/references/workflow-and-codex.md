@@ -71,6 +71,10 @@ Workflow({
 });
 ```
 
+The Workflow runtime forbids non-deterministic globals and direct filesystem access —
+`new TextEncoder`, `Date.now`, `Math.random`, `require("node:fs")`/`import ... from "node:fs"` —
+enforced by a static regression check in `review-fanout.workflow.test.mjs`.
+
 The Workflow tool input stays at or below 8 KiB. The workflow validates `runtime`, `profile`,
 `runId`, `scopeLabel`, `mode`, `outDir`, the path-only input shape, and the absence of legacy inline
 fields before dispatch. A skill-scoped PreToolUse hook independently verifies the exact bundled
@@ -82,8 +86,11 @@ five identity/scope fields; harvesters reject any mismatch as stale/foreign.
 
 When `changeContextPath` is set, that same hook and the workflow's own run-time preflight
 independently enforce the change-context content contract (non-empty JSON array, allowed
-`source` values, non-empty `text`, ≤8192 combined UTF-8 bytes) — defense in depth against the
-TOCTOU window between hook approval and the moment an agent actually reads the file.
+`source` values, non-empty `text`, ≤8192 combined UTF-8 bytes) — defense in depth that narrows,
+but does not close, the TOCTOU window between hook approval and the moment an agent actually
+reads the file: reviewer/codex agents still read the file lazily afterward, so a change landing
+between the run-time preflight and that later read is not caught. The preflight's `jq -s -e`
+check requires `jq` on `PATH`.
 
 `codex: null` (Codex unavailable) makes the workflow report the track SKIPPED; reviewers run
 regardless. The orchestrator never launches Codex itself — the old two-call contract (backgrounded

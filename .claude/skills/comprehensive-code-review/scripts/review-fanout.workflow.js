@@ -179,9 +179,10 @@ function changeContextJqProgram() {
 }
 
 async function preflightChangeContext(changeContextPath) {
-  const jqProgram = changeContextJqProgram();
+  const jqProgram =
+    "length == 1 and (.[0] | " + changeContextJqProgram() + ")";
   const cmd =
-    "jq -e " + shellQuote(jqProgram) + " " + shellQuote(changeContextPath);
+    "jq -s -e " + shellQuote(jqProgram) + " " + shellQuote(changeContextPath);
   const prompt = [
     "You run exactly ONE shell command to validate a change-context file's shape, then report the result. Do not read, modify, or otherwise inspect the file beyond running this command.",
     "",
@@ -189,9 +190,10 @@ async function preflightChangeContext(changeContextPath) {
     "",
     cmd,
     "",
-    "It exits 0 if the file is a non-empty JSON array where every entry has source in " +
-      '["request","commit-messages","context-file"] and a non-empty string text, and the ' +
-      "combined UTF-8 byte length of all text fields is <= 8192; nonzero otherwise (including malformed JSON).",
+    "It exits 0 if the file contains exactly one JSON document that is a non-empty array " +
+      'where every entry has source in ["request","commit-messages","context-file"] and a ' +
+      "non-empty string text, and the combined UTF-8 byte length of all text fields is <= 8192; " +
+      "nonzero otherwise (including malformed JSON or multiple JSON documents in the file).",
     'Return valid=true if the command exited 0. Return valid=false with a one-line reason otherwise (quote the jq error or exit code if available).',
   ].join("\n");
   const res = await agent(prompt, {

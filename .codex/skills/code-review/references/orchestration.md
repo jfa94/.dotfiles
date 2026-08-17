@@ -65,6 +65,7 @@ creates the collision-safe directory and initial `run.json`:
 .code-review/runs/<UTC-basic>-<profile>-<random>/
 ├── run.json
 └── raw/
+    └── inputs/
 ```
 
 Never hand-compose a timestamp, nonce, run directory, or initial state. Never reuse, clear, or

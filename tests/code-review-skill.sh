@@ -66,21 +66,62 @@ for skill_md in \
     fail "$skill_md still overwrites raw/changed-files.txt late in the citation phase"
   fi
 done
-for settings_file in "$ROOT/.claude/settings.json" "$ROOT/.claude/settings.local.json"; do
+
+# Positive fixture: prove the printf guard's grep actually matches the old
+# offending line, so future pattern drift (e.g. quoting changes) is caught.
+printf_guard_fixture="$(mktemp)"
+printf '%s\n' 'printf '"'"'%s\n'"'"' "$CHANGED_FILES" > "$RUN_DIR/raw/changed-files.txt"' > "$printf_guard_fixture"
+grep -Fq 'printf '"'"'%s\n'"'"' "$CHANGED_FILES" > ' "$printf_guard_fixture" \
+  || fail 'printf guard grep failed to match its own positive fixture'
+rm -f "$printf_guard_fixture"
+
+# Settings guard: check every settings file whose permissions/env are
+# actually effective for this user, not just the (gitignored/absent)
+# repo-local settings.local.json. The user-level settings.json symlinks into
+# the repo, so dedupe by realpath to avoid checking the same file twice.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+settings_candidates=(
+  "$ROOT/.claude/settings.json"
+  "$config_dir/settings.json"
+  "$config_dir/settings.local.json"
+)
+declare -a settings_files=()
+declare -a seen_realpaths=()
+for settings_file in "${settings_candidates[@]}"; do
   [[ -f "$settings_file" ]] || continue
-  if jq -e '.permissions.allow[]? | select(. == "Workflow" or startswith("Workflow("))' "$settings_file" >/dev/null; then
-    fail "global/user-local Workflow permission in $settings_file is forbidden; use the skill-scoped validator"
+  real="$(realpath "$settings_file")"
+  dup=0
+  for s in "${seen_realpaths[@]:-}"; do
+    [[ "$s" == "$real" ]] && dup=1 && break
+  done
+  [[ $dup -eq 1 ]] && continue
+  seen_realpaths+=("$real")
+  settings_files+=("$settings_file")
+done
+for settings_file in "${settings_files[@]}"; do
+  if jq -e '.permissions.allow[]? | select(type == "string" and (. == "Workflow" or startswith("Workflow(")))' "$settings_file" >/dev/null; then
+    fail "effective Workflow permission in $settings_file is forbidden; use the skill-scoped validator"
+  fi
+  if jq -e '.env["VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT"] != null' "$settings_file" >/dev/null 2>&1; then
+    fail "$settings_file sets VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT; this overrides the Codex cache root security boundary"
   fi
 done
 
-# Prove the jq expressions themselves catch both rule shapes, in isolation.
+# Prove the jq expressions themselves catch both rule shapes, fail closed on
+# non-string allow entries, and catch the cache-root env override, in isolation.
 workflow_guard_fixture="$(mktemp)"
 trap 'rm -f "$workflow_guard_fixture"' EXIT
 for shape in '"Workflow"' '"Workflow(Bash)"'; do
   printf '{"permissions":{"allow":[%s]}}\n' "$shape" > "$workflow_guard_fixture"
-  jq -e '.permissions.allow[]? | select(. == "Workflow" or startswith("Workflow("))' "$workflow_guard_fixture" >/dev/null \
+  jq -e '.permissions.allow[]? | select(type == "string" and (. == "Workflow" or startswith("Workflow(")))' "$workflow_guard_fixture" >/dev/null \
     || fail "settings guard jq expression failed to catch $shape"
 done
+printf '{"permissions":{"allow":[42,"Workflow"]}}\n' > "$workflow_guard_fixture"
+jq -e '.permissions.allow[]? | select(type == "string" and (. == "Workflow" or startswith("Workflow(")))' "$workflow_guard_fixture" >/dev/null \
+  || fail 'settings guard jq expression failed to catch "Workflow" alongside a non-string entry'
+printf '{"env":{"VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT":"/tmp/evil"}}\n' > "$workflow_guard_fixture"
+jq -e '.env["VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT"] != null' "$workflow_guard_fixture" >/dev/null \
+  || fail 'settings guard jq expression failed to catch VALIDATE_WORKFLOW_LAUNCH_CODEX_CACHE_ROOT override'
 rm -f "$workflow_guard_fixture"
 trap - EXIT
 

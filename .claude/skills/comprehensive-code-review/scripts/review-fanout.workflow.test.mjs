@@ -25,6 +25,21 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   const launcher = path.join(temp, "fake-launcher.mjs");
   const capturedArgs = path.join(temp, "launcher-args.json");
   const workflowSource = readFileSync(sourcePath, "utf8");
+  // Runtime-compat regression guard: the Workflow runtime forbids these
+  // globals/APIs (non-deterministic or filesystem access outside its sandbox).
+  for (const forbidden of [
+    /\bnew TextEncoder\b/,
+    /\bDate\.now\b/,
+    /\bMath\.random\b/,
+    /\brequire\(\s*["']node:fs/,
+    /\bfrom\s+["']node:fs/,
+  ]) {
+    assert.doesNotMatch(
+      workflowSource,
+      forbidden,
+      `workflow source must not use ${forbidden} (forbidden in Workflow runtime)`,
+    );
+  }
   writeFileSync(
     launcher,
     `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(capturedArgs)}, JSON.stringify(process.argv.slice(2)));`,
@@ -498,8 +513,10 @@ test("null changeContextPath skips the preflight agent entirely", async (t) => {
 // the agent to run, verbatim, so the test exercises the exact predicate
 // shipped in the workflow rather than a hand-rolled copy of it.
 function extractPreflightCommand(prompt) {
-  const line = prompt.split("\n").find((l) => l.trim().startsWith("jq -e "));
-  assert.ok(line, "preflight prompt must contain a jq -e command line");
+  const line = prompt
+    .split("\n")
+    .find((l) => l.trim().startsWith("jq -s -e "));
+  assert.ok(line, "preflight prompt must contain a jq -s -e command line");
   return line.trim();
 }
 
@@ -519,6 +536,15 @@ test("change-context preflight jq predicate: valid and invalid fixtures", async 
     multibyteOverBudget: JSON.stringify([
       { source: "request", text: "☃".repeat(3000) },
     ]),
+    // Multi-document stream: `jq -e` (unslurped) exits on the LAST document's
+    // result, so an invalid first doc followed by a valid second doc would
+    // pass. Slurping (`jq -s`) sees both documents as one array of length 2,
+    // which the `length == 1` guard rejects — proves the predicate fails
+    // closed on multi-document streams.
+    jsonStream:
+      JSON.stringify([{ source: "bogus", text: "x".repeat(9000) }]) +
+      "\n" +
+      JSON.stringify([{ source: "request", text: "hello world" }]),
   };
 
   let capturedCommand = null;
@@ -557,8 +583,8 @@ test("change-context preflight jq predicate: valid and invalid fixtures", async 
       await assert.rejects(run(), /change-context preflight failed/, `fixture ${name} must fail closed`);
     }
   }
-  // Sanity: the extracted command really is a single shell-quoted jq -e call.
-  assert.match(capturedCommand, /^jq -e '.*' '.*'$/);
+  // Sanity: the extracted command really is a single shell-quoted jq -s -e call.
+  assert.match(capturedCommand, /^jq -s -e '.*' '.*'$/);
 });
 
 test("shell-quoting: codex-runner command args with hostile characters arrive literally", async (t) => {
