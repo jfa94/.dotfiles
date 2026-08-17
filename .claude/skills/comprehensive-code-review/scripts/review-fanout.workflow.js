@@ -161,6 +161,68 @@ const VERIFY_SCHEMA = {
 // non-relevant context grows).
 const DIFFLESS_REVIEWERS = new Set(["documentation-reviewer"]);
 
+// TOCTOU defense in depth: the PreToolUse hook (validate-workflow-launch.mjs)
+// checks this exact change-context content contract with real fs access at
+// launch time, before the Workflow tool call is even approved. This preflight
+// re-checks the same contract at run time, inside the workflow, because the
+// file on disk can change in the window between hook approval and the moment
+// a reviewer/codex agent actually reads it.
+function changeContextJqProgram() {
+  return (
+    'type=="array" and length>0 and ' +
+    "all(.[]; " +
+    '(.source=="request" or .source=="commit-messages" or .source=="context-file") and ' +
+    '((.text|type)=="string") and ((.text|length)>0)' +
+    ") and " +
+    '(([.[].text]|join(""))|utf8bytelength)<=8192'
+  );
+}
+
+async function preflightChangeContext(changeContextPath) {
+  const jqProgram = changeContextJqProgram();
+  const cmd =
+    "jq -e " + shellQuote(jqProgram) + " " + shellQuote(changeContextPath);
+  const prompt = [
+    "You run exactly ONE shell command to validate a change-context file's shape, then report the result. Do not read, modify, or otherwise inspect the file beyond running this command.",
+    "",
+    "Run this exact command:",
+    "",
+    cmd,
+    "",
+    "It exits 0 if the file is a non-empty JSON array where every entry has source in " +
+      '["request","commit-messages","context-file"] and a non-empty string text, and the ' +
+      "combined UTF-8 byte length of all text fields is <= 8192; nonzero otherwise (including malformed JSON).",
+    'Return valid=true if the command exited 0. Return valid=false with a one-line reason otherwise (quote the jq error or exit code if available).',
+  ].join("\n");
+  const res = await agent(prompt, {
+    label: "preflight:change-context",
+    phase: "Review",
+    agentType: "general-purpose",
+    effort: "low",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["valid", "reason"],
+      properties: {
+        valid: { type: "boolean" },
+        reason: { type: "string" },
+      },
+    },
+  }).catch((e) => {
+    throw new Error(
+      "change-context preflight agent threw: " + String((e && e.message) || e),
+    );
+  });
+  if (!res || res.valid !== true) {
+    throw new Error(
+      "change-context preflight failed" +
+        (res && res.reason
+          ? ": " + res.reason
+          : " (agent returned no output — fail closed)"),
+    );
+  }
+}
+
 function buildPrompt(reviewer, ctx) {
   const inputs = ctx.inputs;
   const reviewInputStep = DIFFLESS_REVIEWERS.has(reviewer.name)
@@ -214,8 +276,8 @@ function buildPrompt(reviewer, ctx) {
       inputs.changedFilesPath +
       ".",
     reviewInputStep,
-    ctx.inputs.claudeMdPath
-      ? "Read the repository instructions at " + ctx.inputs.claudeMdPath + "."
+    inputs.claudeMdPath
+      ? "Read the repository instructions at " + inputs.claudeMdPath + "."
       : "No CLAUDE.md path was supplied.",
     docsBlock,
     changeContextBlock,
@@ -482,11 +544,11 @@ function buildCodexRunnerPrompt(input) {
     "",
     "Step 1 — run the launcher-waiter as a FOREGROUND Bash call with `timeout: 600000`. NEVER use `run_in_background` (workflow subagents receive no background-task completion notifications, and turn-end teardown kills tracked background tasks — ending your turn while the review runs kills it):",
     "",
-    '  node "' + codex.launcher + '" \\',
-    '    --companion "' + codex.cmd + '" \\',
-    '    --json-out "' + jsonPath + '" \\',
-    '    --stderr-out "' + stderrPath + '" \\',
-    '    --pid-file "' + pidPath + '" \\',
+    "  node " + shellQuote(codex.launcher) + " \\",
+    "    --companion " + shellQuote(codex.cmd) + " \\",
+    "    --json-out " + shellQuote(jsonPath) + " \\",
+    "    --stderr-out " + shellQuote(stderrPath) + " \\",
+    "    --pid-file " + shellQuote(pidPath) + " \\",
     "    -- " +
       renderCodexTargetFlags(codex.targetFlags) +
       (input.inputs.docsManifestPath || input.inputs.changeContextPath
@@ -697,13 +759,18 @@ async function runCodexTrack(input) {
       verifyRan: false,
     };
   }
+  // Shape checks only: buildCodexRunnerPrompt shellQuote()s every path, so
+  // arbitrary path content is safe against shell interpretation — these just
+  // guard against a missing/malformed config landing in the runner command.
   const launcherErr =
-    typeof input.codex.launcher !== "string" || !input.codex.launcher
-      ? "codex.launcher (absolute path to scripts/codex-launch.mjs) is required"
-      : input.codex.launcher.includes('"') ||
-          typeof input.codex.cmd !== "string" ||
-          input.codex.cmd.includes('"')
-        ? "codex.cmd/codex.launcher must be paths without double quotes"
+    typeof input.codex.launcher !== "string" ||
+    !input.codex.launcher ||
+    !input.codex.launcher.startsWith("/")
+      ? "codex.launcher must be a non-empty absolute path (to scripts/codex-launch.mjs)"
+      : typeof input.codex.cmd !== "string" ||
+          !input.codex.cmd ||
+          !input.codex.cmd.startsWith("/")
+        ? "codex.cmd must be a non-empty absolute path"
         : null;
   if (launcherErr) {
     return {
@@ -1007,6 +1074,13 @@ for (const reviewer of reviewers) {
   if ("role" in reviewer) {
     throw new Error("reviewer.role is obsolete; pass reviewer.charterPath only");
   }
+}
+
+// Fail-closed re-check of the change-context content contract (see comment on
+// preflightChangeContext) before anything reads the file. Must complete
+// before the Codex track starts and before any reviewer is dispatched.
+if (input.inputs.changeContextPath) {
+  await preflightChangeContext(input.inputs.changeContextPath);
 }
 
 // Start the Codex track FIRST as an unawaited promise — it runs concurrently

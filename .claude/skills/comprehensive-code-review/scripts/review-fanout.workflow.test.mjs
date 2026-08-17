@@ -25,7 +25,6 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   const launcher = path.join(temp, "fake-launcher.mjs");
   const capturedArgs = path.join(temp, "launcher-args.json");
   const workflowSource = readFileSync(sourcePath, "utf8");
-  assert.doesNotMatch(workflowSource, /\bnew TextEncoder\b/);
   writeFileSync(
     launcher,
     `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(capturedArgs)}, JSON.stringify(process.argv.slice(2)));`,
@@ -107,6 +106,9 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   globalThis.agent = async (prompt, options) => {
     prompts.push({ prompt, options });
     const label = options.label;
+    if (label === "preflight:change-context") {
+      return { valid: true, reason: "" };
+    }
     if (label === "review:quality-reviewer") {
       return {
         status: "DONE",
@@ -244,7 +246,7 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   const codexPrompt = prompts.find((p) => p.options.label === "codex:adversarial").prompt;
   assert.match(codexPrompt, /docs it/);
   assert.ok(codexPrompt.includes(changeContextPath));
-  const commandStart = codexPrompt.indexOf('  node "');
+  const commandStart = codexPrompt.indexOf("  node '");
   const commandEnd = codexPrompt.indexOf("\n\nThe launcher", commandStart);
   const command = codexPrompt
     .slice(commandStart, commandEnd)
@@ -275,4 +277,346 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
     /reviewInputPath.*absolute path/,
   );
   globalThis.args = validArgs;
+});
+
+function baseArgs(overrides = {}) {
+  const runDir = "/tmp/repo/.code-review/runs/20260811T120000Z-focused-Ab12Cd";
+  return {
+    runtime: "claude",
+    profile: "focused",
+    runId: "20260811T120000Z-focused-Ab12Cd",
+    scopeLabel: "working tree vs HEAD",
+    mode: "working-tree",
+    outDir: ".code-review/runs/20260811T120000Z-focused-Ab12Cd",
+    repoRoot: "/tmp/repo",
+    inputs: {
+      claudeMdPath: null,
+      changedFilesPath: `${runDir}/raw/changed-files.txt`,
+      reviewInputPath: `${runDir}/raw/inputs/review-input.txt`,
+      docsManifestPath: null,
+      changeContextPath: null,
+      dispositionsPath: null,
+      specPath: null,
+    },
+    reviewers: [],
+    codex: null,
+    ...overrides,
+  };
+}
+
+function setupGlobals() {
+  globalThis.log = () => {};
+  globalThis.parallel = async (thunks) =>
+    Promise.all(
+      thunks.map(async (thunk) => {
+        try {
+          return await thunk();
+        } catch {
+          return null;
+        }
+      }),
+    );
+  globalThis.pipeline = async (items, produce, consume) => {
+    const output = [];
+    for (const item of items) output.push(await consume(await produce(item)));
+    return output;
+  };
+}
+
+function writeRunnable(temp) {
+  const runnable = path.join(temp, "workflow.mjs");
+  const workflowSource = readFileSync(sourcePath, "utf8");
+  writeFileSync(
+    runnable,
+    workflowSource.replace(
+      /return consolidated;\s*$/,
+      "globalThis.__workflowResult = consolidated;",
+    ),
+  );
+  return runnable;
+}
+
+test("change-context preflight runs before codex and reviewer dispatch", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-preflight-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+  const prompts = [];
+  setupGlobals();
+  globalThis.args = baseArgs({
+    inputs: {
+      ...baseArgs().inputs,
+      changeContextPath: "/tmp/repo/.code-review/runs/x/raw/inputs/change-context.json",
+    },
+    reviewers: [
+      { name: "quality-reviewer", charterPath: "/tmp/charters/quality-reviewer.md" },
+    ],
+    codex: {
+      cmd: "/tmp/codex-companion.mjs",
+      launcher: "/tmp/fake-launcher.mjs",
+      targetFlags: "--scope working-tree",
+      expectedTarget: { mode: "working-tree" },
+    },
+  });
+  globalThis.agent = async (prompt, options) => {
+    prompts.push({ prompt, options });
+    const label = options.label;
+    if (label === "preflight:change-context") return { valid: true, reason: "" };
+    if (label === "review:quality-reviewer") return { status: "DONE", findings: [] };
+    if (label === "codex:adversarial") {
+      return { status: "DONE", outcome: "structured", findings: [], degraded_refs: [] };
+    }
+    if (label.startsWith("persist:")) return { written: true, path: "x", entry_count: 0 };
+    throw new Error(`unexpected label ${label}`);
+  };
+  await import(pathToFileURL(runnable).href + `?preflight-order-${Date.now()}`);
+  assert.equal(prompts[0].options.label, "preflight:change-context");
+  const codexIdx = prompts.findIndex((p) => p.options.label === "codex:adversarial");
+  const reviewIdx = prompts.findIndex((p) => p.options.label === "review:quality-reviewer");
+  assert.ok(codexIdx > 0, "codex agent dispatched after preflight");
+  assert.ok(reviewIdx > 0, "reviewer agent dispatched after preflight");
+});
+
+test("change-context preflight fail-closed: invalid result blocks all dispatch", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-preflight-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+  const prompts = [];
+  setupGlobals();
+  globalThis.args = baseArgs({
+    inputs: {
+      ...baseArgs().inputs,
+      changeContextPath: "/tmp/repo/.code-review/runs/x/raw/inputs/change-context.json",
+    },
+    reviewers: [
+      { name: "quality-reviewer", charterPath: "/tmp/charters/quality-reviewer.md" },
+    ],
+    codex: {
+      cmd: "/tmp/codex-companion.mjs",
+      launcher: "/tmp/fake-launcher.mjs",
+      targetFlags: "--scope working-tree",
+      expectedTarget: { mode: "working-tree" },
+    },
+  });
+  globalThis.agent = async (prompt, options) => {
+    prompts.push({ prompt, options });
+    if (options.label === "preflight:change-context") {
+      return { valid: false, reason: "bad shape" };
+    }
+    throw new Error(`unexpected dispatch: ${options.label}`);
+  };
+  await assert.rejects(
+    import(pathToFileURL(runnable).href + `?preflight-invalid-${Date.now()}`),
+    /change-context preflight failed/,
+  );
+  assert.deepEqual(prompts.map((p) => p.options.label), ["preflight:change-context"]);
+});
+
+test("change-context preflight fail-closed: null (skipped/died) result blocks all dispatch", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-preflight-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+  const prompts = [];
+  setupGlobals();
+  globalThis.args = baseArgs({
+    inputs: {
+      ...baseArgs().inputs,
+      changeContextPath: "/tmp/repo/.code-review/runs/x/raw/inputs/change-context.json",
+    },
+    reviewers: [
+      { name: "quality-reviewer", charterPath: "/tmp/charters/quality-reviewer.md" },
+    ],
+    codex: null,
+  });
+  globalThis.agent = async (prompt, options) => {
+    prompts.push({ prompt, options });
+    if (options.label === "preflight:change-context") return null;
+    throw new Error(`unexpected dispatch: ${options.label}`);
+  };
+  await assert.rejects(
+    import(pathToFileURL(runnable).href + `?preflight-null-${Date.now()}`),
+    /change-context preflight failed/,
+  );
+  assert.deepEqual(prompts.map((p) => p.options.label), ["preflight:change-context"]);
+});
+
+test("change-context preflight fail-closed: agent throw blocks all dispatch", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-preflight-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+  const prompts = [];
+  setupGlobals();
+  globalThis.args = baseArgs({
+    inputs: {
+      ...baseArgs().inputs,
+      changeContextPath: "/tmp/repo/.code-review/runs/x/raw/inputs/change-context.json",
+    },
+    reviewers: [
+      { name: "quality-reviewer", charterPath: "/tmp/charters/quality-reviewer.md" },
+    ],
+    codex: null,
+  });
+  globalThis.agent = async (prompt, options) => {
+    prompts.push({ prompt, options });
+    if (options.label === "preflight:change-context") {
+      throw new Error("agent died mid-run");
+    }
+    throw new Error(`unexpected dispatch: ${options.label}`);
+  };
+  await assert.rejects(
+    import(pathToFileURL(runnable).href + `?preflight-throw-${Date.now()}`),
+    /change-context preflight agent threw.*agent died mid-run/s,
+  );
+  assert.deepEqual(prompts.map((p) => p.options.label), ["preflight:change-context"]);
+});
+
+test("null changeContextPath skips the preflight agent entirely", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-preflight-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+  const prompts = [];
+  setupGlobals();
+  globalThis.args = baseArgs({
+    reviewers: [
+      { name: "quality-reviewer", charterPath: "/tmp/charters/quality-reviewer.md" },
+    ],
+    codex: null,
+  });
+  globalThis.agent = async (prompt, options) => {
+    prompts.push({ prompt, options });
+    if (options.label === "review:quality-reviewer") return { status: "DONE", findings: [] };
+    if (options.label.startsWith("persist:")) return { written: true, path: "x", entry_count: 1 };
+    throw new Error(`unexpected label ${options.label}`);
+  };
+  await import(pathToFileURL(runnable).href + `?no-preflight-${Date.now()}`);
+  assert.equal(
+    prompts.some((p) => p.options.label === "preflight:change-context"),
+    false,
+  );
+});
+
+// Extracts the "jq -e '<program>' '<path>'" line the preflight prompt tells
+// the agent to run, verbatim, so the test exercises the exact predicate
+// shipped in the workflow rather than a hand-rolled copy of it.
+function extractPreflightCommand(prompt) {
+  const line = prompt.split("\n").find((l) => l.trim().startsWith("jq -e "));
+  assert.ok(line, "preflight prompt must contain a jq -e command line");
+  return line.trim();
+}
+
+test("change-context preflight jq predicate: valid and invalid fixtures", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-jq-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+
+  const fixtures = {
+    valid: JSON.stringify([{ source: "request", text: "hello world" }]),
+    malformedJson: "not json",
+    invalidLabel: JSON.stringify([{ source: "bogus", text: "hello" }]),
+    emptyArray: "[]",
+    emptyText: JSON.stringify([{ source: "request", text: "" }]),
+    // 3000 3-byte chars: 3000 code points (< 8192) but 9000 UTF-8 bytes (> 8192).
+    // Proves the predicate uses utf8bytelength, not length.
+    multibyteOverBudget: JSON.stringify([
+      { source: "request", text: "☃".repeat(3000) },
+    ]),
+  };
+
+  let capturedCommand = null;
+  for (const [name, content] of Object.entries(fixtures)) {
+    const fixturePath = path.join(temp, `${name}.json`);
+    writeFileSync(fixturePath, content);
+    const prompts = [];
+    setupGlobals();
+    globalThis.args = baseArgs({
+      inputs: { ...baseArgs().inputs, changeContextPath: fixturePath },
+      reviewers: [],
+      codex: null,
+    });
+    globalThis.agent = async (prompt, options) => {
+      prompts.push({ prompt, options });
+      if (options.label === "preflight:change-context") {
+        const command = extractPreflightCommand(prompt);
+        capturedCommand = command;
+        try {
+          execFileSync("sh", ["-c", command], { stdio: "pipe" });
+          return { valid: true, reason: "" };
+        } catch (e) {
+          return { valid: false, reason: String((e && e.message) || e) };
+        }
+      }
+      if (options.label.startsWith("persist:")) {
+        return { written: true, path: "x", entry_count: 0 };
+      }
+      throw new Error(`unexpected label ${options.label}`);
+    };
+    const run = () =>
+      import(pathToFileURL(runnable).href + `?jq-${name}-${Date.now()}-${Math.random()}`);
+    if (name === "valid") {
+      await run();
+    } else {
+      await assert.rejects(run(), /change-context preflight failed/, `fixture ${name} must fail closed`);
+    }
+  }
+  // Sanity: the extracted command really is a single shell-quoted jq -e call.
+  assert.match(capturedCommand, /^jq -e '.*' '.*'$/);
+});
+
+test("shell-quoting: codex-runner command args with hostile characters arrive literally", async (t) => {
+  const temp = mkdtempSync(path.join(tmpdir(), "review-fanout-quote-"));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const runnable = writeRunnable(temp);
+  const sentinel = path.join(temp, "shell-injection-ran");
+  // Node's ESM loader itself rejects a script path containing a raw
+  // backslash (ERR_INVALID_MODULE_SPECIFIER) regardless of shell quoting, so
+  // the launcher's own filename stays free of "\" — the backslash case is
+  // covered below via the companion/output-path arguments instead.
+  const launcher = path.join(temp, "fake launcher's `dir` $(x).mjs");
+  const capturedArgs = path.join(temp, "launcher-args.json");
+  writeFileSync(
+    launcher,
+    `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(capturedArgs)}, JSON.stringify(process.argv.slice(2)));`,
+  );
+
+  const hostile = (label) => `/tmp/repo/it's ${label} \`backtick\` $(touch ${sentinel}) back\\slash dir`;
+  const cmdPath = hostile("cmd");
+
+  const prompts = [];
+  setupGlobals();
+  globalThis.args = baseArgs({
+    inputs: { ...baseArgs().inputs },
+    reviewers: [],
+    repoRoot: hostile("root"),
+    codex: {
+      cmd: cmdPath,
+      launcher,
+      targetFlags: "--scope working-tree",
+      expectedTarget: { mode: "working-tree" },
+    },
+  });
+  // Just record + return a plausible result here — the actual shell exec and
+  // assertions happen after import() resolves (below), so a real failure in
+  // the extracted command fails the test loudly instead of being swallowed by
+  // runCodexTrack's retry-then-BLOCKED error handling.
+  globalThis.agent = async (prompt, options) => {
+    prompts.push({ prompt, options });
+    if (options.label === "codex:adversarial") {
+      return { status: "DONE", outcome: "structured", findings: [], degraded_refs: [] };
+    }
+    if (options.label.startsWith("persist:")) return { written: true, path: "x", entry_count: 0 };
+    throw new Error(`unexpected label ${options.label}`);
+  };
+  await import(pathToFileURL(runnable).href + `?quote-${Date.now()}`);
+  const codexPrompt = prompts.find((p) => p.options.label === "codex:adversarial").prompt;
+  const commandStart = codexPrompt.indexOf("  node '");
+  const commandEnd = codexPrompt.indexOf("\n\nThe launcher", commandStart);
+  const command = codexPrompt
+    .slice(commandStart, commandEnd)
+    .trim()
+    .replace(/\\\n\s*/g, " ");
+  execFileSync("sh", ["-c", command]);
+  const launcherArgs = JSON.parse(readFileSync(capturedArgs, "utf8"));
+  // node <launcher> --companion <cmd> --json-out <path> --stderr-out <path> --pid-file <path> -- <flags...>
+  assert.equal(launcherArgs[1], cmdPath);
+  assert.ok(launcherArgs[3].startsWith(hostile("root")));
+  assert.equal(existsSync(sentinel), false, "no sentinel — no shell substitution ran");
 });

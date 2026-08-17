@@ -77,6 +77,11 @@ script, canonical roster/charters, current-run artifact containment/readability,
 launcher before auto-allowing the call. Persisted workflow and Codex-verification results echo all
 five identity/scope fields; harvesters reject any mismatch as stale/foreign.
 
+When `changeContextPath` is set, that same hook and the workflow's own run-time preflight
+independently enforce the change-context content contract (non-empty JSON array, allowed
+`source` values, non-empty `text`, ≤8192 combined UTF-8 bytes) — defense in depth against the
+TOCTOU window between hook approval and the moment an agent actually reads the file.
+
 `codex: null` (Codex unavailable) makes the workflow report the track SKIPPED; reviewers run
 regardless. The orchestrator never launches Codex itself — the old two-call contract (backgrounded
 Codex Bash + Workflow in one message) relied on prose compliance and serialized whenever the model
