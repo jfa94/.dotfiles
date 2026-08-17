@@ -8,7 +8,8 @@ contract for all of them.
 
 After the changed-files empty guard and before any diff, seed, or workflow artifact is written, the
 orchestrator calls `scripts/review-run.mjs init` to atomically create a unique
-`.code-review/runs/<UTC YYYYMMDDTHHMMSSZ>-<profile>-<6 alphanumeric nonce>/raw/` directory. It immediately
+`.code-review/runs/<UTC YYYYMMDDTHHMMSSZ>-<profile>-<6 alphanumeric nonce>/` directory, including its
+`raw/` and `raw/inputs/` subdirectories. It immediately
 writes `run.json` with `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, `passNumber` (from
 `init --pass-number <n>`, integer ≥1, default 1 — the review⇄fix loop iteration this run is),
 `startedAt`, and
@@ -73,8 +74,10 @@ Workflow({
 The Workflow tool input stays at or below 8 KiB. The workflow validates `runtime`, `profile`,
 `runId`, `scopeLabel`, `mode`, `outDir`, the path-only input shape, and the absence of legacy inline
 fields before dispatch. A skill-scoped PreToolUse hook independently verifies the exact bundled
-script, canonical roster/charters, current-run artifact containment/readability, and bundled Codex
-launcher before auto-allowing the call. Persisted workflow and Codex-verification results echo all
+script, canonical roster/charters, current-run artifact containment/readability, and pins both the
+bundled Codex launcher (`scripts/codex-launch.mjs`) and the installed companion
+(`$HOME/.claude/plugins/cache/openai-codex/codex/<version>/scripts/codex-companion.mjs`) before
+auto-allowing the call. Persisted workflow and Codex-verification results echo all
 five identity/scope fields; harvesters reject any mismatch as stale/foreign.
 
 When `changeContextPath` is set, that same hook and the workflow's own run-time preflight

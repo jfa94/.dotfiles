@@ -50,6 +50,10 @@ test("init atomically creates unique run state and raw directory", (t) => {
   assert.equal(state.runtime, "codex");
   assert.equal(state.runId, first.runId);
   assert.equal(existsSync(path.join(first.runDir, "raw")), true);
+  const inputsDir = path.join(first.runDir, "raw", "inputs");
+  assert.equal(existsSync(inputsDir), true);
+  writeFileSync(path.join(inputsDir, "review-input.txt"), "diff\n");
+  assert.equal(existsSync(path.join(inputsDir, "review-input.txt")), true);
 });
 
 test("finish records terminal state and rejects a second transition", (t) => {

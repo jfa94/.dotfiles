@@ -105,7 +105,7 @@ const init = (args) => {
   mkdirSync(runsRoot, { recursive: true });
   const runDir = mkdtempSync(path.join(runsRoot, `${timestamp()}-${profile}-`));
   const runId = path.basename(runDir);
-  mkdirSync(path.join(runDir, "raw"));
+  mkdirSync(path.join(runDir, "raw", "inputs"), { recursive: true });
   const state = {
     runtime,
     profile,

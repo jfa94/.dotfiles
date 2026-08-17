@@ -358,10 +358,10 @@ refutation pass in-script, so there is nothing to launch or poll here:
 ## Phase 6 — Citation Verification (scripted, deterministic)
 
 Do NOT hand-execute citation checks — run the sibling skill's script (spec:
-`comprehensive-code-review/references/workflow-and-codex.md` §6). Write the changed-files list first:
+`comprehensive-code-review/references/workflow-and-codex.md` §6). Pass the Phase 1
+`raw/changed-files.txt` directly:
 
 ```bash
-printf '%s\n' "$CHANGED_FILES" > "$RUN_DIR/raw/changed-files.txt"
 node "<comprehensive-code-review skill dir>/scripts/verify-citations.mjs" \
   --workflow-result "$RUN_DIR/raw/workflow-result.json" \
   --codex "$RUN_DIR/raw/codex-adversarial.json" \

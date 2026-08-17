@@ -431,10 +431,9 @@ refutation pass in-script, so there is nothing to launch or poll here:
 ## Phase 7 — Citation Verification (scripted, deterministic)
 
 Do NOT hand-execute citation checks — run the script (its spec lives in
-`references/workflow-and-codex.md` §6). Write the changed-files list to a file first:
+`references/workflow-and-codex.md` §6). Pass the Phase 1 `raw/changed-files.txt` directly:
 
 ```bash
-printf '%s\n' "$CHANGED_FILES" > "$RUN_DIR/raw/changed-files.txt"
 node "<this skill's base directory>/scripts/verify-citations.mjs" \
   --workflow-result "$RUN_DIR/raw/workflow-result.json" \
   --codex "$RUN_DIR/raw/codex-adversarial.json" \

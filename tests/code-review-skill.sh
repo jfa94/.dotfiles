@@ -58,9 +58,31 @@ grep -Fq 'validate-workflow-launch.mjs' "$CLAUDE_REVIEW/SKILL.md" \
   || fail 'comprehensive skill-scoped Workflow validator missing'
 grep -Fq 'validate-workflow-launch.mjs' "$ROOT/.claude/skills/focused-code-review/SKILL.md" \
   || fail 'focused skill-scoped Workflow validator missing'
-if jq -e '.permissions.allow[]? | select(. == "Workflow")' "$ROOT/.claude/settings.json" >/dev/null; then
-  fail 'global Workflow permission is forbidden; use the skill-scoped validator'
-fi
+
+for skill_md in \
+  "$CLAUDE_REVIEW/SKILL.md" \
+  "$ROOT/.claude/skills/focused-code-review/SKILL.md"; do
+  if grep -Fq 'printf '"'"'%s\n'"'"' "$CHANGED_FILES" > ' "$skill_md"; then
+    fail "$skill_md still overwrites raw/changed-files.txt late in the citation phase"
+  fi
+done
+for settings_file in "$ROOT/.claude/settings.json" "$ROOT/.claude/settings.local.json"; do
+  [[ -f "$settings_file" ]] || continue
+  if jq -e '.permissions.allow[]? | select(. == "Workflow" or startswith("Workflow("))' "$settings_file" >/dev/null; then
+    fail "global/user-local Workflow permission in $settings_file is forbidden; use the skill-scoped validator"
+  fi
+done
+
+# Prove the jq expressions themselves catch both rule shapes, in isolation.
+workflow_guard_fixture="$(mktemp)"
+trap 'rm -f "$workflow_guard_fixture"' EXIT
+for shape in '"Workflow"' '"Workflow(Bash)"'; do
+  printf '{"permissions":{"allow":[%s]}}\n' "$shape" > "$workflow_guard_fixture"
+  jq -e '.permissions.allow[]? | select(. == "Workflow" or startswith("Workflow("))' "$workflow_guard_fixture" >/dev/null \
+    || fail "settings guard jq expression failed to catch $shape"
+done
+rm -f "$workflow_guard_fixture"
+trap - EXIT
 
 node --test \
   "$CLAUDE_REVIEW/scripts/review-run.test.mjs" \
