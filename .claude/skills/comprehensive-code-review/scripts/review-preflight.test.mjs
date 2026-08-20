@@ -220,6 +220,34 @@ test("focused ignores --full and --spec with a warning", (t) => {
   assert.ok(out.warnings.some((w) => /--spec/.test(w)));
 });
 
+test("codex runtime rejects focused --full/--spec instead of warning", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 9;\n");
+  writeFileSync(path.join(root, "spec.md"), "# spec\n");
+  const full = run(root, ["--profile", "focused", "--runtime", "codex", "--full"], {
+    expectFail: true,
+  });
+  assert.equal(full.status, "error");
+  assert.match(full.message, /--full/);
+  const spec = run(
+    root,
+    ["--profile", "focused", "--runtime", "codex", "--spec", path.join(root, "spec.md")],
+    { expectFail: true },
+  );
+  assert.equal(spec.status, "error");
+  assert.match(spec.message, /--spec/);
+  assert.equal(existsSync(path.join(root, ".code-review")), false);
+});
+
+test("unknown flags are rejected before any run is created", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 9;\n");
+  const typo = run(root, ["--profile", "focused", "--bas", "HEAD"], { expectFail: true });
+  assert.equal(typo.status, "error");
+  assert.match(typo.message, /unknown flag: --bas/);
+  assert.equal(existsSync(path.join(root, ".code-review")), false);
+});
+
 test("comprehensive --full sends the inventory with hotspot priority", (t) => {
   const root = repo(t);
   const out = run(root, ["--profile", "comprehensive", "--full"]);

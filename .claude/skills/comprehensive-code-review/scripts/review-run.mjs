@@ -143,7 +143,16 @@ const finish = (args) => {
     fail(`cannot read run.json: ${error.message}`);
   }
   if (current.runId !== runId) fail("run.json identity does not match --run-dir");
-  if (current.status !== "RUNNING") fail(`run is already terminal: ${current.status}`);
+  if (current.status !== "RUNNING") {
+    // Idempotent no-op: the report-writer and the orchestrator fallback may
+    // both run finish; a repeat with the same status echoes the terminal
+    // state instead of failing. A different status is still a real conflict.
+    if (current.status === status && (!args.report || current.report === args.report)) {
+      process.stdout.write(`${JSON.stringify({ ...current, runDir })}\n`);
+      return;
+    }
+    fail(`run is already terminal: ${current.status}`);
+  }
   const next = {
     ...current,
     completedAt: new Date().toISOString(),

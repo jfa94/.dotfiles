@@ -76,10 +76,24 @@ class PreflightError extends Error {}
 const parseFlags = (argv) => {
   const flags = { warnings: [] };
   const booleans = new Set(["full", "request-stdin"]);
+  const known = new Set([
+    ...booleans,
+    "repo-root",
+    "profile",
+    "runtime",
+    "base",
+    "spec",
+    "context",
+    "pass",
+    "codex-cache-root",
+    "seed-timeout-ms",
+    "max-args-bytes",
+  ]);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     if (!key.startsWith("--")) throw new PreflightError(`unexpected argument: ${key}`);
     const name = key.slice(2);
+    if (!known.has(name)) throw new PreflightError(`unknown flag: --${name}`);
     if (booleans.has(name)) {
       flags[name] = true;
     } else {
@@ -469,10 +483,13 @@ async function main() {
   let full = Boolean(flags.full);
   let specFlag = flags.spec || null;
   if (profile === "focused" && full) {
+    // Codex-native router contract: reject, never silently rescope.
+    if (runtime === "codex") throw new PreflightError("--full is not supported by the focused profile");
     warnings.push("--full is not supported by the focused profile — ignored.");
     full = false;
   }
   if (profile === "focused" && specFlag) {
+    if (runtime === "codex") throw new PreflightError("--spec is not supported by the focused profile");
     warnings.push("--spec is not supported by the focused profile — ignored.");
     specFlag = null;
   }

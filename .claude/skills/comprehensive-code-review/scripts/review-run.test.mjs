@@ -87,6 +87,35 @@ test("finish records terminal state and rejects a second transition", (t) => {
   assert.match(again.stderr.toString(), /already terminal/);
 });
 
+test("finish with the same terminal status is an idempotent no-op", (t) => {
+  const root = fixture(t);
+  const run = init(root, "focused");
+  const first = JSON.parse(
+    execFileSync(process.execPath, [
+      script,
+      "finish",
+      "--run-dir",
+      run.runDir,
+      "--status",
+      "DONE",
+      "--report",
+      "report.md",
+    ]),
+  );
+  assert.equal(first.status, "DONE");
+  const again = spawnSync(
+    process.execPath,
+    [script, "finish", "--run-dir", run.runDir, "--status", "DONE", "--report", "report.md"],
+    { encoding: "utf8" },
+  );
+  assert.equal(again.status, 0, again.stderr);
+  const echoed = JSON.parse(again.stdout);
+  assert.equal(echoed.status, "DONE");
+  // state untouched: completedAt from the first transition survives
+  const state = JSON.parse(readFileSync(path.join(run.runDir, "run.json"), "utf8"));
+  assert.equal(state.completedAt, first.completedAt);
+});
+
 test("invalid enum fails without creating a run", (t) => {
   const root = fixture(t);
   const result = spawnSync(process.execPath, [

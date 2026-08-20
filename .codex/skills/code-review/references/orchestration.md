@@ -18,10 +18,15 @@ straight through:
 node ~/.claude/skills/comprehensive-code-review/scripts/review-preflight.mjs \
   --repo-root "$REPO_ROOT" --runtime codex --profile "$PROFILE" \
   [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] \
-  --request-stdin <<'EOF'
+  --request-stdin <<'REQ_EOF_x7'
 <the synthesized request text>
-EOF
+REQ_EOF_x7
 ```
+
+Pick a unique heredoc delimiter (`REQ_EOF_` plus a random suffix) and confirm no line of the
+request text equals it — a fixed `EOF` delimiter lets a pasted line reading `EOF` break out of the
+heredoc into shell execution. The preflight rejects unknown flags and rejects `--full`/`--spec`
+with an explicit focused profile under `--runtime codex`, matching the Profile rules.
 
 It performs ALL deterministic gathering: flag validation, mode detection, generated/minified
 exclusions, empty guard (no run directory created), `review-run.mjs init`, diff or risk-ordered
