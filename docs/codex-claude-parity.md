@@ -87,11 +87,14 @@ Both runtimes write each review to a unique directory:
 └── raw/
 ```
 
-Both runtimes materialize large launch inputs beneath `raw/inputs/` and pass only absolute artifact
-and canonical charter paths to reviewer agents. Claude's single Workflow call is capped at 8 KiB and
-is auto-approved only by the active review skill after validating the bundled workflow, roster,
-current-run paths, and Codex launcher. There is no global `Workflow` permission rule. Codex keeps
-the required main-agent charter reads but does not duplicate charter bodies in spawned task text.
+Both runtimes gather scope and materialize large launch inputs beneath `raw/inputs/` through the
+same deterministic preflight (`scripts/review-preflight.mjs`; Codex passes `--runtime codex`) and
+pass only absolute artifact and canonical charter paths to reviewer agents. Claude's single
+Workflow call is capped at 8 KiB and is auto-approved only by the active review skill after
+validating the bundled workflow, roster, current-run paths, and Codex launcher, plus deep-equality
+against the preflight's recorded `launch-args.json`. There is no global `Workflow` permission
+rule. Neither runtime reads charter bodies into the main agent: spawned reviewers read their own
+charter from disk first, and charter bodies are never duplicated in spawned task text.
 
 The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and `.focused-code-review/` ignore entries remain for historical artifacts; new runs must not use them.
 

@@ -59,6 +59,30 @@ grep -Fq 'validate-workflow-launch.mjs' "$CLAUDE_REVIEW/SKILL.md" \
 grep -Fq 'validate-workflow-launch.mjs' "$ROOT/.claude/skills/focused-code-review/SKILL.md" \
   || fail 'focused skill-scoped Workflow validator missing'
 
+# Preflight era: both Claude skills call the deterministic preflight script and
+# no longer carry the hand-executed EXCLUDES gathering.
+for skill_md in \
+  "$CLAUDE_REVIEW/SKILL.md" \
+  "$ROOT/.claude/skills/focused-code-review/SKILL.md"; do
+  grep -Fq 'review-preflight.mjs' "$skill_md" \
+    || fail "$skill_md does not invoke review-preflight.mjs"
+  if grep -Fq 'EXCLUDES=(' "$skill_md"; then
+    fail "$skill_md still carries the hand-executed EXCLUDES array (script owns it now)"
+  fi
+done
+
+# Codex-native skill: preflight-scripted scope, path-only charters (validated
+# readable, never read into the main agent).
+grep -Fq 'review-preflight.mjs' "$SKILL/references/orchestration.md" \
+  || fail 'Codex orchestration does not invoke review-preflight.mjs'
+grep -Fq -- '--runtime codex' "$SKILL/references/orchestration.md" \
+  || fail 'Codex orchestration missing --runtime codex preflight flag'
+if grep -Fq 'then read every selected reviewer charter completely' "$SKILL/SKILL.md"; then
+  fail 'Codex SKILL.md still mandates main-agent charter reads'
+fi
+grep -Fq 'never read or re-emit their bodies' "$SKILL/SKILL.md" \
+  || fail 'Codex SKILL.md missing path-only charter validation wording'
+
 for skill_md in \
   "$CLAUDE_REVIEW/SKILL.md" \
   "$ROOT/.claude/skills/focused-code-review/SKILL.md"; do
@@ -131,7 +155,8 @@ node --test \
   "$CLAUDE_REVIEW/scripts/verify-citations.test.mjs" \
   "$CLAUDE_REVIEW/scripts/review-fanout.workflow.test.mjs" \
   "$CLAUDE_REVIEW/scripts/validate-workflow-launch.test.mjs" \
-  "$CLAUDE_REVIEW/scripts/codex-launch.test.mjs"
+  "$CLAUDE_REVIEW/scripts/codex-launch.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/review-preflight.test.mjs"
 
 # Installed runtime: the skill must be a directory symlink into the repo so
 # every canonical resource the Codex skill requires resolves, always current.

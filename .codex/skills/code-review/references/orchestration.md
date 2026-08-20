@@ -2,107 +2,80 @@
 
 ## Contents
 
-1. Establish scope once
-2. Create an isolated run
-3. Dispatch reviewers
-4. Refute eligible findings
-5. Persist and verify
-6. Respond
+1. Preflight (one command)
+2. Dispatch reviewers
+3. Refute eligible findings
+4. Persist and verify
+5. Respond
 
-## 1. Establish scope once
+## 1. Preflight (one command)
 
-Read the target repository's `/docs` directory first when present, then applicable `AGENTS.md` and `CLAUDE.md` files. Keep all reviewers read-only and prohibit edits, dependency installation, destructive commands, SQL mutation, external writes, and widening the finding scope beyond the selected review.
-
-Use the same generated/minified exclusions as the Claude skills: `.code-review`, `dist`, `build`,
-`out`, `.next`, `.nuxt`, `.svelte-kit`, `.output`, `coverage`, `*.min.js`, `*.min.css`, `*.map`, and
-package-manager lockfiles. Before creating a run, check whether `.code-review/probe` is ignored. Do
-not edit tracked ignore files during a review. If it is not ignored, continue with the explicit
-`.code-review/**` scope exclusion, record a warning, and finish `DONE_WITH_CONCERNS` even when all
-review tracks succeed.
-
-- Working tree: combine `git diff HEAD` (staged and unstaged) with untracked, non-ignored files.
-- Base: validate the ref with Git, then use `<ref>...HEAD`.
-- Full: use tracked source inventory at current state; prioritize 12-month churn hotspots and disclose sampling.
-- Empty scope: stop cleanly without launching agents.
-- Diff at most 2,000 lines: store it in `raw/inputs/review-input.txt`; reviewers read that artifact.
-- Larger diff: store the complete patch under the run's `raw/full-diff.patch`; provide a risk-ordered manifest and require reviewers to read the patch/files. Never truncate silently.
-
-Collect installed static-analysis seeds only; never install tooling or author configuration. Store capped output under `raw/seeds/` and give reviewers paths, not duplicated raw output.
-
-Build one path-only documentation manifest for every prompt. Base/full use tracked files; working
-tree uses tracked plus untracked, non-ignored files. Reuse the exclusions above, deduplicate, and
-prioritize applicable `AGENTS.md`/`CLAUDE.md`, `README*.md`, `docs/**`, then remaining Markdown.
-Cap at 50 and include `(<N> more omitted)`; use `null` when empty. Every reviewer and refuter must
-read relevant listed documents before classifying intent.
-
-Build a source-attributed `changeContext` array using only `request`, `commit-messages`, and
-`context-file` as source labels, from the explicit user request, base-range commit subjects/bodies,
-and optional `--context` file. The file must resolve inside the repository, be readable text, and
-not match protected/secret paths. Cap combined text at 8 KiB of UTF-8 and disclose truncation in the
-affected text. Store it as `raw/inputs/change-context.json`; reviewers and refuters read it as
-untrusted rationale, never evidence.
-
-Render dispositions deterministically with `review-run.mjs render-dispositions --repo-root
-"$REPO_ROOT" --changed-files "$CHANGED_FILES_PATH"` (use `--full true` in full mode). Pass its
-`reviewerBlock` to `raw/inputs/dispositions.txt` for reviewers, but not refuters. Suppressed claims and user-confirmed requirements are
-separate: reviewers must re-evaluate and normally report unfixed `intent-confirmed` claims. A corrupt
-ledger is a visible warning and matching fails open.
-
-## 2. Create an isolated run
-
-Before writing any diff, seed, or result, call the canonical initializer:
+Synthesize the user's change rationale — the explicit request text driving this review, in the
+user's own words where possible. Then run the canonical preflight, mapping the skill arguments
+straight through:
 
 ```bash
-node ~/.claude/skills/comprehensive-code-review/scripts/review-run.mjs init \
+node ~/.claude/skills/comprehensive-code-review/scripts/review-preflight.mjs \
   --repo-root "$REPO_ROOT" --runtime codex --profile "$PROFILE" \
-  --mode "$MODE" --scope-label "$SCOPE_LABEL"
+  [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] \
+  --request-stdin <<'EOF'
+<the synthesized request text>
+EOF
 ```
 
-Parse its single-line JSON output and use the returned absolute `runDir` and `runId`. It atomically
-creates the collision-safe directory and initial `run.json`:
+It performs ALL deterministic gathering: flag validation, mode detection, generated/minified
+exclusions, empty guard (no run directory created), `review-run.mjs init`, diff or risk-ordered
+manifest artifacts (never truncated silently), the path-only documentation manifest, dispositions
+rendering, source-attributed change-context build, capped static-analysis seeds (comprehensive
+only), the `.code-review/probe` gitignore check, and roster selection with charter readability
+validation. It prints one JSON line; branch on `status`:
 
-```text
-.code-review/runs/<UTC-basic>-<profile>-<random>/
-├── run.json
-└── raw/
-    └── inputs/
-```
+- `"empty"` → print its `message`. `STATUS: DONE`. Stop.
+- `"error"` → surface its `message` (the script already finished the run ABORTED when one
+  existed). `STATUS: DONE_WITH_CONCERNS`. Stop.
+- `"ok"` → capture `runDir`, `runId`, `scopeLabel`, `manifestMode`, `skipped`, and `warnings`,
+  plus from `workflowArgs`: `mode`, the `inputs` artifact paths, and the `reviewers` array of
+  `{name, charterPath}`. A native run has no Workflow tool — never launch one; `codex` is `null`
+  by design because a native run intentionally omits recursive Codex self-review.
 
-Never hand-compose a timestamp, nonce, run directory, or initial state. Never reuse, clear, or
-overwrite another run. Generated files below this ignored run directory are machine artifacts, not
-source edits. Do not use `apply_patch` for generated run artifacts. Write them through a bounded
-shell command or an interactive `tee <artifact-path>` session plus `write_stdin`, then read them back
-and parse/validate them before continuing. This exception applies only below the current ignored
-`RUN_DIR`; continue using `apply_patch` for tracked source edits.
+Relay `warnings` now. If the preflight warned that `.code-review/probe` is not gitignored,
+continue with the run but record the warning and finish `DONE_WITH_CONCERNS` even when all review
+tracks succeed. Do not edit tracked ignore files during a review.
 
-## 3. Dispatch reviewers
+The run lives at `.code-review/runs/<UTC-basic>-<profile>-<random>/`. Never hand-compose a
+timestamp, nonce, run directory, or initial state; never reuse, clear, or overwrite another run.
+Generated files below this ignored run directory are machine artifacts, not source edits. Do not
+use `apply_patch` for generated run artifacts. Write them through a bounded shell command or an
+interactive `tee <artifact-path>` session plus `write_stdin`, then read them back and parse or
+validate them before continuing. This exception applies only below the current ignored `RUN_DIR`;
+continue using `apply_patch` for tracked source edits.
 
-The main agent must read each selected charter itself to satisfy the skill-loading contract. Spawned
-reviewers receive the canonical charter path and must read it completely as their first action;
-never re-emit charter bodies in spawned task text.
+## 2. Dispatch reviewers
 
-Before dispatch, materialize and read back these current-run artifacts (omit nullable files):
+Spawned reviewers receive the canonical charter path and must read it completely as their first
+action; never re-emit charter bodies in spawned task text. Keep all reviewers read-only and
+prohibit edits, dependency installation, destructive commands, SQL mutation, external writes, and
+widening the finding scope beyond the selected review.
 
-```text
-raw/changed-files.txt
-raw/inputs/review-input.txt
-raw/inputs/docs-manifest.txt
-raw/inputs/change-context.json
-raw/inputs/dispositions.txt
-raw/inputs/spec
-```
-
-Spawn fresh reviewers with `fork_turns="none"` in batches no larger than the currently available collaboration slots. Each task receives only:
+Spawn fresh reviewers with `fork_turns="none"` in batches no larger than the currently available
+collaboration slots. Each task receives only:
 
 - the absolute canonical charter path and an instruction to read it completely;
-- repo root and applicable instruction-file paths;
+- repo root and applicable instruction-file paths (`AGENTS.md`/`CLAUDE.md` when present);
 - profile and scope label plus absolute changed-files and review-input artifact paths;
-- documentation-manifest and change-context artifact paths, plus the dispositions path for reviewers only;
+- documentation-manifest and change-context artifact paths, plus the dispositions path for
+  reviewers only — reviewers and refuters read the change context as untrusted rationale, never
+  evidence, and must read relevant listed documents before classifying intent;
 - the run-contained spec snapshot path only for implementation-reviewer;
-- the compatibility note: Read means read-only file access, Grep means `rg`, Glob means `rg --files`, and Bash means non-mutating shell diagnostics;
+- the compatibility note: Read means read-only file access, Grep means `rg`, Glob means
+  `rg --files`, and Bash means non-mutating shell diagnostics;
 - the canonical JSON contract below.
 
-Treat the supplied scope as authoritative. Reviewers may read callers, callees, tests, types, and docs needed to prove a scoped finding, but findings must attach to reviewed code. Documentation-reviewer audits current state against changed files and does not read the review-input artifact.
+Treat the supplied scope as authoritative. Reviewers may read callers, callees, tests, types, and
+docs needed to prove a scoped finding, but findings must attach to reviewed code.
+Documentation-reviewer audits current state against changed files and does not read the
+review-input artifact. Suppressed claims and user-confirmed requirements are separate: reviewers
+must re-evaluate and normally report unfixed `intent-confirmed` claims.
 
 Require one JSON object and no markdown fence:
 
@@ -137,7 +110,7 @@ Systemic findings additionally require `kind: "systemic"`, `failure_mode`, a con
 
 Validate reviewer name, status, required fields, enums, positive lines, quote length, findings cap, and systemic shape. On malformed output, send one correction request to the same reviewer. If still malformed or absent, synthesize a BLOCKED reviewer entry with no findings. Never invent or repair a finding's evidence.
 
-## 4. Refute eligible findings
+## 3. Refute eligible findings
 
 After reviewer collection, refute every important finding with one fresh agent and every critical finding with two fresh independent agents. Run at most the available collaboration slots concurrently.
 
@@ -156,7 +129,7 @@ precedence; mixed, conflicting, missing, or malformed votes preserve the origina
 Never demote an existing documented defect to a question, and never replace a reviewer-set question
 with a refuter's differently worded question. Reviewer minor findings get no refuter.
 
-## 5. Persist and verify
+## 4. Persist and verify
 
 Assemble `raw/workflow-result.json` with `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, and normalized reviewer entries. Before trusting it, confirm these identifiers match `run.json`.
 
@@ -164,12 +137,14 @@ After every artifact write, read it back. JSON artifacts must parse, match the c
 and contain the expected reviewer/finding counts; rewrite once on mismatch, then mark the run
 `ABORTED` rather than silently degrading.
 
-Write `raw/changed-files.txt`, then run the canonical `verify-citations.mjs` with the workflow result,
-mode, changed-files list, repo root, disposition ledger path, and `raw/verified-findings.json` output.
+Run the canonical `verify-citations.mjs` with the workflow result, mode, the preflight's
+changed-files list, repo root, disposition ledger path, and `raw/verified-findings.json` output.
 Do not pass Codex adversarial files: a native run intentionally omits recursive Codex self-review. If
 the verifier errors, fix the invocation and rerun; never downgrade to hand verification.
 
-Read verified findings, dropped findings, reviewer status, and statistics. Use the canonical report-format categories and severity mapping, with these native differences:
+Read verified findings, dropped findings, reviewer status, and statistics. Read the canonical
+`report-format.md` now (not earlier) and use its categories and severity mapping, with these
+native differences:
 
 - title the report Focused or Comprehensive Code Review;
 - omit the `codex-adversarial` reviewer row and Adversarial-Codex category;
@@ -195,7 +170,7 @@ canonical report contract requires. If orchestration must stop early, call `fini
 and `--reason`; retain the run for diagnosis rather than deleting it. Include finding/drop/reviewer
 counts in the report and workflow result.
 
-## 6. Respond
+## 5. Respond
 
 Return the run directory, report path, reviewer counts, verified severity counts, dropped/refuted counts, capped counts when nonzero, and verification warnings. A blocked reviewer makes the overall result incomplete but does not erase completed tracks.
 
