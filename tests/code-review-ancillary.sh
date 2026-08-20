@@ -15,9 +15,19 @@ assert_line() {
   grep -Fqx "$line" "$file" || fail "$file missing: $line"
 }
 
+refute_line() {
+  local file="$1"
+  local line="$2"
+  grep -Fqx "$line" "$file" && fail "$file must not contain: $line"
+  return 0
+}
+
 assert_line .gitignore '.code-review/'
 assert_line .gitignore '.comprehensive-code-review/'
 assert_line .gitignore '.focused-code-review/'
+# Inert by construction: git cannot re-include a file under an excluded
+# directory, and the ledger is local working state, not committed.
+refute_line .gitignore '!.code-review/dispositions.json'
 
 SETTINGS=.claude/settings.json
 

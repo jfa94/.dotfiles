@@ -442,19 +442,6 @@ async function collectSeeds({ repoRoot, runDir, mode, changedFiles, timeoutMs, s
   return { seeds, manifest };
 }
 
-function ensureDispositionsNegation(repoRoot) {
-  const ledgerPath = path.join(repoRoot, ".code-review", "dispositions.json");
-  if (!existsSync(ledgerPath)) return;
-  const ignored =
-    git(repoRoot, ["check-ignore", "-q", ".code-review/probe"], { allowFailure: true }) !== null;
-  if (!ignored) return;
-  const gitignorePath = path.join(repoRoot, ".gitignore");
-  const current = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
-  if (current.includes("!.code-review/dispositions.json")) return;
-  const prefix = current && !current.endsWith("\n") ? "\n" : "";
-  appendFileSync(gitignorePath, `${prefix}!.code-review/dispositions.json\n`);
-}
-
 async function main() {
   const flags = parseFlags(process.argv.slice(2));
   const warnings = [];
@@ -782,8 +769,6 @@ async function main() {
       path.join(inputsDir, "launch-args.json"),
       `${JSON.stringify(workflowArgs, null, 2)}\n`,
     );
-
-    ensureDispositionsNegation(repoRoot);
 
     emit({
       status: "ok",

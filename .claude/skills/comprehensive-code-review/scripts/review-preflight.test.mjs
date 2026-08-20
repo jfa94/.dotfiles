@@ -458,7 +458,7 @@ test("a fake node_modules tsc binary is collected as a seed", (t) => {
   );
 });
 
-test("gitignored .code-review with an existing ledger gets the dispositions negation once", (t) => {
+test("preflight never modifies a reviewed repo's .gitignore", (t) => {
   const root = repo(t);
   writeFileSync(path.join(root, ".gitignore"), ".code-review/\n");
   mkdirSync(path.join(root, ".code-review"));
@@ -468,12 +468,16 @@ test("gitignored .code-review with an existing ledger gets the dispositions nega
   );
   git(root, "add", ".gitignore");
   git(root, "commit", "-qm", "ignore runs");
+  const before = readFileSync(path.join(root, ".gitignore"), "utf8");
   writeFileSync(path.join(root, "src.js"), "const a = 13;\n");
   run(root, ["--profile", "focused"]);
-  run(root, ["--profile", "focused"]);
-  const gitignore = readFileSync(path.join(root, ".gitignore"), "utf8");
-  const hits = gitignore.match(/!\.code-review\/dispositions\.json/g) || [];
-  assert.equal(hits.length, 1);
+  const out = run(root, ["--profile", "focused"]);
+  // byte-identical: the ledger is local working state, never re-included in git
+  assert.equal(readFileSync(path.join(root, ".gitignore"), "utf8"), before);
+  git(root, "diff", "--exit-code", ".gitignore");
+  // the ledger itself is still wired into the run
+  assert.equal(out.status, "ok");
+  assert.ok(out.workflowArgs.inputs.dispositionsPath !== undefined);
 });
 
 test("codex runtime records runtime codex and warns when the probe path is not ignored", (t) => {

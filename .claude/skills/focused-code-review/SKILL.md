@@ -185,9 +185,8 @@ node "<sibling dir>/scripts/review-run.mjs" disposition \
   --status refuted --reason "<f.refute_reason>" --decided-by report --run-id "$RUN_ID"
 ```
 
-(Upsert semantics — no duplicates. If this creates the ledger for the first time in a repo whose
-`.gitignore` ignores `.code-review/`, append the single line `!.code-review/dispositions.json` to
-`.gitignore` — the ledger is committed; run artifacts stay ignored.)
+(Upsert semantics — no duplicates. The ledger is local, untracked working state under the ignored
+`.code-review/`; never add it to git or edit the repo's `.gitignore` to re-include it.)
 
 Never auto-write an Open Question to the ledger — only the user runs the paired
 `by-design`/`intent-confirmed` commands rendered in the report.

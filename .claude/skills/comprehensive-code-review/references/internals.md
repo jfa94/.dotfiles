@@ -534,7 +534,10 @@ deterministic passes over the verified findings (change the script and this spec
    severity becomes `minor` with `downgraded_from: "important"`. Criticals never auto-downgrade;
    a missing `reachability` leaves the severity untouched (conservative).
 2. **Adjudication split** — optional `--dispositions <path>` points at the cross-run ledger
-   `<repoRoot>/.code-review/dispositions.json` (written by `review-run.mjs disposition`). A
+   `<repoRoot>/.code-review/dispositions.json` (written by `review-run.mjs disposition`). It is
+   local, untracked working state — it lives under the ignored `.code-review/`, so "cross-run"
+   means across runs on this machine, not across clones. Do not re-add a `.gitignore` negation for
+   it: git cannot re-include a file whose parent directory is excluded, so the line is inert. A
    missing file is a no-op (fresh repo); an unreadable/invalid one sets `dispositionsError` in the
    output and skips matching (fail-open, the `codexPayloadError` pattern). Entries with status
    `overturned` never match. `accepted-risk`, `by-design`, and `intent-confirmed` are effective

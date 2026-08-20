@@ -13,7 +13,7 @@
     ├── changed-files.txt            # input to verify-citations.mjs
     └── verified-findings.json       # verifier output (findings/openQuestions/previouslyAdjudicated/dropped/stats)
 
-<repoRoot>/.code-review/dispositions.json   # cross-run adjudication ledger (committed to git;
+<repoRoot>/.code-review/dispositions.json   # cross-run adjudication ledger (local, untracked;
                                             # written by review-run.mjs disposition, read via --dispositions)
 ```
 
