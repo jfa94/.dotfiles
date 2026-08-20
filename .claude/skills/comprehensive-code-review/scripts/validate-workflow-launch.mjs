@@ -13,7 +13,7 @@ const launcherPath = path.join(scriptDir, "codex-launch.mjs");
 const profilesPath = path.join(skillDir, "references", "reviewer-profiles.json");
 const agentsDir = path.join(skillDir, "agents");
 const MAX_TOOL_INPUT_BYTES = 8192;
-// Installed-plugin layout documented in references/workflow-and-codex.md §3:
+// Installed-plugin layout documented in references/internals.md §3:
 // ~/.claude/plugins/cache/openai-codex/codex/<version>/scripts/codex-companion.mjs
 const CODEX_CACHE_ROOT = path.join(
   os.homedir(),

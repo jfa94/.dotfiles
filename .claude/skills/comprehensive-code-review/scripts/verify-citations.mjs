@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deterministic citation verification for the comprehensive/quick code-review
-// skills. Implements the spec in references/workflow-and-codex.md §6 so the
+// skills. Implements the spec in references/internals.md §6 so the
 // orchestrator LLM never hand-executes this procedure.
 //
 // Usage:

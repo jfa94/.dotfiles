@@ -392,3 +392,61 @@ Assign each finding to the first matching category:
 11. **Implementation-vs-Spec** — unmet acceptance criteria, misinterpreted requirements
 12. **Adversarial-Codex** — design challenges, assumption failures, wrong approach findings
 13. **Other** — anything that doesn't fit above; preserve reviewer name
+
+## Dimension ownership map (cross-cutting)
+
+Every cross-cutting dimension has an owning reviewer whose prompt explicitly hunts for it — do not
+assume a dimension is covered unless its owner ran (check the Reviewers table):
+
+- **Dead code / semantic duplication / over-engineering** → simplification-reviewer
+- **Dependency & supply-chain hygiene** (new-dep necessity, typosquatting, devDeps in prod) → security-reviewer
+- **PII-in-logs / data leakage** → security-reviewer
+- **Observability gaps** (failure paths with zero telemetry) → silent-failure-hunter
+- **Statically-visible performance** (N+1, super-linear loops, blocking IO, unbounded growth) → quality-reviewer
+- **Contract compatibility** (public API breaking changes) & **migration safety** → quality-reviewer
+- **Test pyramid health / over-pinned tests** → test-coverage-reviewer
+
+Report-level (not a reviewer's):
+
+- **Hotspot/churn risk**: high-churn files with diffuse ownership (flag if CODEOWNERS absent)
+- **Diff reviewability**: detection degrades past ~400 lines; at 2000 lines the preflight switches
+  from a direct diff artifact to manifest mode (full diff on disk + risk-ordered read-all, never
+  truncated) — note the switch in Scope, and disclose any pathological partial coverage
+
+## Summary block (returned to the orchestrator, printed to the user)
+
+After writing `report.md`, produce this block (values from `verified-findings.json` `stats` and
+the reviewers table):
+
+```
+## <Comprehensive|Focused> Code Review complete
+
+Report: <runDir>/report.md
+Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
+Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged; <n> blocking)
+Open questions: <n> intent rulings needed (<n> decision-required)   # only when > 0
+Previously adjudicated: <n> suppressed via the disposition ledger   # only when > 0
+Dropped: <n> (<n> citation-unverifiable, <n> refuted, <n> excluded build output)
+Capped: <n> findings discarded by reviewer caps (<reviewer names>)   # only when any reviewer reported dropped_by_cap > 0
+Calibration: <reviewer> <n> refuted, <n> citation-dropped; …        # from stats.perReviewer; only reviewers with non-zero counts; omit line if all zero
+Recommendation: STOP-LOOPING                                        # only when passNumber >= 3 and verdict is NEEDS-CHANGES
+```
+
+### WARNING lines (append when applicable; one line each, only when the condition applies)
+
+- When `mode === "full"` AND Codex ran: `⚠ Codex reviewed only HEAD~30…HEAD; whole-codebase design review relied on the systemic reviewer [present | ABSENT — systemic failure modes NOT covered].`
+- When `stats.unmatchedCodexRefutations > 0`: `⚠ <n> Codex refutation(s) matched no finding (stats.unmatchedCodexRefutations) — a finding the verify pass flagged for drop may have shipped as verified; reconcile codex-adversarial.json against the verify output.`
+- When `stats.unmatchedCodexAnnotations > 0`: `⚠ <n> Codex intent/doc annotation(s) matched no finding; reconcile codex-adversarial.json against the verify output.`
+- When Codex was SKIPPED entirely: `⚠ Codex SKIPPED — adversarial/design track did NOT run.`
+
+### Degraded / error notes (mandatory when their condition holds)
+
+- `codex.outcome === "degraded"` → suffix the Reviewers-table Verdict cell
+  `(degraded — narrative fallback)` AND open the Adversarial-Codex section with the
+  not-schema-validated line (see that section's spec above).
+- `codexVerifyError` set (or `codex-verify-result.json` missing/stale despite `verifyRan: true`) →
+  keep ALL Codex findings unrefuted and add the note "Codex findings not adversarially verified —
+  verify pass failed". Never drop a finding because verification broke.
+- `codexPayloadError` set → report the Codex track BLOCKED with that reason.
+- `dispositionsError` set → add the note "disposition ledger unreadable — previously adjudicated
+  claims may re-appear as findings".

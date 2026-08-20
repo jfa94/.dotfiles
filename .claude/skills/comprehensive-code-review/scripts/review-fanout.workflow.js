@@ -161,70 +161,6 @@ const VERIFY_SCHEMA = {
 // non-relevant context grows).
 const DIFFLESS_REVIEWERS = new Set(["documentation-reviewer"]);
 
-// TOCTOU defense in depth: the PreToolUse hook (validate-workflow-launch.mjs)
-// checks this exact change-context content contract with real fs access at
-// launch time, before the Workflow tool call is even approved. This preflight
-// re-checks the same contract at run time, inside the workflow, because the
-// file on disk can change in the window between hook approval and the moment
-// a reviewer/codex agent actually reads it.
-function changeContextJqProgram() {
-  return (
-    'type=="array" and length>0 and ' +
-    "all(.[]; " +
-    '(.source=="request" or .source=="commit-messages" or .source=="context-file") and ' +
-    '((.text|type)=="string") and ((.text|length)>0)' +
-    ") and " +
-    '(([.[].text]|join(""))|utf8bytelength)<=8192'
-  );
-}
-
-async function preflightChangeContext(changeContextPath) {
-  const jqProgram =
-    "length == 1 and (.[0] | " + changeContextJqProgram() + ")";
-  const cmd =
-    "jq -s -e " + shellQuote(jqProgram) + " " + shellQuote(changeContextPath);
-  const prompt = [
-    "You run exactly ONE shell command to validate a change-context file's shape, then report the result. Do not read, modify, or otherwise inspect the file beyond running this command.",
-    "",
-    "Run this exact command:",
-    "",
-    cmd,
-    "",
-    "It exits 0 if the file contains exactly one JSON document that is a non-empty array " +
-      'where every entry has source in ["request","commit-messages","context-file"] and a ' +
-      "non-empty string text, and the combined UTF-8 byte length of all text fields is <= 8192; " +
-      "nonzero otherwise (including malformed JSON or multiple JSON documents in the file).",
-    'Return valid=true if the command exited 0. Return valid=false with a one-line reason otherwise (quote the jq error or exit code if available).',
-  ].join("\n");
-  const res = await agent(prompt, {
-    label: "preflight:change-context",
-    phase: "Review",
-    agentType: "general-purpose",
-    effort: "low",
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["valid", "reason"],
-      properties: {
-        valid: { type: "boolean" },
-        reason: { type: "string" },
-      },
-    },
-  }).catch((e) => {
-    throw new Error(
-      "change-context preflight agent threw: " + String((e && e.message) || e),
-    );
-  });
-  if (!res || res.valid !== true) {
-    throw new Error(
-      "change-context preflight failed" +
-        (res && res.reason
-          ? ": " + res.reason
-          : " (agent returned no output — fail closed)"),
-    );
-  }
-}
-
 function buildPrompt(reviewer, ctx) {
   const inputs = ctx.inputs;
   const reviewInputStep = DIFFLESS_REVIEWERS.has(reviewer.name)
@@ -1078,12 +1014,10 @@ for (const reviewer of reviewers) {
   }
 }
 
-// Fail-closed re-check of the change-context content contract (see comment on
-// preflightChangeContext) before anything reads the file. Must complete
-// before the Codex track starts and before any reviewer is dispatched.
-if (input.inputs.changeContextPath) {
-  await preflightChangeContext(input.inputs.changeContextPath);
-}
+// Change-context content contract is enforced at fs time by the PreToolUse
+// hook (validate-workflow-launch.mjs), which validates the file with real fs
+// access before this Workflow call is approved. Workflow scripts have no fs;
+// no run-time re-check happens here.
 
 // Start the Codex track FIRST as an unawaited promise — it runs concurrently
 // with the reviewer pipeline below (and its verify sub-stage overlaps reviewers
