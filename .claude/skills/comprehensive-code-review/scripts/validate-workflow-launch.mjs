@@ -97,7 +97,7 @@ function validateCodexCmd(candidate) {
   if (segments.length !== 3 || segments[1] !== "scripts") throw invalid();
 }
 
-function validateChangeContext(candidate) {
+export function validateChangeContext(candidate) {
   if (candidate == null) return;
   let context;
   try {
