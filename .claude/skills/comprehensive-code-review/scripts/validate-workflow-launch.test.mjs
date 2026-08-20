@@ -203,6 +203,29 @@ test("distinguishes a missing run directory from a run path that is a file", (t)
   );
 });
 
+test("provenance pinning: launch-args.json must deep-equal args when present", (t) => {
+  const { runDir, args, toolInput } = fixture(t);
+  const launchArgsPath = path.join(runDir, "raw", "inputs", "launch-args.json");
+
+  // absent file → backwards-compatible allow (covered again explicitly here)
+  assert.deepEqual(validateWorkflowLaunch(toolInput), { applies: true, allowed: true });
+
+  // matching content in different key order / formatting → still allowed
+  const reordered = { codex: args.codex, inputs: args.inputs, ...args };
+  writeFileSync(launchArgsPath, JSON.stringify(reordered, null, 4));
+  assert.deepEqual(validateWorkflowLaunch(toolInput), { applies: true, allowed: true });
+
+  // drifted value → denied
+  const drifted = structuredClone(args);
+  drifted.scopeLabel = "something else";
+  writeFileSync(launchArgsPath, `${JSON.stringify(drifted, null, 2)}\n`);
+  assert.match(validateWorkflowLaunch(toolInput).reason, /launch-args\.json/);
+
+  // corrupt provenance record → denied, never silently skipped
+  writeFileSync(launchArgsPath, "{not json");
+  assert.match(validateWorkflowLaunch(toolInput).reason, /launch-args\.json/);
+});
+
 test("leaves unrelated workflows undecided and emits hook decisions", (t) => {
   const { toolInput } = fixture(t);
   assert.deepEqual(validateWorkflowLaunch({ scriptPath: "/tmp/other.workflow.js", args: {} }), {

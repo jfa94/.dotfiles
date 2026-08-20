@@ -3,6 +3,7 @@
 import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -263,6 +264,23 @@ export function validateWorkflowLaunch(toolInput) {
         throw new Error("codex.expectedTarget does not contain a valid branch SHA");
       }
     }
+    // Provenance pinning: when the preflight recorded the launch args, the
+    // call must carry them verbatim (compared as parsed objects — key order
+    // and formatting never matter). Absent file → backwards-compatible skip.
+    // The file is never *trusted*: every independent check above still ran.
+    const launchArgsPath = path.join(runDir, "raw", "inputs", "launch-args.json");
+    if (readableFile(launchArgsPath)) {
+      let recorded;
+      try {
+        recorded = JSON.parse(readFileSync(launchArgsPath, "utf8"));
+      } catch {
+        throw new Error("launch-args.json provenance record is not valid JSON");
+      }
+      if (!isDeepStrictEqual(recorded, args)) {
+        throw new Error("args drift from the preflight's launch-args.json provenance record");
+      }
+    }
+
     return { applies: true, allowed: true };
   } catch (error) {
     return {
