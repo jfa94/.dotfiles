@@ -4,6 +4,10 @@
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"
   },
+  "deniedMcpServers": [
+    { "serverName": "claude.ai PostHog" },
+    { "serverName": "claude.ai Supabase" }
+  ],
   "permissions": {
     "allow": [
       "Read",
@@ -378,6 +382,16 @@
         ]
       },
       {
+        "matcher": "^mcp__posthog__exec$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/posthog-readonly-allow.sh",
+            "statusMessage": "Allowing read-only PostHog call in plan mode"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
@@ -562,6 +576,11 @@
     }
   },
   "effortLevel": "medium",
+  "modelSettings": {
+    "claude-fable-5": {
+      "effortLevel": "high"
+    }
+  },
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,

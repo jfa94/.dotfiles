@@ -43,13 +43,22 @@ write_known_file() {
   mv "$tmp" "$path"
 }
 
-outsidey_env=$'SUPABASE_ACCESS_TOKEN=op://Credentials/Supabase Outsidey Access Token/credential\nSTRIPE_MCP_TOKEN=op://Credentials/Stripe Outsidey MCP Restricted Key/credential\nPOSTHOG_MCP_TOKEN=op://Credentials/PostHog API Key/credential\nPOSTHOG_CLI_API_KEY=op://Credentials/PostHog API Key/credential\nPOSTHOG_CLI_HOST=https://eu.posthog.com\nPOSTHOG_CLI_PROJECT_ID=107700'
+outsidey_env=$'SUPABASE_ACCESS_TOKEN=op://Credentials/Supabase Outsidey Access Token/credential\nSTRIPE_MCP_TOKEN=op://Credentials/Stripe Outsidey MCP Restricted Key/credential\nPOSTHOG_MCP_TOKEN=op://Credentials/PostHog Outsidey API Key/credential\nPOSTHOG_CLI_API_KEY=op://Credentials/PostHog Outsidey API Key/credential\nPOSTHOG_CLI_HOST=https://eu.posthog.com\nPOSTHOG_CLI_PROJECT_ID=107700'
 outsidey_envrc=$'export AGENT_ENV_FILE="$(expand_path .agent-env)"\nexport AWS_PROFILE="Outsidey"'
 outsidey_envrc_old=$'export AGENT_ENV_FILE="$HOME/.config/agent-env/outsidey.env"\nexport AWS_PROFILE="Outsidey"'
 posthog_url='https://mcp.posthog.com/mcp?mode=cli&readonly=true&project_id=107700'
 posthog_write_url='https://mcp.posthog.com/mcp?mode=cli&project_id=107700'
 # shellcheck disable=SC2016  # Preserve command substitution for Claude's helper.
-posthog_helper='printf '\''{"Authorization":"Bearer %s"}'\'' "$("$HOME/.config/agent-env/op-read-locked" '\''op://Credentials/PostHog API Key/credential'\'')"'
+posthog_helper='printf '\''{"Authorization":"Bearer %s"}'\'' "$("$HOME/.config/agent-env/op-read-locked" '\''op://Credentials/PostHog Outsidey API Key/credential'\'')"'
+# User-scope PostHog servers (non-Outsidey projects, and worktrees where the
+# per-project curated server list doesn't apply): generic key, no project pin.
+posthog_user_url='https://mcp.posthog.com/mcp?mode=cli&readonly=true'
+posthog_write_user_url='https://mcp.posthog.com/mcp?mode=cli'
+# shellcheck disable=SC2016  # Preserve command substitution for Claude's helper.
+posthog_helper_user='printf '\''{"Authorization":"Bearer %s"}'\'' "$("$HOME/.config/agent-env/op-read-locked" '\''op://Credentials/PostHog API Key/credential'\'')"'
+supabase_user_url='https://mcp.supabase.com/mcp?project_ref=sqdzkusynsbmrdqpfqir&read_only=true'
+# shellcheck disable=SC2016  # Preserve command substitution for Claude's helper.
+supabase_helper_user='printf '\''{"Authorization":"Bearer %s"}'\'' "$("$HOME/.config/agent-env/op-read-locked" '\''op://Credentials/Supabase Outsidey Access Token/credential'\'')"'
 posthog_toml=$'[mcp_servers.posthog]\nurl = "https://mcp.posthog.com/mcp?mode=cli&readonly=true&project_id=107700"\nbearer_token_env_var = "POSTHOG_MCP_TOKEN"\nrequired = false'
 posthog_toml_old=$'[mcp_servers.posthog]\nenabled = false'
 posthog_write_toml=$'[mcp_servers.posthog_write]\nurl = "https://mcp.posthog.com/mcp?mode=cli&project_id=107700"\nbearer_token_env_var = "POSTHOG_MCP_TOKEN"\nrequired = false'
@@ -138,12 +147,40 @@ for name in "${ALMUNIA_REPOS[@]}"; do
   write_known_file "$repo/.codex/config.toml" "$almunia_codex" "$almunia_codex"
 done
 
+# User-scope PostHog/Supabase servers: give every non-Outsidey project (and
+# worktrees, which don't inherit the Outsidey root's curated server list) the
+# native read/write split instead of the write-capable claude.ai connectors.
+add_user_mcp_server() {
+  local name="$1" url="$2" helper="$3" claude_json="$HOME/.claude.json"
+  jq -e --arg n "$name" --arg u "$url" --arg h "$helper" \
+    '.mcpServers[$n].type == "http" and .mcpServers[$n].url == $u and .mcpServers[$n].headersHelper == $h' \
+    "$claude_json" >/dev/null 2>&1 && return 0
+  claude mcp add-json --scope user "$name" \
+    "$(jq -n --arg url "$url" --arg helper "$helper" '{type:"http",url:$url,headersHelper:$helper}')" \
+    >/dev/null
+}
+add_user_mcp_server posthog "$posthog_user_url" "$posthog_helper_user"
+add_user_mcp_server posthog_write "$posthog_write_user_url" "$posthog_helper_user"
+add_user_mcp_server supabase "$supabase_user_url" "$supabase_helper_user"
+
+jq -e --arg url "$posthog_user_url" \
+  '.mcpServers.posthog.type == "http" and .mcpServers.posthog.url == $url and (.mcpServers.posthog.url | contains("readonly=true"))' \
+  "$HOME/.claude.json" >/dev/null
+jq -e --arg wurl "$posthog_write_user_url" \
+  '.mcpServers.posthog_write.type == "http" and .mcpServers.posthog_write.url == $wurl' \
+  "$HOME/.claude.json" >/dev/null
+jq -e --arg surl "$supabase_user_url" \
+  '.mcpServers.supabase.type == "http" and .mcpServers.supabase.url == $surl and (.mcpServers.supabase.url | contains("read_only=true"))' \
+  "$HOME/.claude.json" >/dev/null
+
 jq -e --arg url "$posthog_url" \
   '.mcpServers.posthog.type == "http" and .mcpServers.posthog.url == $url' \
   "$mcp_file" >/dev/null
 jq -e --arg wurl "$posthog_write_url" \
   '.mcpServers.posthog_write.type == "http" and .mcpServers.posthog_write.url == $wurl' \
   "$mcp_file" >/dev/null
+jq -e '.mcpServers.posthog.headersHelper | contains("PostHog Outsidey API Key")' "$mcp_file" >/dev/null
+jq -e '.mcpServers.posthog_write.headersHelper | contains("PostHog Outsidey API Key")' "$mcp_file" >/dev/null
 grep -Fqx 'POSTHOG_CLI_PROJECT_ID=107700' "$OUTSIDEY/.agent-env"
 # shellcheck disable=SC2016  # Assert the literal deferred expansion.
 grep -Fqx 'export AGENT_ENV_FILE="$(expand_path .agent-env)"' "$OUTSIDEY/.envrc"
