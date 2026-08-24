@@ -31,6 +31,15 @@ if command -v op &>/dev/null && [[ -x "$HOME/.config/agent-env/agent-env-run" ]]
   codex() { "$HOME/.config/agent-env/agent-env-run" codex "$@"; }
   supabase() { "$HOME/.config/agent-env/agent-env-run" supabase "$@"; }
   posthog-cli() { "$HOME/.config/agent-env/agent-env-run" posthog-cli "$@"; }
+  # Prime the op-read-locked Keychain cache before Claude Code's MCP
+  # headersHelper needs it — that helper gets a hard 10s budget, too
+  # short for a cold `op read` to prompt and resolve interactively.
+  claude() {
+    local root=$(git rev-parse --show-toplevel 2>/dev/null || print .)
+    [[ -r $root/.mcp.json ]] && grep -o "op://[^']*" $root/.mcp.json | sort -u |
+      "$HOME/.config/agent-env/op-read-locked" --batch >/dev/null || true
+    command claude "$@"
+  }
 fi
 
 # Ctrl+Left/Right word-jump. Windows Terminal sends the native Ctrl-arrow
