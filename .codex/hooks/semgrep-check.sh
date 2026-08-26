@@ -22,7 +22,7 @@ if ! cd "${DIR:-$CWD}"; then deny "Semgrep gate cannot enter target repository."
 DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)
 [[ -n "$DEFAULT" ]] || DEFAULT="main"
 
-CHANGED=$(git diff --name-only "origin/${DEFAULT}...HEAD" 2>/dev/null || true)
+CHANGED=$(git diff --diff-filter=ACMR --name-only "origin/${DEFAULT}...HEAD" 2>/dev/null || true)
 [[ -n "$CHANGED" ]] || exit 0
 
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
