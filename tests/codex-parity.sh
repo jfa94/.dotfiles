@@ -306,7 +306,14 @@ for plugin in \
   computer-use@openai-bundled \
   sites@openai-bundled \
   browser@openai-bundled \
-  web-designer@javier-plugins
+  web-designer@javier-plugins \
+  chrome@openai-bundled \
+  documents@openai-primary-runtime \
+  pdf@openai-primary-runtime \
+  spreadsheets@openai-primary-runtime \
+  presentations@openai-primary-runtime \
+  template-creator@openai-primary-runtime \
+  codex-app-tools@openai-bundled
 do
   [[ $(grep -A1 "^\[plugins\\.\"$plugin\"\]$" "$CODEX_CONFIG" | tail -1) == "enabled = true" ]]
 done
@@ -319,11 +326,6 @@ for plugin in \
   superpowers@openai-curated \
   codex-security@openai-curated \
   ponytail@ponytail \
-  documents@openai-primary-runtime \
-  pdf@openai-primary-runtime \
-  spreadsheets@openai-primary-runtime \
-  presentations@openai-primary-runtime \
-  template-creator@openai-primary-runtime \
   github@openai-curated-remote
 do
   if grep -qF "[plugins.\"$plugin\"]" "$CODEX_CONFIG"; then

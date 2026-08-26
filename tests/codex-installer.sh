@@ -7,6 +7,7 @@ PROFILE="$ROOT/.zprofile"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 assert_contains() { grep -Fq "$2" "$1" || fail "$1 missing: $2"; }
+assert_absent() { ! grep -Fq "$2" "$1" || fail "$1 unexpectedly contains: $2"; }
 
 assert_contains "$SETUP" 'https://chatgpt.com/codex/install.sh'
 assert_contains "$SETUP" 'CODEX_NON_INTERACTIVE=1'
@@ -14,8 +15,8 @@ assert_contains "$SETUP" 'install_codex()'
 assert_contains "$SETUP" 'brew uninstall --cask codex'
 assert_contains "$SETUP" 'npm uninstall -g @openai/codex'
 assert_contains "$SETUP" 'export PATH="$HOME/.local/bin:'
-assert_contains "$ROOT/Brewfile" 'cask "codex"'
-assert_contains "$SETUP" 'verify_homebrew_cli cask codex codex'
+assert_absent "$ROOT/Brewfile" 'cask "codex"'
+assert_absent "$SETUP" 'verify_homebrew_cli cask codex codex'
 
 path_line=$(grep -nF 'export PATH="$HOME/.local/bin:' "$SETUP" | head -1 | cut -d: -f1)
 install_line=$(grep -nF 'if ! install_codex; then' "$SETUP" | head -1 | cut -d: -f1)
@@ -51,6 +52,7 @@ eval "$(sed -n '/^install_codex() {/,/^}/p' "$SETUP")"
 info() { :; }
 success() { :; }
 error() { printf '%s\n' "$*" >&2; }
+codex_status=""
 
 install_codex
 [[ "$codex_status" == 'freshly installed' ]] || fail 'first install status incorrect'
