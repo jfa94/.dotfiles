@@ -49,17 +49,15 @@ ACTUAL_BASH_HOOKS=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .h
 [[ $(jq -r '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].statusMessage] | unique | length' "$CODEX_HOOKS") -eq 1 ]]
 [[ $(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].statusMessage' "$CODEX_HOOKS") == "Checking shell command policy" ]]
 
+RM_SCRATCH=$(mktemp -d)
+trap 'rm -rf "$RM_SCRATCH"' EXIT
+git -C "$RM_SCRATCH" init -q
+printf 'coverage/\n.stryker-tmp/\nnode_modules/\n' > "$RM_SCRATCH/.gitignore"
+mkdir -p "$RM_SCRATCH/coverage" "$RM_SCRATCH/.stryker-tmp" "$RM_SCRATCH/node_modules/.cache"
+
 while IFS='|' read -r name hook command expected; do
   assert_decision "$name" "$hook" "$command" "$expected"
 done <<'CASES'
-rm grouped rf|dangerous-patterns-check.sh|rm -rf src|deny
-rm grouped fr|dangerous-patterns-check.sh|rm -fr src|deny
-rm cache exempt|dangerous-patterns-check.sh|rm -rf node_modules/.cache/dependency-cruiser|allow
-rm artifact multi|dangerous-patterns-check.sh|rm -rf coverage .stryker-tmp|allow
-rm traversal escape|dangerous-patterns-check.sh|rm -rf node_modules/.cache/../../src|deny
-rm compound escape|dangerous-patterns-check.sh|rm -rf coverage && rm -rf /etc|deny
-rm bare tmp|dangerous-patterns-check.sh|rm -rf /tmp|deny
-rm absolute path|dangerous-patterns-check.sh|rm -rf /etc|deny
 force arbitrary position|dangerous-patterns-check.sh|git push origin main --force-with-lease|deny
 force refspec|dangerous-patterns-check.sh|git push origin +main|deny
 git bypass|dangerous-patterns-check.sh|git -C /tmp/repo commit -n -m bad|deny
@@ -70,6 +68,22 @@ aws secret value with flags|aws-readonly-check.sh|aws --profile prod secretsmana
 aws secret metadata passes hook|aws-readonly-check.sh|aws secretsmanager list-secrets|allow
 aws write passes hook to rules prompt|aws-readonly-check.sh|aws ec2 terminate-instances --instance-ids i-1|allow
 CASES
+
+assert_decision "rm grouped rf" dangerous-patterns-check.sh "rm -rf src" deny "$RM_SCRATCH"
+assert_decision "rm grouped fr" dangerous-patterns-check.sh "rm -fr src" deny "$RM_SCRATCH"
+assert_decision "rm cache exempt" dangerous-patterns-check.sh \
+  "rm -rf node_modules/.cache/dependency-cruiser" allow "$RM_SCRATCH"
+assert_decision "rm artifact multi" dangerous-patterns-check.sh \
+  "rm -rf coverage .stryker-tmp" allow "$RM_SCRATCH"
+assert_decision "rm traversal escape" dangerous-patterns-check.sh \
+  "rm -rf node_modules/.cache/../../src" deny "$RM_SCRATCH"
+assert_decision "rm compound escape" dangerous-patterns-check.sh \
+  "rm -rf coverage && rm -rf /etc" deny "$RM_SCRATCH"
+assert_decision "rm bare tmp" dangerous-patterns-check.sh "rm -rf /tmp" deny "$RM_SCRATCH"
+assert_decision "rm absolute path" dangerous-patterns-check.sh "rm -rf /etc" deny "$RM_SCRATCH"
+
+rm -rf "$RM_SCRATCH"
+trap - EXIT
 
 # --- pre-commit gate: per-command workdir, not stale session cwd ---------
 # Codex passes each command's working directory as tool_input.workdir and

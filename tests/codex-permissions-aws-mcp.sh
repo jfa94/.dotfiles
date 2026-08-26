@@ -101,11 +101,20 @@ CLAUDE_SECRET_RE=$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.claude/hooks/pre-c
 grep -qF "(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)\$" "$ROOT/.codex/hooks/pre-commit-check.sh"
 PASS=$((PASS + 2))
 
-# Same drift risk for the cache/artifact rm exemption in dangerous-patterns-check.sh.
-CODEX_ARTIFACT_RE=$(grep -oE "^ARTIFACT='[^']*'" "$ROOT/.codex/hooks/dangerous-patterns-check.sh")
-CLAUDE_ARTIFACT_RE=$(grep -oE "^ARTIFACT='[^']*'" "$ROOT/.claude/hooks/dangerous-patterns-check.sh")
-[[ -n "$CODEX_ARTIFACT_RE" && "$CODEX_ARTIFACT_RE" == "$CLAUDE_ARTIFACT_RE" ]] || {
-  echo "FAIL dangerous-patterns-check ARTIFACT drifted between .codex and .claude hooks" >&2
+# Same drift risk for the rm classifier's hand-maintained constants.
+for variable in ARTIFACT_SEGMENT_RE SECRET_PATH_RE SECRET_EXEMPT_RE; do
+  CODEX_VALUE=$(grep -E "^${variable}=" "$ROOT/.codex/hooks/dangerous-patterns-check.sh")
+  CLAUDE_VALUE=$(grep -E "^${variable}=" "$ROOT/.claude/hooks/dangerous-patterns-check.sh")
+  [[ -n "$CODEX_VALUE" && "$CODEX_VALUE" == "$CLAUDE_VALUE" ]] || {
+    echo "FAIL dangerous-patterns-check $variable drifted between .codex and .claude hooks" >&2
+    exit 1
+  }
+  PASS=$((PASS + 1))
+done
+CODEX_TMP_ROOTS=$(grep -F 'for root in /tmp /private/tmp /var/tmp; do' "$ROOT/.codex/hooks/dangerous-patterns-check.sh")
+CLAUDE_TMP_ROOTS=$(grep -F 'for root in /tmp /private/tmp /var/tmp; do' "$ROOT/.claude/hooks/dangerous-patterns-check.sh")
+[[ -n "$CODEX_TMP_ROOTS" && "$CODEX_TMP_ROOTS" == "$CLAUDE_TMP_ROOTS" ]] || {
+  echo "FAIL dangerous-patterns-check tmp roots drifted between .codex and .claude hooks" >&2
   exit 1
 }
 PASS=$((PASS + 1))
