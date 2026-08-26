@@ -4,10 +4,6 @@
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"
   },
-  "deniedMcpServers": [
-    { "serverName": "claude.ai PostHog" },
-    { "serverName": "claude.ai Supabase" }
-  ],
   "permissions": {
     "allow": [
       "Read",
@@ -359,6 +355,14 @@
     ]
   },
   "model": "opusplan",
+  "deniedMcpServers": [
+    {
+      "serverName": "claude.ai PostHog"
+    },
+    {
+      "serverName": "claude.ai Supabase"
+    }
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -578,7 +582,7 @@
   "effortLevel": "medium",
   "modelSettings": {
     "claude-fable-5": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
     }
   },
   "awaySummaryEnabled": false,
