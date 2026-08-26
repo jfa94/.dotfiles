@@ -77,7 +77,7 @@ SECRET_EXEMPT_RE='\.env\.(example|sample|template)$'
 TMP_ROOTS=()
 for root in /tmp /private/tmp /var/tmp; do
   physical_root=$(cd -- "$root" 2>/dev/null && pwd -P) || continue
-  case " ${TMP_ROOTS[*]} " in *" $physical_root "*) ;; *) TMP_ROOTS+=("$physical_root") ;; esac
+  case " ${TMP_ROOTS[*]-} " in *" $physical_root "*) ;; *) TMP_ROOTS+=("$physical_root") ;; esac
 done
 
 normalize_operand() {

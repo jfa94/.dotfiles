@@ -43,16 +43,23 @@ git -C "$SCRATCH" commit -q -m init
 ln -s /etc "$TMP_LINK_ROOT/link"
 
 decision_for() {
-  local runtime=$1 command=$2 workdir=$3 cwd=$4 hook output
+  local runtime=$1 command=$2 workdir=$3 cwd=$4 hook output status
   if [[ "$runtime" = claude ]]; then
     hook=$CLAUDE_HOOK
   else
     hook=$CODEX_HOOK
   fi
-  output=$(HOME="$HOME" bash "$hook" <<< "$(
-    jq -cn --arg command "$command" --arg cwd "$cwd" --arg workdir "$workdir" \
-      '{cwd:$cwd,tool_input:{command:$command,workdir:$workdir}}'
-  )")
+  if output=$(HOME="$HOME" "$hook" <<< "$(
+      jq -cn --arg command "$command" --arg cwd "$cwd" --arg workdir "$workdir" \
+        '{cwd:$cwd,tool_input:{command:$command,workdir:$workdir}}'
+    )"); then
+    :
+  else
+    status=$?
+    echo "FAIL $runtime hook exited with status $status" >&2
+    echo "  command: $command" >&2
+    exit 1
+  fi
   if [[ -n "$output" ]]; then
     printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision // "pass"'
   else
@@ -78,6 +85,9 @@ assert_pair() {
     PASS=$((PASS + 1))
   done
 }
+
+# Ordinary commands pass through after tmp-root initialization without output.
+assert_pair "ordinary command" "printf hello" pass pass
 
 # Exact named artifacts are allowed only when Git also classifies them ignored.
 assert_pair "ignored artifact" "rm -rf coverage" allow pass
