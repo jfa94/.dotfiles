@@ -118,10 +118,10 @@ On claude.ai → Code → your repo → environment settings:
    CLAUDE.md rule; skills appear under `/`; `/plugin` lists superpowers,
    factory, ponytail, codex, web-designer.
 2. Hooks fire: `npm install x` → pnpm rewrite; no model-lock warning.
-3. `/mcp` shows only project-bound Supabase/PostHog connectors (PostHog as two
-   servers, `posthog` and `posthog_write`); `mcp__supabase__list_projects` and
+3. `/mcp` shows only project-bound Supabase/PostHog connectors (PostHog as one
+   `posthog` server, full catalogue); `mcp__supabase__list_projects` and
    `mcp__posthog__exec` allowed silently; `execute_sql` gated by
-   `sql-readonly-check.sh`; `mcp__posthog_write__exec` prompts on every call.
+   `sql-readonly-check.sh`.
 4. Tool sweep (`gh` intentionally absent — GitHub via MCP):
    `for t in jq perl pnpm trufflehog semgrep supabase uvx shellcheck node codex; do command -v $t || echo MISSING $t; done`
 5. `codex login --device-auth` end-to-end, then a codex-backed review skill.

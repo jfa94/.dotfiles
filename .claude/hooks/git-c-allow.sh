@@ -13,7 +13,7 @@ set -euo pipefail
 # normal permission prompt — the failure mode is a prompt, never a false allow.
 PAYLOAD=$(cat)
 # A hook allow resolves on a path with no plan-mode branch (see
-# posthog-readonly-allow.sh), so without this guard `git -C … commit` would run
+# posthog-plan-allow.sh), so without this guard `git -C … commit` would run
 # during plan mode. Fall through instead.
 MODE=$(jq -r '.permission_mode // empty' <<<"$PAYLOAD")
 [ "$MODE" = "plan" ] && exit 0

@@ -113,17 +113,15 @@ Outsidey Codex MCP allowlist additionally omits write tools.
 ## PostHog and Supabase
 
 Outsidey PostHog is fixed to EU host `https://eu.posthog.com` and project
-`107700` for the CLI. MCP access is split into two servers that share the one
-`PostHog API Key` credential and both pin project `107700` and the
-token-efficient CLI mode. `posthog` additionally sets `readonly=true`, which the
-server enforces by omitting write tools from the catalogue behind its single
-`exec` tool; `posthog_write` omits the flag and exposes the full catalogue.
-Claude allow-lists `mcp__posthog__exec` and lists `mcp__posthog_write__exec`
-under `permissions.ask`, so reads are silent and every write prompts. Codex
-defines the same pair, each with `bearer_token_env_var = "POSTHOG_MCP_TOKEN"`;
-see [codex-claude-parity.md](codex-claude-parity.md) for how gating differs
-there. The MCP host routes to the correct data region based on the
-authenticated account.
+`107700` for the CLI. MCP access is a single `posthog` server pinning project
+`107700` and the token-efficient CLI mode, exposing the full catalogue behind
+its single `exec` tool (no `readonly` URL param, no second write server).
+Claude allow-lists `mcp__posthog__exec`, so every call — read or write — runs
+silently; safety is the PostHog API key's own scopes, not a Claude permission
+rule. Codex defines the same server with `bearer_token_env_var =
+"POSTHOG_MCP_TOKEN"`; see [codex-claude-parity.md](codex-claude-parity.md) for
+how gating differs there. The MCP host routes to the correct data region
+based on the authenticated account.
 
 Supabase MCP URLs must include both `project_ref` and `read_only=true`. Codex
 receives bearer tokens from the process environment. Claude project MCP files
@@ -150,8 +148,8 @@ Rotate a credential by updating its existing 1Password item so references stay
 stable, then clear the cache for immediate use; otherwise the cached value can
 remain active for up to 12 hours. If an item is renamed or recreated, update
 every tracked reference and clear the cache. A future Outsidey-specific PostHog
-key changes only Outsidey's `.agent-env` and both Claude PostHog
-`headersHelper` entries; the personal default remains unchanged. Keep legacy
+key changes only Outsidey's `.agent-env` and the project-level Claude PostHog
+`headersHelper` entry; the user-level personal default remains unchanged. Keep legacy
 Keychain copies until this checklist passes on every machine, then remove them
 only as a separately approved cleanup.
 
@@ -172,9 +170,9 @@ op plugin inspect stripe
 
 Within Outsidey, verify that PostHog reports project `107700`, project-switching
 and Supabase account tools are absent, and no Stripe write tool is exposed. For
-PostHog, verify that a write through `posthog` fails as an unknown tool rather
-than a permission error, and that the same write through `posthog_write` is
-prompted before it runs. Within Almunia, verify `AGENT_ENV_FILE=/dev/null` and
+PostHog, verify what a write through `posthog` actually does — it is no longer
+blocked by MCP permissions, so the result reflects the API key's own scopes.
+Within Almunia, verify `AGENT_ENV_FILE=/dev/null` and
 that Codex lists personal Supabase/PostHog servers as disabled. Run `env` in the
 parent shell before and after a credentialed command to confirm tokens were not
 retained. Do not print token-bearing child environments or enable shell tracing.

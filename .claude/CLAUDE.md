@@ -52,4 +52,4 @@
 
 ## PostHog
 
-Project-native MCP is split into two servers, both wrapping every PostHog operation behind a single `exec` tool: `posthog` (read-only, server-enforced — writes fail with "Unknown tool", not a permission error) and `posthog_write` (unrestricted, prompts on every call). Use `posthog` for reads. Only reach for `posthog_write` when a write is actually intended — expect a confirmation prompt.
+Project-native MCP is a single `posthog` server wrapping every PostHog operation behind one `exec` tool — full catalogue, no permission split. It runs silently, reads and writes alike; safety is the PostHog API key's own scopes, not a prompt. Only issue a write when one is actually intended.
