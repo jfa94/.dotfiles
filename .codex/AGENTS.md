@@ -33,7 +33,7 @@
 - Never run recursive-force `rm`, `chmod 777`, or pipe downloaded content into a shell without explicit confirmation in the current turn. The confirmation requirement applies regardless of command spelling, wrapper, or tool; a native approval prompt may still appear afterward.
 - Treat external writes as authorization-sensitive. Outside the dotfiles repository, pushing branches and merging or closing pull requests require explicit confirmation. Read-only inspection is allowed when relevant.
 - Authorization is scoped to the stated target and action; do not infer permission for adjacent repositories, accounts, deployments, messages, purchases, or other consequential operations.
-- The user authorizes reads from the Outsidey PostHog project `107700` and Supabase list/read operations. The `posthog` MCP server exposes its full catalogue (no read-only split); a PostHog write, like a Supabase mutation, still requires explicit confirmation in the current turn — Codex has no Claude-style `ask` permission tier, so this relies on Codex's own MCP approval prompt plus the API key's own scopes.
+- The user authorizes Outsidey PostHog project `107700` MCP calls, including writes, without an additional confirmation prompt. The `posthog` MCP server exposes its full catalogue (no read-only split), and its effective access is limited only by the API key's provider-side scopes. Supabase remains list/read-only unless a mutation is explicitly confirmed in the current turn.
 
 ## Technology Defaults
 

@@ -62,7 +62,11 @@ case "\$2" in
     ;;
   remove)
     name="\$5"
-    jq --arg n "\$name" 'del(.mcpServers[\$n])' "$STUB_CLAUDE_JSON" > "\$tmp"
+    if [[ "\${CLAUDE_REMOVE_NOOP:-0}" == 1 ]]; then
+      jq '.' "$STUB_CLAUDE_JSON" > "\$tmp"
+    else
+      jq --arg n "\$name" 'del(.mcpServers[\$n])' "$STUB_CLAUDE_JSON" > "\$tmp"
+    fi
     ;;
   *)
     echo "unexpected claude invocation: \$*" >&2; exit 1
@@ -133,5 +137,24 @@ jq -e '.mcpServers.posthog.url == "https://mcp.posthog.com/mcp?mode=cli"' "$STUB
 jq -e '.mcpServers.posthog_write == null' "$STUB_CLAUDE_JSON" >/dev/null
 [[ $(grep -Fxc 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$SCRATCH/outsidey/.codex/config.toml") -eq 1 ]]
 [[ $(grep -Fxc '[mcp_servers.posthog_write]' "$SCRATCH/outsidey/.codex/config.toml") -eq 0 ]]
+
+# A successful-looking Claude removal that leaves the server in place must be
+# caught by the migration postcondition and name both the server and file.
+jq '.mcpServers.posthog_write = {type:"http",url:"https://mcp.posthog.com/mcp?mode=cli",headersHelper:"old"}' \
+  "$STUB_CLAUDE_JSON" > "$STUB_CLAUDE_JSON.tmp"
+mv "$STUB_CLAUDE_JSON.tmp" "$STUB_CLAUDE_JSON"
+if noop_output=$(HOME="$SCRATCH" PATH="$STUB_BIN:$PATH" AGENT_PROJECTS_ROOT="$SCRATCH" \
+    CLAUDE_REMOVE_NOOP=1 bash "$SCRIPT" 2>&1); then
+  echo "FAIL no-op Claude removal unexpectedly succeeded" >&2
+  exit 1
+fi
+[[ "$noop_output" == *posthog_write* ]] || {
+  echo "FAIL no-op Claude removal did not name posthog_write" >&2
+  exit 1
+}
+[[ "$noop_output" == *"$STUB_CLAUDE_JSON"* ]] || {
+  echo "FAIL no-op Claude removal did not name $STUB_CLAUDE_JSON" >&2
+  exit 1
+}
 
 printf 'project agent config script checks passed\n'

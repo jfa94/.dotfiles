@@ -128,23 +128,24 @@ done
 # User-scope PostHog/Supabase servers: give every non-Outsidey project (and
 # worktrees, which don't inherit the Outsidey root's curated server list) the
 # native servers instead of the write-capable claude.ai connectors.
+remove_user_mcp_server() {
+  local name="$1" claude_json="$HOME/.claude.json"
+  if jq -e --arg n "$name" '.mcpServers[$n] != null' "$claude_json" >/dev/null 2>&1; then
+    claude mcp remove --scope user "$name" >/dev/null
+  fi
+}
+
 add_user_mcp_server() {
   local name="$1" url="$2" helper="$3" claude_json="$HOME/.claude.json"
   jq -e --arg n "$name" --arg u "$url" --arg h "$helper" \
     '.mcpServers[$n].type == "http" and .mcpServers[$n].url == $u and .mcpServers[$n].headersHelper == $h' \
     "$claude_json" >/dev/null 2>&1 && return 0
   if jq -e --arg n "$name" '.mcpServers[$n] != null' "$claude_json" >/dev/null 2>&1; then
-    claude mcp remove --scope user "$name" >/dev/null
+    remove_user_mcp_server "$name"
   fi
   claude mcp add-json --scope user "$name" \
     "$(jq -n --arg url "$url" --arg helper "$helper" '{type:"http",url:$url,headersHelper:$helper}')" \
     >/dev/null
-}
-remove_user_mcp_server() {
-  local name="$1" claude_json="$HOME/.claude.json"
-  if jq -e --arg n "$name" '.mcpServers[$n] != null' "$claude_json" >/dev/null 2>&1; then
-    claude mcp remove --scope user "$name" >/dev/null
-  fi
 }
 add_user_mcp_server posthog "$posthog_user_url" "$posthog_helper_user"
 remove_user_mcp_server posthog_write
@@ -153,7 +154,8 @@ add_user_mcp_server supabase "$supabase_user_url" "$supabase_helper_user"
 jq -e --arg url "$posthog_user_url" \
   '.mcpServers.posthog.type == "http" and .mcpServers.posthog.url == $url and (.mcpServers.posthog.url | contains("readonly") | not)' \
   "$HOME/.claude.json" >/dev/null
-jq -e '.mcpServers.posthog_write == null' "$HOME/.claude.json" >/dev/null
+jq -e '.mcpServers.posthog_write == null' "$HOME/.claude.json" >/dev/null \
+  || fail "posthog_write should have been removed from $HOME/.claude.json"
 jq -e --arg surl "$supabase_user_url" \
   '.mcpServers.supabase.type == "http" and .mcpServers.supabase.url == $surl and (.mcpServers.supabase.url | contains("read_only=true"))' \
   "$HOME/.claude.json" >/dev/null
@@ -161,12 +163,14 @@ jq -e --arg surl "$supabase_user_url" \
 jq -e --arg url "$posthog_url" \
   '.mcpServers.posthog.type == "http" and .mcpServers.posthog.url == $url and (.mcpServers.posthog.url | contains("readonly") | not)' \
   "$mcp_file" >/dev/null
-jq -e '.mcpServers.posthog_write == null' "$mcp_file" >/dev/null
+jq -e '.mcpServers.posthog_write == null' "$mcp_file" >/dev/null \
+  || fail "posthog_write should have been removed from $mcp_file"
 jq -e '.mcpServers.posthog.headersHelper | contains("PostHog Outsidey API Key")' "$mcp_file" >/dev/null
 grep -Fqx 'POSTHOG_CLI_PROJECT_ID=107700' "$OUTSIDEY/.agent-env"
 # shellcheck disable=SC2016  # Assert the literal deferred expansion.
 grep -Fqx 'export AGENT_ENV_FILE="$(expand_path .agent-env)"' "$OUTSIDEY/.envrc"
-[[ $(grep -Fxc 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$codex_file") -eq 1 ]]
+[[ $(grep -Fxc 'bearer_token_env_var = "POSTHOG_MCP_TOKEN"' "$codex_file") -eq 1 ]] \
+  || fail "expected exactly one PostHog MCP server in $codex_file"
 if grep -Fqx '[mcp_servers.posthog_write]' "$codex_file"; then
   fail "posthog_write block should have been removed from $codex_file"
 fi

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Command fixtures intentionally contain expansions.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -61,10 +62,9 @@ decision_for() {
   fi
 }
 
-assert_pair() {
-  local name=$1 command=$2 claude_expected=$3 codex_expected=$4
-  local workdir=${5:-$SCRATCH} cwd=${6:-$SCRATCH} actual
-  : "$codex_expected"
+assert_claude() {
+  local name=$1 command=$2 claude_expected=$3
+  local workdir=${4:-$SCRATCH} cwd=${5:-$SCRATCH} actual
   actual=$(decision_for "$command" "$workdir" "$cwd")
   [[ "$actual" = "$claude_expected" ]] || {
     echo "FAIL claude / $name: expected $claude_expected, got $actual" >&2
@@ -75,62 +75,62 @@ assert_pair() {
 }
 
 # Ordinary commands pass through after tmp-root initialization without output.
-assert_pair "ordinary command" "printf hello" pass pass
+assert_claude "ordinary command" "printf hello" pass
 
 # Exact named artifacts are allowed only when Git also classifies them ignored.
-assert_pair "ignored artifact" "rm -rf coverage" allow pass
-assert_pair "dot-relative artifact" "rm -rf ./coverage" allow pass
-assert_pair "non-recursive artifact" "rm -f coverage" allow pass
-assert_pair "nested artifact segment" "rm -rf packages/core/dist" allow pass
-assert_pair "absolute in-repo artifact" "rm -rf $SCRATCH/coverage" allow pass
-assert_pair "multiple ignored artifacts" "rm -rf coverage node_modules" allow pass
-assert_pair "double-quoted literal" 'rm -rf "coverage"' allow pass
-assert_pair "option separator" "rm -rf -- coverage" allow pass
-assert_pair "tab-separated command" $'rm\t-rf\tcoverage' allow pass
+assert_claude "ignored artifact" "rm -rf coverage" allow
+assert_claude "dot-relative artifact" "rm -rf ./coverage" allow
+assert_claude "non-recursive artifact" "rm -f coverage" allow
+assert_claude "nested artifact segment" "rm -rf packages/core/dist" allow
+assert_claude "absolute in-repo artifact" "rm -rf $SCRATCH/coverage" allow
+assert_claude "multiple ignored artifacts" "rm -rf coverage node_modules" allow
+assert_claude "double-quoted literal" 'rm -rf "coverage"' allow
+assert_claude "option separator" "rm -rf -- coverage" allow
+assert_claude "tab-separated command" $'rm\t-rf\tcoverage' allow
 for artifact in node_modules .venv target tmp .pytest_cache; do
-  assert_pair "additional artifact $artifact" "rm -rf $artifact" allow pass
+  assert_claude "additional artifact $artifact" "rm -rf $artifact" allow
 done
 
 # Physical tmp subpaths remain allowed, but the roots themselves do not.
-assert_pair "tmp subpath" "rm -rf /tmp/dangerous-patterns-test/work" allow pass
-assert_pair "bare tmp" "rm -rf /tmp" deny deny
-assert_pair "normalized bare tmp" "rm -rf /tmp/." deny deny
-assert_pair "plain final symlink unlinks only the link" "rm -rf $TMP_LINK_ROOT/link" allow pass
-assert_pair "trailing slash follows final symlink" "rm -rf $TMP_LINK_ROOT/link/" deny deny
-assert_pair "final dot follows final symlink" "rm -rf $TMP_LINK_ROOT/link/." deny deny
-assert_pair "symlinked intermediate escapes tmp" "rm -rf $TMP_LINK_ROOT/link/coverage" deny deny
+assert_claude "tmp subpath" "rm -rf /tmp/dangerous-patterns-test/work" allow
+assert_claude "bare tmp" "rm -rf /tmp" deny
+assert_claude "normalized bare tmp" "rm -rf /tmp/." deny
+assert_claude "plain final symlink unlinks only the link" "rm -rf $TMP_LINK_ROOT/link" allow
+assert_claude "trailing slash follows final symlink" "rm -rf $TMP_LINK_ROOT/link/" deny
+assert_claude "final dot follows final symlink" "rm -rf $TMP_LINK_ROOT/link/." deny
+assert_claude "symlinked intermediate escapes tmp" "rm -rf $TMP_LINK_ROOT/link/coverage" deny
 
 # Neither half of the repository rule is sufficient by itself.
-assert_pair "tracked artifact" "rm -rf dist" ask deny
-assert_pair "named but unignored" "rm -rf build" ask deny
-assert_pair "ignored but unnamed" "rm -rf state.db" ask deny
-assert_pair "tracked source" "rm -rf src" ask deny
+assert_claude "tracked artifact" "rm -rf dist" ask
+assert_claude "named but unignored" "rm -rf build" ask
+assert_claude "ignored but unnamed" "rm -rf state.db" ask
+assert_claude "tracked source" "rm -rf src" ask
 
 # Secret-shaped paths never enter the allow tier, even below artifacts.
-assert_pair "ignored env file" "rm -rf .env" ask deny
-assert_pair "uppercase env below artifact" "rm -rf coverage/.ENV" ask deny
-assert_pair "private key below artifact" "rm -rf coverage/key.pem" ask deny
+assert_claude "ignored env file" "rm -rf .env" ask
+assert_claude "uppercase env below artifact" "rm -rf coverage/.ENV" ask
+assert_claude "private key below artifact" "rm -rf coverage/key.pem" ask
 
 # Non-literal or multi-command shapes retain confirmation or denial behavior.
-assert_pair "glob" 'rm -rf coverage/*' ask deny
-assert_pair "brace expansion" 'rm -rf coverage/{a,b}' ask deny
-assert_pair "safe compound" "rm -rf coverage && rm -rf node_modules" ask deny
-assert_pair "compound outside target" "rm -rf coverage && rm -rf /etc" deny deny
-assert_pair "multiline command" $'rm -rf coverage\nprintf done' ask deny
+assert_claude "glob" 'rm -rf coverage/*' ask
+assert_claude "brace expansion" 'rm -rf coverage/{a,b}' ask
+assert_claude "safe compound" "rm -rf coverage && rm -rf node_modules" ask
+assert_claude "compound outside target" "rm -rf coverage && rm -rf /etc" deny
+assert_claude "multiline command" $'rm -rf coverage\nprintf done' ask
 
 # Traversal and every outside/home spelling remain hard denials.
-assert_pair "relative traversal" "rm -rf coverage/../src" deny deny
-assert_pair "parent traversal" "rm -rf ../../etc" deny deny
-assert_pair "outside absolute" "rm -rf /etc" deny deny
-assert_pair "quoted outside keeps confirmation fallback" 'rm -rf "/etc"' ask deny
-assert_pair "filesystem root" "rm -rf /" deny deny
-assert_pair "bare tilde" 'rm -rf ~' deny deny
-assert_pair "tilde subpath" 'rm -rf ~/Documents' deny deny
-assert_pair "HOME spelling" 'rm -rf $HOME/.worktrees/task-1' deny deny
+assert_claude "relative traversal" "rm -rf coverage/../src" deny
+assert_claude "parent traversal" "rm -rf ../../etc" deny
+assert_claude "outside absolute" "rm -rf /etc" deny
+assert_claude "quoted outside keeps confirmation fallback" 'rm -rf "/etc"' ask
+assert_claude "filesystem root" "rm -rf /" deny
+assert_claude "bare tilde" 'rm -rf ~' deny
+assert_claude "tilde subpath" 'rm -rf ~/Documents' deny
+assert_claude "HOME spelling" 'rm -rf $HOME/.worktrees/task-1' deny
 
 # Per-command relative workdirs resolve against the payload cwd.
-assert_pair "relative workdir" "rm -rf coverage" allow pass \
+assert_claude "relative workdir" "rm -rf coverage" allow \
   "$(basename "$SCRATCH")" "$(dirname "$SCRATCH")"
-assert_pair "workdir fallback" "rm -rf coverage" allow pass "" "$SCRATCH"
+assert_claude "workdir fallback" "rm -rf coverage" allow "" "$SCRATCH"
 
 echo "dangerous patterns: $PASS checks passed"
