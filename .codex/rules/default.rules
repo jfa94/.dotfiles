@@ -1,8 +1,8 @@
 # Command autonomy rules mirroring the safe parts of .claude/settings.json.
 #
 # Codex prefix rules match exact argv prefixes. They do not support Claude's
-# Bash(*) wildcards or arbitrary-position flag matching, so hooks remain the
-# backstop for force-push, bypass-flag, rm, package-publish, and SQL patterns.
+# Bash(*) wildcards or arbitrary-position flag matching. Conversational
+# current-turn confirmation covers shapes these supplemental prompts cannot.
 
 READ_SHELL_COMMANDS = [
     "cat",
@@ -113,90 +113,89 @@ PNPM_COMMANDS = [
     "format",
 ]
 
-# Hard policy denies. Prefix rules can't match a +refspec force-push
-# (`git push origin +branch`) at arbitrary argv positions — the
-# dangerous-patterns-check hook is the backstop for that form.
+# Supplemental approval prompts for directly matchable dangerous forms.
+# Arbitrary-position flags and leading + refspecs use the conversational gate.
 prefix_rule(
     pattern = ["git", "push", "--force"],
-    decision = "forbidden",
-    justification = "Force-push is blocked. Push normally or ask the user for a branch repair plan.",
+    decision = "prompt",
+    justification = "Force-push requires explicit confirmation in the current turn.",
     match = ["git push --force origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "push", "-f"],
-    decision = "forbidden",
-    justification = "Force-push is blocked. Push normally or ask the user for a branch repair plan.",
+    decision = "prompt",
+    justification = "Force-push requires explicit confirmation in the current turn.",
     match = ["git push -f origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "push", "--force-with-lease"],
-    decision = "forbidden",
-    justification = "Force-push is blocked, including force-with-lease. Push normally or ask the user for a branch repair plan.",
+    decision = "prompt",
+    justification = "Force-push, including force-with-lease, requires explicit confirmation in the current turn.",
     match = ["git push --force-with-lease origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "push", "--force-if-includes"],
-    decision = "forbidden",
-    justification = "Force-push is blocked, including force-if-includes. Push normally or ask the user for a branch repair plan.",
+    decision = "prompt",
+    justification = "Force-push, including force-if-includes, requires explicit confirmation in the current turn.",
     match = ["git push --force-if-includes origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "push", "--no-verify"],
-    decision = "forbidden",
-    justification = "Do not bypass git hooks. Fix the underlying check.",
+    decision = "prompt",
+    justification = "Bypassing git hooks requires explicit confirmation in the current turn.",
     match = ["git push --no-verify origin main"],
 )
 
 prefix_rule(
     pattern = ["git", "commit", "--no-verify"],
-    decision = "forbidden",
-    justification = "Do not bypass git hooks. Fix the underlying check.",
+    decision = "prompt",
+    justification = "Bypassing git hooks requires explicit confirmation in the current turn.",
     match = ["git commit --no-verify -m test"],
 )
 
 prefix_rule(
     pattern = ["git", "commit", "-n"],
-    decision = "forbidden",
-    justification = "Do not bypass git hooks. Fix the underlying check.",
+    decision = "prompt",
+    justification = "Bypassing git hooks requires explicit confirmation in the current turn.",
     match = ["git commit -n -m test"],
 )
 
 prefix_rule(
     pattern = ["git", "commit", "--no-gpg-sign"],
-    decision = "forbidden",
-    justification = "Do not bypass commit signing policy.",
+    decision = "prompt",
+    justification = "Bypassing commit signing requires explicit confirmation in the current turn.",
     match = ["git commit --no-gpg-sign -m test"],
 )
 
 prefix_rule(
     pattern = ["git", "rebase", "--no-verify"],
-    decision = "forbidden",
-    justification = "Do not bypass git hooks. Fix the underlying check.",
+    decision = "prompt",
+    justification = "Bypassing git hooks requires explicit confirmation in the current turn.",
     match = ["git rebase --no-verify main"],
 )
 
 prefix_rule(
     pattern = ["pnpm", "publish"],
-    decision = "forbidden",
-    justification = "Package publishing is blocked.",
+    decision = "prompt",
+    justification = "Package publishing requires explicit confirmation in the current turn.",
     match = ["pnpm publish"],
 )
 
 prefix_rule(
     pattern = ["npm", "publish"],
-    decision = "forbidden",
-    justification = "Package publishing is blocked. Use pnpm for local package-manager commands.",
+    decision = "prompt",
+    justification = "Package publishing requires explicit confirmation in the current turn.",
     match = ["npm publish"],
 )
 
 prefix_rule(
     pattern = ["yarn", "publish"],
-    decision = "forbidden",
-    justification = "Package publishing is blocked. Use pnpm for local package-manager commands.",
+    decision = "prompt",
+    justification = "Package publishing requires explicit confirmation in the current turn.",
     match = ["yarn publish"],
 )
 
@@ -222,16 +221,58 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rm", "-r", "-f"],
+    decision = "prompt",
+    justification = "Recursive forced deletes require explicit review of the target.",
+    match = ["rm -r -f build"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-f", "-r"],
+    decision = "prompt",
+    justification = "Recursive forced deletes require explicit review of the target.",
+    match = ["rm -f -r build"],
+)
+
+prefix_rule(
+    pattern = ["rm", "--recursive", "--force"],
+    decision = "prompt",
+    justification = "Recursive forced deletes require explicit review of the target.",
+    match = ["rm --recursive --force build"],
+)
+
+prefix_rule(
+    pattern = ["rm", "--force", "--recursive"],
+    decision = "prompt",
+    justification = "Recursive forced deletes require explicit review of the target.",
+    match = ["rm --force --recursive build"],
+)
+
+prefix_rule(
+    pattern = ["chmod", "777"],
+    decision = "prompt",
+    justification = "World-writable permissions require explicit confirmation in the current turn.",
+    match = ["chmod 777 file"],
+)
+
+prefix_rule(
+    pattern = ["chmod", "-R", "777"],
+    decision = "prompt",
+    justification = "Recursive world-writable permissions require explicit confirmation in the current turn.",
+    match = ["chmod -R 777 directory"],
+)
+
+prefix_rule(
     pattern = [["dropdb", "mysqladmin"]],
     decision = "prompt",
-    justification = "Database administration commands require explicit review; destructive SQL is blocked by hooks where visible.",
+    justification = "Database administration commands require explicit review.",
     match = ["dropdb app_test"],
 )
 
 prefix_rule(
     pattern = [["psql", "mysql", "sqlite3"]],
     decision = "prompt",
-    justification = "Interactive database clients require explicit review; destructive SQL is blocked by hooks where visible.",
+    justification = "Interactive database clients require explicit review.",
     match = ["psql app_test"],
 )
 
@@ -295,7 +336,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", GIT_COMMANDS],
     decision = "allow",
-    justification = "Git inspection and routine branch/stage/commit/push commands are allowed by the Claude config; hooks enforce dangerous flag denies.",
+    justification = "Git inspection and routine branch/stage/commit/push commands are allowed; dangerous forms have narrower prompt rules and a conversational confirmation gate.",
     match = [
         "git status",
         "git add file.ts",

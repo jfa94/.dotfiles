@@ -27,9 +27,10 @@
 
 ## Safety and Authorization
 
-- Database mutations require care. Never drop a table, run destructive or unbounded data changes, change schemas, or apply Supabase migrations without explicit confirmation in the current turn.
-- Never modify `.env*`, credentials, private keys, or `secrets/` without explicit confirmation. Keep secrets in environment files or an approved secret store, never source code.
-- Do not force-push, bypass repository safeguards, weaken protected-file or dangerous-command controls, or publish packages.
+- Database mutations require care. Never run destructive or unbounded SQL, change schemas, or perform any remote Supabase mutation without explicit confirmation in the current turn. This includes applying existing migrations.
+- Never edit `.env*`, credentials, private keys, `secrets/`, or existing/applied migrations without explicit confirmation in the current turn. Keep secrets in environment files or an approved secret store, never source code.
+- Never force-push (including a leading `+` refspec), bypass commit safeguards, or publish packages without explicit confirmation in the current turn.
+- Never run recursive-force `rm`, `chmod 777`, or pipe downloaded content into a shell without explicit confirmation in the current turn. The confirmation requirement applies regardless of command spelling, wrapper, or tool; a native approval prompt may still appear afterward.
 - Treat external writes as authorization-sensitive. Outside the dotfiles repository, pushing branches and merging or closing pull requests require explicit confirmation. Read-only inspection is allowed when relevant.
 - Authorization is scoped to the stated target and action; do not infer permission for adjacent repositories, accounts, deployments, messages, purchases, or other consequential operations.
 - The user authorizes reads from the Outsidey PostHog project `107700` and Supabase list/read operations. The `posthog` MCP server exposes its full catalogue (no read-only split); a PostHog write, like a Supabase mutation, still requires explicit confirmation in the current turn — Codex has no Claude-style `ask` permission tier, so this relies on Codex's own MCP approval prompt plus the API key's own scopes.

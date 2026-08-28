@@ -120,8 +120,9 @@ On claude.ai → Code → your repo → environment settings:
 2. Hooks fire: `npm install x` → pnpm rewrite; no model-lock warning.
 3. `/mcp` shows only project-bound Supabase/PostHog connectors (PostHog as one
    `posthog` server, full catalogue); `mcp__supabase__list_projects` and
-   `mcp__posthog__exec` allowed silently; `execute_sql` gated by
-   `sql-readonly-check.sh`.
+   `mcp__posthog__exec` allowed silently. Supabase is project-scoped and
+   read-only. Claude's own SQL hook remains separate; Codex mutations require
+   current-turn confirmation and use the CLI route.
 4. Tool sweep (`gh` intentionally absent — GitHub via MCP):
    `for t in jq perl pnpm trufflehog semgrep supabase uvx shellcheck node codex; do command -v $t || echo MISSING $t; done`
 5. `codex login --device-auth` end-to-end, then a codex-backed review skill.

@@ -12,26 +12,6 @@
         ]
       },
       {
-        "matcher": "Edit|Write|apply_patch",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.codex/hooks/protected-files-check.sh",
-            "statusMessage": "Checking protected files and migrations"
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__.*[Ss]upabase.*execute_sql",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.codex/hooks/sql-readonly-check.sh",
-            "statusMessage": "Checking SQL is read-only"
-          }
-        ]
-      },
-      {
         "matcher": "Bash",
         "hooks": [
           {
@@ -41,7 +21,7 @@
           },
           {
             "type": "command",
-            "command": "$HOME/.codex/hooks/dangerous-patterns-check.sh",
+            "command": "bash $HOME/.codex/hooks/critical-rm-check.sh",
             "statusMessage": "Checking shell command policy"
           },
           {

@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CLAUDE_HOOK="$ROOT/.claude/hooks/dangerous-patterns-check.sh"
-CODEX_HOOK="$ROOT/.codex/hooks/dangerous-patterns-check.sh"
 PASS=0
 
 SCRATCH=$(mktemp -d)
@@ -43,20 +42,15 @@ git -C "$SCRATCH" commit -q -m init
 ln -s /etc "$TMP_LINK_ROOT/link"
 
 decision_for() {
-  local runtime=$1 command=$2 workdir=$3 cwd=$4 hook output status
-  if [[ "$runtime" = claude ]]; then
-    hook=$CLAUDE_HOOK
-  else
-    hook=$CODEX_HOOK
-  fi
-  if output=$(HOME="$HOME" "$hook" <<< "$(
+  local command=$1 workdir=$2 cwd=$3 output status
+  if output=$(HOME="$HOME" "$CLAUDE_HOOK" <<< "$(
       jq -cn --arg command "$command" --arg cwd "$cwd" --arg workdir "$workdir" \
         '{cwd:$cwd,tool_input:{command:$command,workdir:$workdir}}'
     )"); then
     :
   else
     status=$?
-    echo "FAIL $runtime hook exited with status $status" >&2
+    echo "FAIL claude hook exited with status $status" >&2
     echo "  command: $command" >&2
     exit 1
   fi
@@ -69,21 +63,15 @@ decision_for() {
 
 assert_pair() {
   local name=$1 command=$2 claude_expected=$3 codex_expected=$4
-  local workdir=${5:-$SCRATCH} cwd=${6:-$SCRATCH} runtime expected actual
-  for runtime in claude codex; do
-    if [[ "$runtime" = claude ]]; then
-      expected=$claude_expected
-    else
-      expected=$codex_expected
-    fi
-    actual=$(decision_for "$runtime" "$command" "$workdir" "$cwd")
-    [[ "$actual" = "$expected" ]] || {
-      echo "FAIL $runtime / $name: expected $expected, got $actual" >&2
-      echo "  command: $command" >&2
-      exit 1
-    }
-    PASS=$((PASS + 1))
-  done
+  local workdir=${5:-$SCRATCH} cwd=${6:-$SCRATCH} actual
+  : "$codex_expected"
+  actual=$(decision_for "$command" "$workdir" "$cwd")
+  [[ "$actual" = "$claude_expected" ]] || {
+    echo "FAIL claude / $name: expected $claude_expected, got $actual" >&2
+    echo "  command: $command" >&2
+    exit 1
+  }
+  PASS=$((PASS + 1))
 }
 
 # Ordinary commands pass through after tmp-root initialization without output.

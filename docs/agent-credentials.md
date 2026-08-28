@@ -127,6 +127,10 @@ Supabase MCP URLs must include both `project_ref` and `read_only=true`. Codex
 receives bearer tokens from the process environment. Claude project MCP files
 use `headersHelper` with a fixed `op://` reference resolved through
 `op-read-locked`, so Claude itself does not need to launch under `op run`.
+Supabase mutations have no MCP route: after explicit confirmation in the
+current turn, use `agent-env-run` with the project-scoped Supabase CLI.
+Destructive or unbounded SQL, schema changes, and migration application always
+require that confirmation.
 
 Application Stripe keys, webhook secrets, price IDs, and PostHog ingestion keys
 remain in deployment secret stores and are not part of this system.

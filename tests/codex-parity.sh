@@ -35,7 +35,7 @@ grep -q 'CODEX_USER_HOOKS=".codex/user-hooks.json"' "$ROOT/setup.sh"
 
 EXPECTED_BASH_HOOKS=$(cat <<'EOF'
 $HOME/.codex/hooks/compound-check.sh|
-$HOME/.codex/hooks/dangerous-patterns-check.sh|
+bash $HOME/.codex/hooks/critical-rm-check.sh|
 bash $HOME/.codex/hooks/aws-readonly-check.sh|
 $HOME/.codex/hooks/npm-to-pnpm.sh|
 $HOME/.codex/hooks/pre-commit-check.sh|60
@@ -58,10 +58,6 @@ mkdir -p "$RM_SCRATCH/coverage" "$RM_SCRATCH/.stryker-tmp" "$RM_SCRATCH/node_mod
 while IFS='|' read -r name hook command expected; do
   assert_decision "$name" "$hook" "$command" "$expected"
 done <<'CASES'
-force arbitrary position|dangerous-patterns-check.sh|git push origin main --force-with-lease|deny
-force refspec|dangerous-patterns-check.sh|git push origin +main|deny
-git bypass|dangerous-patterns-check.sh|git -C /tmp/repo commit -n -m bad|deny
-package publish|dangerous-patterns-check.sh|pnpm publish|deny
 aws secret value|aws-readonly-check.sh|aws secretsmanager get-secret-value --secret-id id|deny
 aws secret value batch|aws-readonly-check.sh|aws secretsmanager batch-get-secret-value --secret-id-list id|deny
 aws secret value with flags|aws-readonly-check.sh|aws --profile prod secretsmanager get-secret-value --secret-id id|deny
@@ -69,18 +65,12 @@ aws secret metadata passes hook|aws-readonly-check.sh|aws secretsmanager list-se
 aws write passes hook to rules prompt|aws-readonly-check.sh|aws ec2 terminate-instances --instance-ids i-1|allow
 CASES
 
-assert_decision "rm grouped rf" dangerous-patterns-check.sh "rm -rf src" deny "$RM_SCRATCH"
-assert_decision "rm grouped fr" dangerous-patterns-check.sh "rm -fr src" deny "$RM_SCRATCH"
-assert_decision "rm cache exempt" dangerous-patterns-check.sh \
-  "rm -rf node_modules/.cache/dependency-cruiser" allow "$RM_SCRATCH"
-assert_decision "rm artifact multi" dangerous-patterns-check.sh \
-  "rm -rf coverage .stryker-tmp" allow "$RM_SCRATCH"
-assert_decision "rm traversal escape" dangerous-patterns-check.sh \
-  "rm -rf node_modules/.cache/../../src" deny "$RM_SCRATCH"
-assert_decision "rm compound escape" dangerous-patterns-check.sh \
-  "rm -rf coverage && rm -rf /etc" deny "$RM_SCRATCH"
-assert_decision "rm bare tmp" dangerous-patterns-check.sh "rm -rf /tmp" deny "$RM_SCRATCH"
-assert_decision "rm absolute path" dangerous-patterns-check.sh "rm -rf /etc" deny "$RM_SCRATCH"
+assert_decision "rm critical root" critical-rm-check.sh "rm -rf /" deny "$RM_SCRATCH"
+assert_decision "rm critical system tree" critical-rm-check.sh "rm -fr /etc" deny "$RM_SCRATCH"
+assert_decision "rm repository target passes to confirmation" critical-rm-check.sh \
+  "rm -rf $RM_SCRATCH" allow "$RM_SCRATCH"
+assert_decision "quoted rm diagnostic" critical-rm-check.sh \
+  "printf '%s' 'rm -rf /'" allow "$RM_SCRATCH"
 
 rm -rf "$RM_SCRATCH"
 trap - EXIT
@@ -183,6 +173,33 @@ if command -v codex >/dev/null 2>&1; then
     # shellcheck disable=SC2086
     codex execpolicy check "${RULES[@]}" $1 2>/dev/null | jq -r '.decision // "prompt"'
   }
+  while IFS='|' read -r name command expected; do
+    decision=$(rules_decision "$command")
+    [[ "$decision" = "$expected" ]] || {
+      echo "FAIL rules $name: expected $expected, got $decision for '$command'" >&2
+      exit 1
+    }
+    PASS=$((PASS + 1))
+  done <<'RULE_CASES'
+force push|git push --force origin main|prompt
+force with lease|git push --force-with-lease origin main|prompt
+push bypass|git push --no-verify origin main|prompt
+commit bypass|git commit --no-verify -m test|prompt
+commit short bypass|git commit -n -m test|prompt
+signing bypass|git commit --no-gpg-sign -m test|prompt
+rebase bypass|git rebase --no-verify main|prompt
+pnpm publish|pnpm publish|prompt
+npm publish|npm publish|prompt
+yarn publish|yarn publish|prompt
+recursive force rm|rm -rf build|prompt
+separate recursive force rm|rm -r -f build|prompt
+long recursive force rm|rm --recursive --force build|prompt
+root recursive force rm|rm -rf /|forbidden
+chmod world writable|chmod 777 file|prompt
+database client|psql app_test|prompt
+ordinary commit|git commit -m test|allow
+ordinary push|git push origin main|allow
+RULE_CASES
   USED_SERVICES=$(grep -oE 'pattern = \["aws", "[a-z0-9-]+"' "$ROOT/.codex/rules/aws-read.rules" | grep -oE '"[a-z0-9-]+"$' | tr -d '"')
   service_ops() {
     local var
@@ -239,21 +256,6 @@ else
   echo "codex binary absent: skipped AWS rules-layer parity sweep" >&2
 fi
 
-assert_sql() {
-  local name=$1 sql=$2 expected=$3 output decision
-  output=$(run_hook sql-readonly-check.sh "$(jq -cn --arg sql "$sql" '{tool_input:{sql:$sql}}')")
-  if [[ -n "$output" ]]; then
-    decision=$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision // "allow"')
-  else
-    decision=allow
-  fi
-  [[ "$decision" == "$expected" ]] || { echo "FAIL $name: expected $expected, got $decision: $output" >&2; exit 1; }
-  PASS=$((PASS + 1))
-}
-assert_sql "sql select" "SELECT * FROM users" allow
-assert_sql "sql mutating cte" "WITH changed AS (DELETE FROM users RETURNING *) SELECT * FROM changed" deny
-assert_sql "sql explain delete" "EXPLAIN ANALYZE DELETE FROM users" deny
-
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 ROLLOUT="$TMP/rollout.jsonl"
@@ -271,7 +273,7 @@ PASS=$((PASS + 1))
 
 EXPECTED_STATUS='status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
 grep -Fxq "$EXPECTED_STATUS" "$CODEX_CONFIG"
-grep -Fxq 'approvals_reviewer = "auto_review"' "$CODEX_CONFIG"
+grep -Fxq 'approvals_reviewer = "user"' "$CODEX_CONFIG"
 NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
 FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")

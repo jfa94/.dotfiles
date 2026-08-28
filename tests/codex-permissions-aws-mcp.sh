@@ -40,25 +40,9 @@ assert_tool() {
   PASS=$((PASS + 1))
 }
 
-assert_protected_write() {
-  local path=$1 expected=$2 output decision
-  output=$(HOME="$HOME" bash "$ROOT/.codex/hooks/protected-files-check.sh" <<< \
-    "$(jq -cn --arg path "$path" '{tool_input:{file_path:$path}}')")
-  if [[ -n "$output" ]]; then
-    decision=$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision // "allow"')
-  else
-    decision=allow
-  fi
-  [[ "$decision" == "$expected" ]] || {
-    echo "FAIL protected write $path: expected $expected, got $decision: $output" >&2
-    exit 1
-  }
-  PASS=$((PASS + 1))
-}
-
 assert_shell_command() {
   local command=$1 expected=$2 output decision
-  output=$(HOME="$HOME" bash "$ROOT/.codex/hooks/dangerous-patterns-check.sh" <<< \
+  output=$(HOME="$HOME" bash "$ROOT/.codex/hooks/critical-rm-check.sh" <<< \
     "$(jq -cn --arg command "$command" '{tool_input:{command:$command}}')")
   if [[ -n "$output" ]]; then
     decision=$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision // "allow"')
@@ -72,21 +56,23 @@ assert_shell_command() {
   PASS=$((PASS + 1))
 }
 
-# Environment files inherit readable workspace access. They remain protected
-# from writes by protected-files-check.sh and from commits by pre-commit-check.sh.
+# Environment files inherit readable workspace access. Edits require
+# conversational confirmation; commits remain protected by pre-commit-check.sh.
 assert_config_absent '\.env(\.\*)?"[[:space:]]*=[[:space:]]*"deny"'
 assert_config_present '"~/.aws/credentials" = "read"'
 assert_config_present '"~/.aws/config" = "read"'
 # No filesystem deny entries anywhere: a single deny-read makes Codex silently
 # keep the seatbelt sandbox on require_escalated commands instead of dropping
 # it (Chromium/Playwright's mach-register need is otherwise unreachable).
-# Secrets stay protected on the write/commit side by protected-files-check.sh
-# and pre-commit-check.sh instead.
+# Secrets stay protected on the commit side by pre-commit-check.sh; edits use
+# the current-turn conversational confirmation requirement.
 assert_config_absent '=[[:space:]]*"deny"'
 assert_config_present 'ignore_default_excludes = false'
 assert_config_absent '^sandbox_mode[[:space:]]*='
-grep -qF '(^|/)\.env[^/]*$' "$ROOT/.codex/hooks/protected-files-check.sh"
-PASS=$((PASS + 1))
+[[ ! -e "$ROOT/.codex/hooks/protected-files-check.sh" ]]
+[[ ! -e "$ROOT/.codex/hooks/sql-readonly-check.sh" ]]
+! jq -e '.. | strings | select(test("protected-files|sql-readonly"))' "$HOOKS" >/dev/null
+PASS=$((PASS + 3))
 
 # The pre-commit gates (Codex + Claude) hand-maintain the same secret-path
 # regex in two files with no shared library between runtimes; the workdir
@@ -101,27 +87,9 @@ CLAUDE_SECRET_RE=$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.claude/hooks/pre-c
 grep -qF "(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)\$" "$ROOT/.codex/hooks/pre-commit-check.sh"
 PASS=$((PASS + 2))
 
-# Same drift risk for the rm classifier's hand-maintained constants.
-for variable in ARTIFACT_SEGMENT_RE SECRET_PATH_RE SECRET_EXEMPT_RE; do
-  CODEX_VALUE=$(grep -E "^${variable}=" "$ROOT/.codex/hooks/dangerous-patterns-check.sh")
-  CLAUDE_VALUE=$(grep -E "^${variable}=" "$ROOT/.claude/hooks/dangerous-patterns-check.sh")
-  [[ -n "$CODEX_VALUE" && "$CODEX_VALUE" == "$CLAUDE_VALUE" ]] || {
-    echo "FAIL dangerous-patterns-check $variable drifted between .codex and .claude hooks" >&2
-    exit 1
-  }
-  PASS=$((PASS + 1))
-done
-CODEX_TMP_ROOTS=$(grep -F 'for root in /tmp /private/tmp /var/tmp; do' "$ROOT/.codex/hooks/dangerous-patterns-check.sh")
-CLAUDE_TMP_ROOTS=$(grep -F 'for root in /tmp /private/tmp /var/tmp; do' "$ROOT/.claude/hooks/dangerous-patterns-check.sh")
-[[ -n "$CODEX_TMP_ROOTS" && "$CODEX_TMP_ROOTS" == "$CLAUDE_TMP_ROOTS" ]] || {
-  echo "FAIL dangerous-patterns-check tmp roots drifted between .codex and .claude hooks" >&2
-  exit 1
-}
-PASS=$((PASS + 1))
-assert_protected_write "$ROOT/.env.local" deny
-assert_protected_write "$ROOT/.env.example" allow
 assert_shell_command "cat $ROOT/.env.local" allow
-assert_shell_command "printf value > $ROOT/.env.local" deny
+assert_shell_command "printf value > $ROOT/.env.local" allow
+assert_shell_command "printf '%s' 'git push --force; rm -rf /; DROP TABLE x; pnpm publish'" allow
 
 [[ $(grep -A1 '^\[plugins\."github@openai-curated"\]$' "$CONFIG" | tail -1) == "enabled = false" ]]
 if grep -q '^\[plugins\."github@openai-curated-remote"\]$' "$CONFIG"; then

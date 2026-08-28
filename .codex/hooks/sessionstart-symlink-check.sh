@@ -15,12 +15,11 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   session_context "Codex symlink-integrity warning: expected dotfiles-managed symlink(s): ${missing[*]}"
 fi
 
-# Codex persists session state back into config.toml and has drifted these keys
-# before (82dd953 flipped approvals_reviewer to "user"). A "user"-mode session
-# invites the TUI mode picker, whose built-in presets silently discard the
-# workspace-net profile (network off, .git read-only) — surface drift at start.
+# Codex persists session state back into config.toml. Surface drift at start;
+# the TUI mode picker's built-in presets can silently discard workspace-net
+# (network off, .git read-only).
 drifted=()
-for line in 'approvals_reviewer = "auto_review"' 'default_permissions = "workspace-net"'; do
+for line in 'approvals_reviewer = "user"' 'default_permissions = "workspace-net"'; do
   grep -Fxq "$line" "$HOME/.codex/config.toml" 2>/dev/null || drifted+=("$line")
 done
 
