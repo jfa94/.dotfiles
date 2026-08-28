@@ -561,7 +561,10 @@
       "effortLevel": "medium"
     },
     "claude-sonnet-5": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
+    },
+    "claude-opus-5": {
+      "effortLevel": "low"
     }
   },
   "awaySummaryEnabled": false,
