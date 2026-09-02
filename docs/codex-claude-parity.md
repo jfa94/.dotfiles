@@ -92,8 +92,12 @@ same deterministic preflight (`scripts/review-preflight.mjs`; Codex passes `--ru
 pass only absolute artifact and canonical charter paths to reviewer agents. Claude's single
 Workflow call is capped at 8 KiB and is auto-approved only by the active review skill after
 validating the bundled workflow, roster, current-run paths, and Codex launcher, plus deep-equality
-against the preflight's recorded `launch-args.json`. There is no global `Workflow` permission
-rule. Neither runtime reads charter bodies into the main agent: spawned reviewers read their own
+against the preflight's recorded `launch-args.json`; a review-shaped launch (preflight `runId`)
+that names anything other than the bundled script, or inlines it, is denied. There is no global
+`Workflow` permission rule, but the Workflow tool gates `scriptPath` by Read path-permission on
+the literal path and its realpath, so `settings.json` carries `Read(//…/.claude/skills/**)` and
+`Read(//…/.dotfiles/.claude/skills/**)`; without them the launch fails outside `~/.dotfiles` in
+every mode except bypass. Neither runtime reads charter bodies into the main agent: spawned reviewers read their own
 charter from disk first, and charter bodies are never duplicated in spawned task text.
 
 The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and `.focused-code-review/` ignore entries remain for historical artifacts; new runs must not use them.
