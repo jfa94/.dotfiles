@@ -83,7 +83,7 @@ whose `scriptPath` is not the bundled file (a copy, a rename, or an inline `scri
 outright. The Workflow tool itself gates `scriptPath` by Read path-permission on both the literal
 path and its realpath (neither check canonicalises before rule matching), so the bundled script
 (a symlink into `~/.dotfiles`) needs path-scoped allow rules for both in `~/.claude/settings.json`:
-`Read(//Users/Javier/.claude/skills/**)` and `Read(//Users/Javier/.dotfiles/.claude/skills/**)`.
+`Read(~/.claude/skills/**)` and `Read(~/.dotfiles/.claude/skills/**)`.
 Persisted workflow and Codex-verification results echo all
 five identity/scope fields; harvesters reject any mismatch as stale/foreign.
 

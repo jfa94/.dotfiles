@@ -57,7 +57,7 @@ the exact point (and only the failure paths) where it is needed.
 | "A refuted finding still looks right to me"    | Iron Law 5. Dropped with the refuter's reason; never resurrected.    |
 | "This adjudicated finding looks real"          | Only via challenges_disposition with NEW evidence.                   |
 | "Codex isn't available, I'll abort"            | The preflight passes `codex: null`; the workflow marks it SKIPPED.   |
-| "Workflow rejected scriptPath, I'll copy/inline the script" | Never; the hook denies it. Surface the error verbatim: fix is the `Read(//…/skills/**)` rules (alias + realpath) in ~/.claude/settings.json + a new session. |
+| "Workflow rejected scriptPath, I'll copy/inline the script" | Never; the hook denies it. Surface the error verbatim: fix is the `Read(~/…/skills/**)` rules (alias + realpath) in ~/.claude/settings.json + a new session. |
 
 ## Convergence contract (for loop-callers)
 

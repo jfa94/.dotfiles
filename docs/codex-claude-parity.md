@@ -95,8 +95,8 @@ validating the bundled workflow, roster, current-run paths, and Codex launcher, 
 against the preflight's recorded `launch-args.json`; a review-shaped launch (preflight `runId`)
 that names anything other than the bundled script, or inlines it, is denied. There is no global
 `Workflow` permission rule, but the Workflow tool gates `scriptPath` by Read path-permission on
-the literal path and its realpath, so `settings.json` carries `Read(//…/.claude/skills/**)` and
-`Read(//…/.dotfiles/.claude/skills/**)`; without them the launch fails outside `~/.dotfiles` in
+the literal path and its realpath, so `settings.json` carries `Read(~/.claude/skills/**)` and
+`Read(~/.dotfiles/.claude/skills/**)`; without them the launch fails outside `~/.dotfiles` in
 every mode except bypass. Neither runtime reads charter bodies into the main agent: spawned reviewers read their own
 charter from disk first, and charter bodies are never duplicated in spawned task text.
 
