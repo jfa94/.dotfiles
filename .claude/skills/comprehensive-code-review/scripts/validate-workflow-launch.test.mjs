@@ -252,3 +252,30 @@ test("leaves unrelated workflows undecided and emits hook decisions", (t) => {
   assert.equal(unrelated.status, 0);
   assert.equal(unrelated.stdout, "");
 });
+
+test("denies review launches that bypass the bundled script", (t) => {
+  const { args, toolInput } = fixture(t);
+  const copyDir = mkdtempSync(path.join(tmpdir(), "workflow-copy-"));
+  t.after(() => rmSync(copyDir, { recursive: true, force: true }));
+  const copyPath = path.join(copyDir, "review-fanout.workflow.js");
+  writeFileSync(copyPath, readFileSync(workflowPath));
+
+  const copied = validateWorkflowLaunch({ scriptPath: copyPath, args });
+  assert.equal(copied.applies, true);
+  assert.equal(copied.allowed, false);
+  assert.match(copied.reason, /bundled review-fanout\.workflow\.js/);
+
+  const inline = validateWorkflowLaunch({ script: "export const meta = {};", args });
+  assert.deepEqual({ applies: inline.applies, allowed: inline.allowed }, { applies: true, allowed: false });
+
+  assert.deepEqual(validateWorkflowLaunch({ scriptPath: "/tmp/other.workflow.js", args: {} }), {
+    applies: false,
+  });
+
+  const denied = spawnSync(process.execPath, [validatorPath], {
+    input: JSON.stringify({ tool_name: "Workflow", tool_input: { ...toolInput, scriptPath: copyPath } }),
+    encoding: "utf8",
+  });
+  assert.equal(denied.status, 0);
+  assert.equal(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, "deny");
+});

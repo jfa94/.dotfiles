@@ -122,9 +122,30 @@ export function validateChangeContext(candidate) {
   }
 }
 
+const runIdPattern = /^\d{8}T\d{6}Z-(focused|comprehensive)-[A-Za-z0-9]{6}$/;
+
+// A review launch is identified by its preflight runId, not by the script it names:
+// a copied/renamed workflow or an inline `script:` carrying review args must never
+// escape validation by not being the bundled path.
+function isReviewShaped(toolInput) {
+  try {
+    return runIdPattern.test(parseArgs(toolInput?.args)?.runId || "");
+  } catch {
+    return false;
+  }
+}
+
 export function validateWorkflowLaunch(toolInput) {
   if (!toolInput || !samePath(toolInput.scriptPath || "", workflowPath)) {
-    return { applies: false };
+    if (!isReviewShaped(toolInput)) return { applies: false };
+    return {
+      applies: true,
+      allowed: false,
+      reason:
+        "review launch must use the bundled review-fanout.workflow.js — never copy or inline it; " +
+        "if the Workflow tool rejects that path, add the Read rules for ~/.claude/skills and " +
+        "~/.dotfiles/.claude/skills to ~/.claude/settings.json and open a new session",
+    };
   }
 
   try {
@@ -148,7 +169,6 @@ export function validateWorkflowLaunch(toolInput) {
     if (typeof args.scopeLabel !== "string" || args.scopeLabel.length === 0) {
       throw new Error("args.scopeLabel must be a non-empty string");
     }
-    const runIdPattern = /^\d{8}T\d{6}Z-(focused|comprehensive)-[A-Za-z0-9]{6}$/;
     if (!runIdPattern.test(args.runId || "") || !args.runId.includes(`-${args.profile}-`)) {
       throw new Error("args.runId does not match the selected profile");
     }
