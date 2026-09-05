@@ -4,7 +4,7 @@ The global Claude context includes the official [AWS Agent Toolkit rules](https:
 
 Claude installs `aws-core@agent-toolkit-for-aws` but leaves it disabled. Codex installs and enables the same AWS-maintained `aws-core` bundle. It supersedes the retired `aws-serverless@claude-plugins-official` plugin and includes serverless guidance alongside broader AWS skills and the AWS MCP server.
 
-Setup installs the official AWS CLI in user-local storage when it is absent or older than 2.35.0, plus `uv`/`uvx` for the MCP proxy. `direnv` is installed on macOS, Ubuntu, and Arch through the repository package manifests. The guarded zsh hook is inert when `direnv` is unavailable. User-local binaries precede system binaries so the managed AWS CLI wins over older system installations.
+On Linux/cloud, setup installs the official AWS CLI in user-local storage when it is absent or older than 2.35.0, plus `uv`/`uvx` for the MCP proxy. On macOS, Homebrew owns AWS CLI and uv; setup verifies that ownership and does not install a user-local AWS CLI. `direnv` is installed on macOS, Ubuntu, and Arch through the repository package manifests. The guarded zsh hook is inert when `direnv` is unavailable. User-local binaries precede system binaries so Linux user-local AWS installations win over older system installations.
 
 Projects select an AWS account without committing credentials:
 
@@ -16,7 +16,7 @@ For Outsidey, configure both mechanisms with the `Outsidey` profile. Its applica
 
 Setup does not edit `~/.aws/config`, `~/.aws/credentials`, run `aws login`, or run the global `aws configure agent-toolkit --yes` wizard. Authentication and profile creation are deliberate manual steps. Codex may use AWS knowledge, documentation, skill-discovery, and region tools. Repository hooks deny authenticated AWS MCP `call_aws`, `run_script`, and presigned-URL operations; use the audited AWS CLI rules for resource reads. AWS writes and unlisted CLI operations continue to prompt.
 
-Trusted workspace `.env*` files are readable by Codex so it can understand local configuration, but they remain protected from edits and commits. Exact Claude parity intentionally permits Codex to read `~/.aws/credentials`; AWS config is also readable. SSH material, private keys, certificates, `secrets/`, and Codex authentication data remain unreadable. The secret-output hook and environment-variable filter remain active.
+Trusted workspace `.env*` files are readable by Codex so it can understand local configuration, but they remain protected from edits and commits. Exact Claude parity intentionally permits Codex to read `~/.aws/credentials`; AWS config is also readable. Root filesystem read access also covers `.env*` outside trusted workspaces, SSH material, private keys, certificates, `secrets/`, and Codex authentication data, subject to OS permissions. There are no filesystem read-denies; see [Codex permission boundaries](codex-claude-parity.md#intentional-gaps) for edit authorization and commit safeguards. The secret-output hook and environment-variable filter remain active.
 
 Normal setup adds missing marketplaces/plugins but never upgrades installed marketplaces. Run `bash .codex/update-plugins.sh` only from a normal terminal outside an active Codex task. It validates enabled plugin hook manifests and command targets, then requires a Codex/ChatGPT restart and `/hooks` review.
 

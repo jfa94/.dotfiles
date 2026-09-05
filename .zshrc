@@ -1,6 +1,5 @@
 autoload -Uz vcs_info
 precmd() { vcs_info }
-precmd_functions+=( precmd_vcs_info )
 
 alias python='python3'
 alias pip='pip3'
@@ -18,9 +17,10 @@ zstyle ':vcs_info:*' stagedstr '+'
 zstyle ':vcs_info:*' formats '(%b%u%c)'
 
 setopt PROMPT_SUBST
-PROMPT='%F{208}%n%f in %F{247}${PWD/#HOME/~}%f ${vcs_info_msg_0_}> '
+PROMPT='%F{208}%n%f in %F{247}%~%f ${vcs_info_msg_0_}> '
 
 # User-local binaries take precedence over system-wide installs.
+typeset -U path PATH
 export PATH="$HOME/.local/bin:$PATH"
 
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"

@@ -72,6 +72,9 @@ link_file() {
       rm -f "$dest"
       replaced+=("$label")
     else
+      if [[ -e "${dest}.bak" || -L "${dest}.bak" ]]; then
+        warn "Replacing existing backup ${dest}.bak (only one generation retained)"
+      fi
       rm -rf "${dest}.bak"
       mv "$dest" "${dest}.bak"
       replaced+=("$label (prior saved to $label.bak)")
@@ -147,6 +150,9 @@ link_skills_for_codex() {
         rm "$skills_dest"
         replaced+=("~/.agents/skills")
       else
+        if [[ -e "${skills_dest}.bak" || -L "${skills_dest}.bak" ]]; then
+          warn "Replacing existing backup ${skills_dest}.bak (only one generation retained)"
+        fi
         rm -rf "${skills_dest}.bak"
         mv "$skills_dest" "${skills_dest}.bak"
         replaced+=("~/.agents/skills (prior saved to ~/.agents/skills.bak)")
@@ -867,6 +873,7 @@ if [[ "$OS" == "macos" ]]; then
     pkg_summary="Homebrew: $brew_status"
   else
     warn "brew bundle failed; continuing with remaining sections"
+    setup_failed=1
     pkg_summary="Homebrew: $brew_status (bundle FAILED — re-run 'brew bundle' manually)"
   fi
 else
@@ -945,41 +952,12 @@ fi
 plugins_status="skipped (claude CLI not found)"
 
 if command -v claude &>/dev/null; then
-  info "Registering third-party marketplaces..."
-  claude plugin marketplace add github:openai/codex-plugin-cc 2>/dev/null || true
-  claude plugin marketplace add github:jfa94/factory 2>/dev/null || true
-  claude plugin marketplace add github:DietrichGebert/ponytail 2>/dev/null || true
-  claude plugin marketplace add github:aws/agent-toolkit-for-aws 2>/dev/null || true
-  claude plugin marketplace add jfa94/web-designer 2>/dev/null || true
-
-  info "Installing Claude Code plugins..."
-  plugins_status="installed"
-
-  # plugin install flips enabledPlugins to true through the settings.json
-  # symlink; snapshot before and merge-restore after so existing values win
-  # while newly installed plugins keep the key the installer wrote
-  settings_file="$DOTFILES_DIR/.claude/settings.json"
-  plugins_snapshot=""
-  if command -v jq &>/dev/null && [[ -f "$settings_file" ]]; then
-    plugins_snapshot=$(jq '.enabledPlugins // {}' "$settings_file")
+  info "Installing and verifying Claude Code plugins..."
+  if bash "$DOTFILES_DIR/.claude/install-plugins.sh" "$DOTFILES_DIR"; then
+    plugins_status="installed"
   else
-    warn "jq or settings.json missing; enabledPlugins may get flipped by plugin installs"
-  fi
-
-  while IFS= read -r line; do
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    if claude plugin install "$line" --scope user 2>/dev/null; then
-      success "Plugin: $line"
-    else
-      warn "Plugin already installed or failed: $line"
-    fi
-  done < "$DOTFILES_DIR/.claude/plugins.txt"
-
-  if [[ -n "$plugins_snapshot" ]]; then
-    # write via the repo path, never the ~/.claude symlink (mv would replace it)
-    jq --argjson snap "$plugins_snapshot" \
-      '.enabledPlugins = ((.enabledPlugins // {}) + $snap)' \
-      "$settings_file" > "$settings_file.tmp" && mv "$settings_file.tmp" "$settings_file"
+    plugins_status="FAILED"
+    setup_failed=1
   fi
 fi
 

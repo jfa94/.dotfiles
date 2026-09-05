@@ -71,7 +71,13 @@ assert_config_present 'ignore_default_excludes = false'
 assert_config_absent '^sandbox_mode[[:space:]]*='
 [[ ! -e "$ROOT/.codex/hooks/protected-files-check.sh" ]]
 [[ ! -e "$ROOT/.codex/hooks/sql-readonly-check.sh" ]]
-! jq -e '.. | strings | select(test("protected-files|sql-readonly"))' "$HOOKS" >/dev/null
+assert_hooks_absent() {
+  if ! jq -se 'length == 1 and (.[0] | [.. | strings | test("protected-files|sql-readonly")] | any | not)' "$1" >/dev/null; then
+    echo "FAIL forbidden hook or invalid hooks JSON: $1" >&2
+    return 1
+  fi
+}
+assert_hooks_absent "$HOOKS"
 PASS=$((PASS + 3))
 
 # The pre-commit gates (Codex + Claude) hand-maintain the same secret-path

@@ -3,15 +3,9 @@ if [[ "$(uname -s)" == "Darwin" ]] && [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-# Load zshrc if present
-if [[ -f "$HOME/.zshrc" ]]; then
-  source "$HOME/.zshrc"
-fi
-
-# pipx path (Linux / WSL)
-if [[ -d "$HOME/.local/bin" ]]; then
-  export PATH="$PATH:$HOME/.local/bin"
-fi
+# Keep user-local binaries first, including in non-interactive login shells.
+typeset -U path PATH
+export PATH="$HOME/.local/bin:$PATH"
 
 # Optional-tool install dirs (Linux / WSL) - deno/pnpm/supabase land here;
 # setup.sh installs them with rc-writing disabled, so this is their only PATH.

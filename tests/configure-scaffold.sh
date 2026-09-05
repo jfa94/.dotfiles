@@ -24,6 +24,7 @@ export PNPM_RECORD="$WORK/pnpm-argv"
 cat > "$WORK/bin/pnpm" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$PNPM_RECORD"
+if [[ "${*: -2}" == "run ${FAIL_CHECK:-never}" ]]; then exit 1; fi
 STUB
 chmod +x "$WORK/bin/pnpm"
 
@@ -75,6 +76,29 @@ grep -q '"test": "vitest run"' "$TARGET/package.json" || err "C: replace mode ke
 [[ "$errout" == *"Overwrote existing scripts: test"* ]] || err "C: missing overwritten-keys report (stderr: $errout)"
 
 # --- Bucket sync: intentionally-identical configs must not drift ---
+for check in typecheck lint success; do
+  TARGET="$WORK/validation-$check"
+  new_target "$TARGET" '{"name":"validation","version":"1.0.0"}'
+  mkdir -p "$TARGET/src"
+  status=0
+  out=$(FAIL_CHECK="$check" PATH="$WORK/bin:$PATH" bash "$CONFIGURE" frontend "$TARGET" 2>&1) || status=$?
+  if [[ "$check" == success ]]; then
+    [[ "$status" == 0 && "$out" == *"Smoke test: ok"* ]] || err 'successful validation failed'
+  else
+    [[ "$status" == 1 && "$out" == *"Smoke test: FAILED"* && "$out" == *'=== Summary ==='* ]] || err "$check failure status/summary missing"
+  fi
+done
+
+# One backup generation, with disclosure before the old generation is removed.
+TARGET="$WORK/backup"
+new_target "$TARGET" '{"name":"backup"}'
+printf 'current\n' > "$TARGET/tsconfig.json"
+printf 'old backup\n' > "$TARGET/tsconfig.json.bak"
+out=$(CONFIGURE_MODE=replace PATH="$WORK/bin:$PATH" bash "$CONFIGURE" frontend "$TARGET" 2>&1)
+[[ "$out" == *"Replacing existing backup $TARGET/tsconfig.json.bak"* ]] || err 'backup replacement not disclosed'
+[[ $(cat "$TARGET/tsconfig.json.bak") == current ]] || err 'backup does not retain previous file'
+[[ ! -e "$TARGET/tsconfig.json.bak.bak" ]] || err 'more than one backup generation retained'
+
 for f in .stryker.config.json .prettierignore; do
   cmp -s "$SCRIPT_DIR/ts/frontend/$f" "$SCRIPT_DIR/ts/node/$f" \
     || err "bucket drift: ts/frontend/$f != ts/node/$f"

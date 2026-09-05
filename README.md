@@ -43,7 +43,24 @@ It is idempotent — re-running skips anything already linked and runs
 `brew bundle install --no-upgrade`, so it installs missing Brewfile entries
 without upgrading existing ones. If conflicts are detected, you’ll be prompted
 to replace, skip, or decide file-by-file. New files added to the repo are only
-deployed on a re-run.
+deployed on a re-run. Replaced regular files or directories retain one backup at
+`<path>.bak`; setup warns before replacing an existing backup. Replaced symlinks
+are removed without a backup. The TypeScript scaffold uses the same policy for
+copied config files; package.json script merging does not create a backup.
+
+Local setup reads Claude marketplace sources from `.claude/settings.json`,
+checks installed inventories, registers only missing marketplaces, and verifies
+all plugins declared in `.claude/plugins.txt` at user scope. It preserves existing
+plugin enablement values and never upgrades marketplaces. Brewfile or plugin
+failures are reported in the summary and return nonzero after independent setup
+steps finish. Cloud setup retains its documented best-effort, zero-exit behavior.
+Scaffold typecheck or lint failures likewise return 1 after the summary; successful
+validation and the intentional no-`src/` skip return 0.
+
+Zsh loads `.zprofile` for login shells and `.zshrc` for interactive shells;
+the profile does not source the interactive configuration itself. Both keep
+`~/.local/bin` first and deduplicate PATH when re-sourced. The prompt displays
+home-relative paths.
 
 ### macOS Homebrew ownership
 

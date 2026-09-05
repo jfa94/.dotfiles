@@ -52,7 +52,10 @@ Conflict handling:
     1) Replace — overwrite conflicts and add new files
     2) Skip — add new files only, leave existing files untouched
     3) Prompt — decide file-by-file
-  Replaced files are backed up to <file>.bak first.
+  Replaced regular files are backed up to <file>.bak first. Only one generation is
+  retained; an existing backup is replaced, with a warning before removal.
+  Replaced symlinks are removed without a backup. The package.json scripts
+  merge does not create a backup.
   The mode also applies to the package.json scripts merge: Skip keeps your
   existing script entries; Replace/Prompt overwrite them (overwritten keys
   are reported).
@@ -60,6 +63,7 @@ Conflict handling:
 
 After installing, a smoke test (typecheck + lint) runs if the target has a
 src/ directory, to catch configs incompatible with freshly resolved deps.
+Failed validation exits 1 after the summary; passing or skipped checks exit 0.
 
 Prerequisites:
   node      Required to merge scripts into package.json
@@ -201,6 +205,9 @@ copy_file() {
     if [[ -L "$dest" ]]; then
       rm -f "$dest"
     else
+      if [[ -e "${dest}.bak" || -L "${dest}.bak" ]]; then
+        echo "Warning: Replacing existing backup ${dest}.bak (only one generation retained)"
+      fi
       rm -rf "${dest}.bak"
       mv "$dest" "${dest}.bak"
     fi
@@ -235,6 +242,7 @@ fi
 # scaffold's dev-dependency names on stdout and let pnpm resolve+install
 # the latest versions (so new projects never inherit stale pins).
 smoke_status="not run"
+smoke_failed=0
 if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
   DEV_DEPS="$(TARGET_PATH="$TARGET" SCAFFOLD_PATH="$SRC_DIR" MERGE_MODE="$MODE" PNPM_VERSION="$(pnpm --version)" node -e "
     const fs = require('fs');
@@ -285,6 +293,7 @@ if [[ -f "$SRC_DIR/package.scaffold.json" ]]; then
       smoke_status="ok"
     else
       smoke_status="FAILED (configs may be incompatible with latest deps)"
+      smoke_failed=1
     fi
   else
     smoke_status="skipped (no src/)"
@@ -319,3 +328,4 @@ fi
 echo "Smoke test: $smoke_status"
 echo ""
 echo "Done."
+exit "$smoke_failed"
