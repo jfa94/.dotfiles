@@ -163,10 +163,8 @@ rm -f "$SCRATCH/id_ed25519.pub"
 rm -rf "$SCRATCH"
 trap - EXIT
 
-# AWS approval routing: reads for actively used services auto-allow via the
-# generated aws-read.rules; writes and unlisted services fall to Codex's
-# prompt. Claude entries for services outside aws-read.rules intentionally
-# prompt, as does `aws s3 cp s3://* -` (prefix rules can't see the '-' target).
+# Every translatable Claude AWS allowance must auto-allow. Argument-dependent
+# S3 copies remain reviewable because prefixes cannot constrain destinations.
 if command -v codex >/dev/null 2>&1; then
   RULES=(--rules "$ROOT/.codex/rules/default.rules" --rules "$ROOT/.codex/rules/aws-read.rules")
   rules_decision() {
@@ -199,6 +197,9 @@ chmod world writable|chmod 777 file|prompt
 database client|psql app_test|prompt
 ordinary commit|git commit -m test|allow
 ordinary push|git push origin main|allow
+ordinary status|git status --short|allow
+ordinary test|pnpm test|allow
+playwright|pnpm exec playwright test|allow
 RULE_CASES
   USED_SERVICES=$(grep -oE 'pattern = \["aws", "[a-z0-9-]+"' "$ROOT/.codex/rules/aws-read.rules" | grep -oE '"[a-z0-9-]+"$' | tr -d '"')
   service_ops() {
@@ -212,9 +213,10 @@ RULE_CASES
     cmd=${cmd%)}
     service=$(printf '%s' "$cmd" | awk '{print $2}')
     op=$(printf '%s' "$cmd" | awk '{print $3}')
-    grep -qx "$service" <<< "$USED_SERVICES" || continue
+    [[ "$service" == help ]] && { [[ "$(rules_decision "aws help")" == allow ]]; continue; }
     [[ "$cmd" == "aws s3 cp"* ]] && continue
-    if [[ "$op" == *-\* ]]; then
+    grep -qx "$service" <<< "$USED_SERVICES"
+    if [[ "$op" == *\* ]]; then
       # Wildcard verb: every real op with that prefix must be enumerated.
       candidates=$(service_ops "$service" | grep -E "^${op%\*}" || true)
       [[ -n "$candidates" ]] || {
@@ -251,6 +253,11 @@ sts session token mints credentials|aws sts get-session-token
 sts federation token mints credentials|aws sts get-federation-token
 s3 upload|aws s3 cp local.txt s3://bucket/key
 amplify write|aws amplify delete-app --app-id x
+ec2 write|aws ec2 terminate-instances --instance-ids i-1
+rds write|aws rds delete-db-instance --db-instance-identifier x
+s3 stdout remains reviewed|aws s3 cp s3://bucket/key -
+ecr credentials|aws ecr get-login-password
+sts assume role|aws sts assume-role --role-arn arn --role-session-name x
 WRITES
 else
   echo "codex binary absent: skipped AWS rules-layer parity sweep" >&2
@@ -273,7 +280,11 @@ PASS=$((PASS + 1))
 
 EXPECTED_STATUS='status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
 grep -Fxq "$EXPECTED_STATUS" "$CODEX_CONFIG"
-grep -Fxq 'approvals_reviewer = "user"' "$CODEX_CONFIG"
+grep -Fxq 'approvals_reviewer = "auto_review"' "$CODEX_CONFIG"
+grep -Fxq 'model = "gpt-5.6-sol"' "$CODEX_CONFIG"
+grep -Fxq 'model_reasoning_effort = "medium"' "$CODEX_CONFIG"
+grep -Fxq 'plan_mode_reasoning_effort = "xhigh"' "$CODEX_CONFIG"
+sed -n '/^\[skills\]$/,/^\[/p' "$CODEX_CONFIG" | grep -Fxq 'max_context_tokens = 10000'
 NEWLINE_KEYS=$(sed -n '/^\[tui\.keymap\.editor\]$/,/^\[/p' "$CODEX_CONFIG")
 [[ "$NEWLINE_KEYS" == *'insert_newline = ["shift-enter", "ctrl-enter"]'* ]]
 FILTERED_CONFIG=$("$ROOT/.codex/strip-hooks-state.sh" < "$CODEX_CONFIG")

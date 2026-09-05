@@ -1,5 +1,5 @@
 approval_policy = "on-request"
-approvals_reviewer = "user"
+approvals_reviewer = "auto_review"
 default_permissions = "workspace-net"
 model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "xhigh"
@@ -12,6 +12,9 @@ service_tier = "default"
 
 
 notify = ["/Users/Javier/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
+
+[skills]
+max_context_tokens = 10000
 
 [shell_environment_policy]
 ignore_default_excludes = false
@@ -159,6 +162,7 @@ insert_newline = ["shift-enter", "ctrl-enter"]
 [tui.model_availability_nux]
 "gpt-5.5" = 4
 "gpt-5.6-sol" = 4
+gpt-6-astra = 3
 
 [plugins."github@openai-curated"]
 enabled = false

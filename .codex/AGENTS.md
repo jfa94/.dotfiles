@@ -8,6 +8,7 @@
 
 ## Working Method
 
+- Run Git with an explicit exec-tool `workdir` and ordinary commands such as `git status`; avoid `cd ... && git ...` and `git -C ...`, which do not match ordinary Git allow rules.
 - Before broad exploration or research, read relevant project documentation when a `docs/` directory exists.
 - Ask before coding when intent, requirements, or architecture are materially ambiguous. When running unattended, choose the safest reasonable interpretation and flag it in the closing summary.
 - Use subagents only for independent, bounded work that benefits from parallel exploration or review.

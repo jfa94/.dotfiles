@@ -8,7 +8,7 @@ missing=()
 # not the dirs), so check a representative symlink inside each — not the dir.
 for path in "$HOME/.codex/config.toml" "$HOME/.codex/hooks.json" \
             "$HOME/.codex/rules/default.rules" "$HOME/.codex/hooks/hook-lib.sh"; do
-  [[ -L "$path" ]] || missing+=("$path")
+  [[ -L "$path" && -e "$path" ]] || missing+=("$path")
 done
 
 if [[ ${#missing[@]} -gt 0 ]]; then
@@ -19,7 +19,7 @@ fi
 # the TUI mode picker's built-in presets can silently discard workspace-net
 # (network off, .git read-only).
 drifted=()
-for line in 'approvals_reviewer = "user"' 'default_permissions = "workspace-net"'; do
+for line in 'approvals_reviewer = "auto_review"' 'default_permissions = "workspace-net"'; do
   grep -Fxq "$line" "$HOME/.codex/config.toml" 2>/dev/null || drifted+=("$line")
 done
 
