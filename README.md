@@ -60,7 +60,8 @@ validation and the intentional no-`src/` skip return 0.
 Zsh loads `.zprofile` for login shells and `.zshrc` for interactive shells;
 the profile does not source the interactive configuration itself. Both keep
 `~/.local/bin` first and deduplicate PATH when re-sourced. The prompt displays
-home-relative paths.
+the absolute path at home (for example, `/Users/Javier`) and home-relative paths
+in its subdirectories (for example, `~/Projects`).
 
 ### macOS Homebrew ownership
 
@@ -120,6 +121,9 @@ does not add duplicate unscoped MCP servers. AWS CLI is deliberately excluded;
 Codex re-auths per session via `codex login --device-auth`.
 
 ## Claude Code and Codex CLIs
+
+For Claude Auto-mode confirmation prompts and reliable validation commands, see
+[Claude Auto-mode troubleshooting](docs/claude-auto-mode.md).
 
 Both CLIs are owned by their vendors' standalone installers on every platform,
 so their built-in auto-updaters work (Homebrew casks block them). OpenAI's

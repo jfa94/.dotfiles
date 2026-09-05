@@ -13,6 +13,8 @@
 - Flag uncertainty; don't fake confidence. When useful, run a small, low-risk experiment and bring the hypothesis and result back to discuss.
 - End each plan with a concise list of unresolved questions, if any.
 - Before calling a task done, verify it works: exercise the changed behavior, confirm every plan step landed, and check for regressions.
+- Run each validation command in a separate tool call, preserving its exit status and diagnostic output. Default to no output-filter pipelines; if filtering is necessary in Bash or zsh, enable `set -o pipefail` in that invocation and preserve the pipeline's failure status. Do not append commands that mask failure or use Bash's `PIPESTATUS` in zsh.
+- Report a passing gate only after the validator completes successfully; empty output or a success marker alone is not evidence of success.
 - Never disable quality checks (lint, types, tests) to silence errors — fix the cause.
 - Never drop a database table without the user's explicit, same-turn confirmation.
 

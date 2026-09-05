@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d)
 trap 'rm -r "$WORK"' EXIT
-mkdir -p "$WORK/home/project" "$WORK/bin" "$WORK/home/.local/bin" "$WORK/home/.deno/bin"
+mkdir -p "$WORK/home/project/nested" "$WORK/home/project/space %name" "$WORK/home-other" "$WORK/bin" "$WORK/home/.local/bin" "$WORK/home/.deno/bin"
 cp "$ROOT/.zprofile" "$WORK/home/.zprofile"
 { echo '(( RC_COUNT+=1 ))'; cat "$ROOT/.zshrc"; } > "$WORK/home/.zshrc"
 printf '#!/bin/sh\necho Linux\n' > "$WORK/bin/uname"
@@ -24,10 +24,30 @@ for mode in -lic -ic -lc; do
       source "$HOME/.zshrc"
       [[ $PATH == $first && $#path == ${#${(u)path}} ]] || exit 12
       [[ -z ${(M)precmd_functions:#precmd_vcs_info} ]] || exit 13
+      cd "$HOME"
+      precmd
+      rendered=$(print -P -- "$PROMPT")
+      [[ $rendered == *"$HOME"* && $rendered != *"~"* ]] || exit 15
       cd "$HOME/project"
       precmd
       rendered=$(print -P -- "$PROMPT")
       [[ $rendered == *"~/project"* ]] || exit 14
+      cd nested
+      precmd
+      rendered=$(print -P -- "$PROMPT")
+      [[ $rendered == *"~/project/nested"* ]] || exit 16
+      cd "$HOME/project/space %name"
+      precmd
+      rendered=$(print -P -- "$PROMPT")
+      [[ $rendered == *"~/project/space %name"* ]] || exit 17
+      cd "$HOME-other"
+      precmd
+      rendered=$(print -P -- "$PROMPT")
+      [[ $rendered == *"$PWD"* && $rendered != *"~"* ]] || exit 18
+      cd /
+      precmd
+      rendered=$(print -P -- "$PROMPT")
+      [[ $rendered == *"/"* && $rendered != *"~"* ]] || exit 19
     '
 done
 echo 'shell initialization: OK'

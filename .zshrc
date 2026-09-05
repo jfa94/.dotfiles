@@ -17,7 +17,8 @@ zstyle ':vcs_info:*' stagedstr '+'
 zstyle ':vcs_info:*' formats '(%b%u%c)'
 
 setopt PROMPT_SUBST
-PROMPT='%F{208}%n%f in %F{247}%~%f ${vcs_info_msg_0_}> '
+# Show the full home path at home; abbreviate paths beneath it.
+PROMPT='%F{208}%n%f in %F{247}%2(~.%~.%/)%f ${vcs_info_msg_0_}> '
 
 # User-local binaries take precedence over system-wide installs.
 typeset -U path PATH
