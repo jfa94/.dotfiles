@@ -279,7 +279,26 @@
       "mcp__supabase__get_edge_function",
       "mcp__supabase__list_storage_buckets",
       "mcp__supabase__get_storage_config",
-      "mcp__posthog__exec"
+      "mcp__posthog__exec",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_navigate_back",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_tabs",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "mcp__plugin_playwright_playwright__browser_find",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_type",
+      "mcp__plugin_playwright_playwright__browser_fill_form",
+      "mcp__plugin_playwright_playwright__browser_select_option",
+      "mcp__plugin_playwright_playwright__browser_press_key",
+      "mcp__plugin_playwright_playwright__browser_hover",
+      "mcp__plugin_playwright_playwright__browser_drag",
+      "mcp__plugin_playwright_playwright__browser_drop",
+      "mcp__plugin_playwright_playwright__browser_handle_dialog",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "mcp__plugin_playwright_playwright__browser_evaluate"
     ],
     "deny": [
       "Bash(git push --force*)",
@@ -360,6 +379,16 @@
             "type": "command",
             "command": "~/.claude/hooks/posthog-plan-allow.sh",
             "statusMessage": "Allowing PostHog call in plan mode"
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__plugin_playwright_playwright__.*$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/playwright-plan-guard.sh",
+            "statusMessage": "Enforcing read-only Playwright plan mode"
           }
         ]
       },
@@ -515,7 +544,7 @@
     "agent-sdk-dev@claude-plugins-official": false,
     "plugin-dev@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false,
-    "playwright@claude-plugins-official": false,
+    "playwright@claude-plugins-official": true,
     "supabase@claude-plugins-official": false,
     "stripe@claude-plugins-official": false,
     "posthog@claude-plugins-official": false,
@@ -582,7 +611,8 @@
   "skipAutoPermissionPrompt": true,
   "autoMode": {
     "allow": [
-      "$defaults"
+      "$defaults",
+      "Local-development Playwright: navigation, routine browser interactions, and browser_evaluate are allowed for localhost, loopback addresses, and URLs the user explicitly named. This does not allow file uploads, browser_run_code_unsafe, WebMCP calls, or unlisted Playwright tools."
     ],
     "soft_deny": [
       "Never modify or delete existing tests to make them pass. Fix the implementation instead.",
