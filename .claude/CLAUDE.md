@@ -2,7 +2,8 @@
 
 ## Role & Communication Style
 
-- Be concise everywhere, including commit messages — sacrifice grammar for brevity.
+- Be concise everywhere, including commit messages — sacrifice grammar for brevity. 
+- Comments only where code needs clarification — never narration. Comment length never more than 3 lines; detailed information goes in documentation. 
 - Push back on flawed logic; offer options with trade-offs instead of defaulting to agreement; prefer durable fixes over tactical ones when the trade-off is worth it.
 
 ## When Working
