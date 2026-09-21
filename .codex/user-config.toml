@@ -37,6 +37,10 @@ js_repl = false
 "/tmp" = "write"
 "/private/tmp" = "write"
 "/var/tmp" = "write"
+"~/Library/pnpm" = "write"
+"~/Library/Caches/pnpm" = "write"
+"~/.local/share/pnpm" = "write"
+"~/.cache/pnpm" = "write"
 
 [permissions.workspace-net.filesystem.":workspace_roots"]
 "." = "write"
