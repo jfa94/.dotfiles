@@ -26,6 +26,10 @@ The script:
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
 - Symlinks Claude Code config into `~/.claude/` (settings, hooks, agents, statusline per file; each `.claude/skills/<name>` as one directory link, so new skill files need no re-run), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
+- Links the single global `instructions/AGENTS.md` to `~/.claude/CLAUDE.md`
+  and `~/.codex/AGENTS.md`. Tool-specific policies stay in their named sections;
+  frontend/backend guidance lives alongside the canonical file and loads on demand.
+  Root `CLAUDE.md` imports the separate dotfiles project `AGENTS.md`.
 - Symlinks the authored `.codex/user-config.toml` and `.codex/user-hooks.json`
   to `~/.codex/config.toml` and `~/.codex/hooks.json`. The non-discovered
   source names prevent this repository from loading user-level configuration
@@ -112,7 +116,7 @@ as on default WSL2).
 
 ## Claude Code cloud environments
 
-`cloud-setup.sh` replicates the full Claude Code workflow (CLAUDE.md, skills,
+`cloud-setup.sh` replicates the full Claude Code workflow (shared global instructions, skills,
 hooks, plugins, and Codex/Supabase CLIs) on claude.ai/code cloud VMs. Paste
 the tiny shim from [docs/cloud-environments.md](docs/cloud-environments.md)
 into each project's environment setup script. Managed PostHog/Supabase

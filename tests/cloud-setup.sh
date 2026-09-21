@@ -22,7 +22,7 @@ fi
 
 home="$tmp/home"
 dot="$home/.dotfiles"
-mkdir -p "$dot/.claude/hooks" "$dot/.codex/skills/demo"
+mkdir -p "$dot/.claude/hooks" "$dot/.codex/skills/demo" "$dot/instructions"
 cat > "$dot/.claude/settings.json" <<'EOF'
 {
   "extraKnownMarketplaces": {
@@ -34,7 +34,7 @@ cat > "$dot/.claude/settings.json" <<'EOF'
   }
 }
 EOF
-echo '# claude rules' > "$dot/.claude/CLAUDE.md"
+echo '# shared rules' > "$dot/instructions/AGENTS.md"
 echo 'echo hook' > "$dot/.claude/hooks/sample.sh"
 echo 'model = "gpt-5"' > "$dot/.codex/user-config.toml"
 echo '{"hooks": {}}' > "$dot/.codex/user-hooks.json"
@@ -68,8 +68,10 @@ out="$(run_setup 2>&1)" \
   || fail "happy path exited nonzero"
 
 [[ -L "$home/.claude/CLAUDE.md" ]] || fail "CLAUDE.md not symlinked"
-[[ "$(readlink "$home/.claude/CLAUDE.md")" == "$dot/.claude/CLAUDE.md" ]] \
+[[ "$(readlink "$home/.claude/CLAUDE.md")" == "$dot/instructions/AGENTS.md" ]] \
   || fail "CLAUDE.md symlink target wrong"
+[[ "$(readlink "$home/.codex/AGENTS.md")" == "$dot/instructions/AGENTS.md" ]] \
+  || fail "AGENTS.md symlink target wrong"
 [[ -L "$home/.codex/config.toml" ]] || fail "user-config.toml not linked as config.toml"
 [[ -L "$home/.codex/hooks.json" ]] || fail "user-hooks.json not linked as hooks.json"
 [[ "$(readlink "$home/.codex/hooks.json")" == "$dot/.codex/user-hooks.json" ]] \
@@ -95,12 +97,67 @@ echo '{"existing": true}' > "$home/.claude.json"
 run_setup >/dev/null 2>&1 || fail "second run exited nonzero"
 jq -e '.existing == true' "$home/.claude.json" >/dev/null || fail "existing keys clobbered"
 
+# Migrate old instruction links and prune only retired managed stack links.
+for path in .claude/CLAUDE.md .codex/AGENTS.md; do
+  ln -sfn "$dot/$path" "$home/$path"
+done
+for name in frontend.md backend.md; do
+  ln -s "$dot/.claude/$name" "$home/.claude/$name"
+done
+ln -s "$tmp/unrelated" "$home/.claude/custom-link"
+echo custom > "$home/.claude/custom-file"
+run_setup >/dev/null 2>&1 || fail 'migration exited nonzero'
+for path in .claude/CLAUDE.md .codex/AGENTS.md; do
+  [[ "$(readlink "$home/$path")" == "$dot/instructions/AGENTS.md" ]] || fail 'legacy link not migrated'
+done
+for name in frontend.md backend.md; do
+  [[ ! -L "$home/.claude/$name" ]] || fail 'retired stack link not pruned'
+done
+[[ -L "$home/.claude/custom-link" ]] || fail 'unrelated link pruned'
+[[ $(cat "$home/.claude/custom-file") == custom ]] || fail 'custom file changed'
+echo custom > "$home/.claude/frontend.md"
+ln -s "$tmp/unrelated" "$home/.claude/backend.md"
+run_setup >/dev/null 2>&1 || fail 'custom stack guidance run failed'
+[[ $(cat "$home/.claude/frontend.md") == custom ]] || fail 'custom frontend guidance pruned'
+[[ $(readlink "$home/.claude/backend.md") == "$tmp/unrelated" ]] || fail 'custom backend guidance pruned'
+
+# Missing source preserves destinations and reports degraded setup.
+mv "$dot/instructions/AGENTS.md" "$dot/instructions/saved.md"
+out="$(run_setup 2>&1)" || fail 'missing source changed zero-exit contract'
+grep -q 'global agent instructions source not found' <<< "$out" || fail 'missing source not reported'
+grep -q 'issue(s)' <<< "$out" || fail 'missing source absent from summary'
+[[ "$(readlink "$home/.claude/CLAUDE.md")" == "$dot/instructions/AGENTS.md" ]] || fail 'missing source changed link'
+mv "$dot/instructions/saved.md" "$dot/instructions/AGENTS.md"
+
+# A directory must not receive an accidental nested AGENTS.md symlink.
+rm "$home/.codex/AGENTS.md"
+mkdir "$home/.codex/AGENTS.md"
+out="$(run_setup 2>&1)" || fail 'directory conflict changed zero-exit contract'
+grep -q 'global agent instructions destination is a directory' <<< "$out" || fail 'directory conflict not reported'
+[[ ! -e "$home/.codex/AGENTS.md/AGENTS.md" ]] || fail 'link created inside directory'
+rmdir "$home/.codex/AGENTS.md"
+
+# A failed link is named in the summary while the other link still succeeds.
+real_ln=$(command -v ln)
+cat > "$stubs/ln" <<'STUB'
+#!/bin/bash
+if [[ "$*" == *".codex/AGENTS.md" ]]; then exit 1; fi
+exec "$REAL_LN" "$@"
+STUB
+chmod +x "$stubs/ln"
+out="$(REAL_LN="$real_ln" run_setup 2>&1)" || fail 'link failure changed zero-exit contract'
+grep -q 'global agent instructions link failed' <<< "$out" || fail 'link failure not reported'
+grep -q 'issue(s)' <<< "$out" || fail 'link failure absent from summary'
+rm "$stubs/ln"
+run_setup >/dev/null 2>&1 || fail 'recovery failed'
+[[ -f "$home/.codex/AGENTS.md" ]] || fail 'recovery did not restore link'
+
 # --- degraded: tools missing + network dead -> reports issues, exits 0 ------
 # restricted PATH so the host's real CLIs can't satisfy the command -v guards
 
 realbin="$tmp/realbin"
 mkdir -p "$realbin"
-for c in bash sh git jq ln mkdir dirname basename find chmod uname whoami env \
+for c in bash sh git jq ln readlink mkdir dirname basename find chmod uname whoami env \
          mv rm cat grep sed timeout printf echo tee mktemp; do
   p="$(command -v "$c" 2>/dev/null)" || continue
   [[ "$p" == /* ]] && ln -s "$p" "$realbin/$c"

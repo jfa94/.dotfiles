@@ -5,6 +5,7 @@ TMP=$(mktemp -d)
 trap 'rm -r "$TMP"' EXIT
 export HOME="$TMP/home"
 mkdir -p "$HOME/.codex/hooks" "$HOME/.codex/rules"
+ln -s "$ROOT/instructions/AGENTS.md" "$HOME/.codex/AGENTS.md"
 cp "$ROOT/.codex/user-config.toml" "$TMP/config"
 ln -s "$TMP/config" "$HOME/.codex/config.toml"
 ln -s "$ROOT/.codex/user-hooks.json" "$HOME/.codex/hooks.json"
@@ -22,4 +23,9 @@ ln -s "$TMP/missing" "$HOME/.codex/hooks.json"
 check | jq -e '.hookSpecificOutput.additionalContext | contains("symlink-integrity")' >/dev/null
 rm "$HOME/.codex/hooks.json"
 check | jq -e '.hookSpecificOutput.additionalContext | contains("symlink-integrity")' >/dev/null
+ln -s "$ROOT/.codex/user-hooks.json" "$HOME/.codex/hooks.json"
+rm "$HOME/.codex/AGENTS.md"
+check | jq -e '.hookSpecificOutput.additionalContext | contains("AGENTS.md")' >/dev/null
+ln -s "$TMP/missing-instructions" "$HOME/.codex/AGENTS.md"
+check | jq -e '.hookSpecificOutput.additionalContext | contains("AGENTS.md")' >/dev/null
 echo 'codex startup: correct config, reviewer/profile drift, broken/missing links passed'

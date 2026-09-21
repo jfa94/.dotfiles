@@ -57,7 +57,7 @@ fi
 
 # =============================================================================
 # Section 3: Recreate ~/.claude and ~/.codex via symlinks
-# keep in sync with setup.sh section 4 (symlink loop + link_codex_user_config)
+# keep in sync with setup.sh section 4 (config, hooks, and global instruction links)
 # =============================================================================
 
 # User-level Codex config and hooks use non-discovered source names and are
@@ -92,6 +92,30 @@ fi
 if [[ -f "$DOTFILES_DIR/$CODEX_USER_HOOKS" ]]; then
   mkdir -p "$HOME/.codex"
   ln -sfn "$DOTFILES_DIR/$CODEX_USER_HOOKS" "$HOME/.codex/hooks.json"
+fi
+
+# keep in sync with setup.sh link_agent_instructions (cloud replaces conflicts).
+instructions_src="$DOTFILES_DIR/instructions/AGENTS.md"
+if [[ ! -f "$instructions_src" ]]; then
+  note_fail "global agent instructions source not found: $instructions_src"
+else
+  for path in .claude/CLAUDE.md .codex/AGENTS.md; do
+    dest="$HOME/$path"
+    if [[ -d "$dest" && ! -L "$dest" ]]; then
+      note_fail "global agent instructions destination is a directory: $dest"
+    elif mkdir -p "$(dirname "$dest")" && ln -sfn "$instructions_src" "$dest"; then
+      ((link_count++))
+    else
+      note_fail "global agent instructions link failed: $dest"
+    fi
+  done
+  # Retire only dangling stack-guidance links owned by the previous setup.
+  for name in frontend.md backend.md; do
+    dest="$HOME/.claude/$name"
+    if [[ -L "$dest" && "$(readlink "$dest")" == "$DOTFILES_DIR/.claude/$name" && ! -e "$dest" ]]; then
+      rm "$dest" || note_fail "retired stack guidance link cleanup failed: $dest"
+    fi
+  done
 fi
 
 if ((link_count == 0)); then

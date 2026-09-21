@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZSHRC="$ROOT/.zshrc"
-CLAUDE="$ROOT/.claude/CLAUDE.md"
+CLAUDE="$ROOT/instructions/AGENTS.md"
 CLAUDE_PLUGINS="$ROOT/.claude/plugins.txt"
 CLAUDE_SETTINGS="$ROOT/.claude/settings.json"
 AWS_DOC="$ROOT/docs/aws-agent-toolkit.md"
@@ -12,7 +12,12 @@ PARITY_DOC="$ROOT/docs/codex-claude-parity.md"
 grep -qxF "export PATH=\"\$HOME/.local/bin:\$PATH\"" "$ZSHRC"
 grep -qxF "command -v direnv &>/dev/null && eval \"\$(direnv hook zsh)\"" "$ZSHRC"
 grep -qxF '## AWS' "$CLAUDE"
-grep -qF 'Prefer the AWS MCP Server for AWS interactions' "$CLAUDE"
+sed -n '/^## Claude Code$/,/^## Codex$/p' "$CLAUDE" | grep -qF 'Prefer the AWS MCP Server for AWS interactions'
+sed -n '/^## Codex$/,$p' "$CLAUDE" | grep -qF 'Use the ordinary AWS CLI for authenticated AWS resource access'
+if sed -n '1,/^## Claude Code$/p' "$CLAUDE" | grep -qF 'Prefer the AWS MCP Server'; then
+  echo 'Claude AWS routing leaked into shared instructions' >&2
+  exit 1
+fi
 grep -qF 'check whether a relevant AWS skill is available' "$CLAUDE"
 grep -qF 'verify against documentation rather than guessing' "$CLAUDE"
 grep -qF 'prefer infrastructure-as-code (AWS CDK or CloudFormation)' "$CLAUDE"

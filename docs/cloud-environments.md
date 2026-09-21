@@ -1,6 +1,6 @@
 # Claude Code Cloud Environments
 
-Replicates the local Claude Code workflow (CLAUDE.md, skills, hooks, plugins,
+Replicates the local Claude Code workflow (shared global instructions, skills, hooks, plugins,
 permission rules, Codex/Supabase toolchain) on claude.ai/code cloud VMs.
 
 ## How it works
@@ -14,6 +14,13 @@ Codex user configuration is stored in the clone under the non-discovered
 source names `.codex/user-config.toml` and `.codex/user-hooks.json`, then linked
 to the runtime paths `~/.codex/config.toml` and `~/.codex/hooks.json`. This keeps
 the delivery clone from also treating the same files as project-local config.
+
+Global instructions are authored once in `instructions/AGENTS.md` and linked to
+both `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. Frontend/backend guidance
+stays alongside the canonical file and is referenced on demand. Repeat setup
+replaces legacy instruction links and removes only dangling stack-guidance links
+owned by the old setup. Missing sources, destination directories, and failed
+instruction links are reported in the failure summary; cloud setup still exits 0.
 
 Claude skills are an exception to the path-for-path file linking. Section 3 of
 `cloud-setup.sh` skips every tracked path under `.claude/skills/*/*`, then links
@@ -115,7 +122,7 @@ On claude.ai → Code → your repo → environment settings:
 0. `cat /tmp/cloud-setup.log` — full build output, per-plugin install results,
    `claude plugin list` ground truth, and the failure summary.
 1. `ls -la ~/.claude` shows symlinks into `~/.dotfiles`; Claude quotes a
-   CLAUDE.md rule; skills appear under `/`; `/plugin` lists superpowers,
+   rule from `instructions/AGENTS.md`; skills appear under `/`; `/plugin` lists superpowers,
    factory, ponytail, codex, web-designer.
 2. Hooks fire: `npm install x` → pnpm rewrite; no model-lock warning.
 3. `/mcp` shows only project-bound Supabase/PostHog connectors (PostHog as one

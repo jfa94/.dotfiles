@@ -1,6 +1,11 @@
 # AWS Agent Toolkit
 
-The global Claude context includes the official [AWS Agent Toolkit rules](https://github.com/aws/agent-toolkit-for-aws/blob/main/rules/aws-agent-rules.md). Keep that section synchronized when the upstream rules change.
+The shared global context in `instructions/AGENTS.md` includes AWS guidance from
+the official [AWS Agent Toolkit rules](https://github.com/aws/agent-toolkit-for-aws/blob/main/rules/aws-agent-rules.md).
+Keep common guidance synchronized when upstream rules change, preserving the
+runtime-specific routing: Claude's MCP preference belongs only to its tool
+section; Codex authenticated resource access remains CLI-only. Secret-safety
+requirements apply to both tools.
 
 Claude installs `aws-core@agent-toolkit-for-aws` but leaves it disabled. Codex installs and enables the same AWS-maintained `aws-core` bundle. It supersedes the retired `aws-serverless@claude-plugins-official` plugin and includes serverless guidance alongside broader AWS skills and the AWS MCP server.
 

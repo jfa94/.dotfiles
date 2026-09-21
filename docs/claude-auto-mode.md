@@ -90,6 +90,6 @@ Harmless `true`/`false` probes in Bash and zsh confirmed that standalone command
 and pipelines with `pipefail` preserve success and failure. With `pipefail`, a
 failed pipeline also prevents an `&& echo LINT_TSC_OK` success marker.
 
-The canonical guidance is in `.claude/CLAUDE.md`. This change improves validation
+The canonical guidance is in `instructions/AGENTS.md`. This change improves validation
 reporting without changing permission rules, hooks, or classifier configuration.
 It does not guarantee fewer classifier prompts.

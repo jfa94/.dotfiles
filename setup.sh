@@ -25,6 +25,8 @@ CODEX_LEGACY_CONFIG=".codex/config.toml"
 # Codex's project-discovered hook manifest names inside this repository.
 CODEX_USER_HOOKS=".codex/user-hooks.json"
 CODEX_LEGACY_HOOKS=".codex/hooks.json"
+AGENT_INSTRUCTIONS="instructions/AGENTS.md"
+AGENT_INSTRUCTION_DESTS=(.claude/CLAUDE.md .codex/AGENTS.md)
 
 # --- Helpers ---
 info()    { printf '[INFO] %s\n' "$1"; }
@@ -116,6 +118,29 @@ link_codex_user_hooks() {
     return
   fi
   link_file "$src" "$dest" "~/.codex/hooks.json"
+}
+
+link_agent_instructions() {
+  local src="$DOTFILES_DIR/$AGENT_INSTRUCTIONS"
+  local path dest legacy_src
+
+  if [[ ! -f "$src" ]]; then
+    error "Global agent instructions source not found: $src"
+    return 1
+  fi
+  for path in "${AGENT_INSTRUCTION_DESTS[@]}"; do
+    dest="$HOME/$path"
+    legacy_src="$DOTFILES_DIR/$path"
+    mkdir -p "$(dirname "$dest")"
+    if [[ -L "$dest" && "$(readlink "$dest")" == "$legacy_src" ]]; then
+      rm "$dest"
+      ln -s "$src" "$dest"
+      replaced+=("~/$path (legacy link migrated)")
+      success "~/$path legacy link migrated"
+    else
+      link_file "$src" "$dest" "~/$path"
+    fi
+  done
 }
 
 link_skills_for_codex() {
@@ -729,6 +754,21 @@ if [[ ! -L "$codex_hooks_dest" || "$(readlink "$codex_hooks_dest")" != "$codex_h
   fi
 fi
 
+# Global instruction conflicts (keep destinations in sync with the link helper).
+for path in "${AGENT_INSTRUCTION_DESTS[@]}"; do
+  dest="$HOME/$path"
+  if [[ -L "$dest" ]]; then
+    target="$(readlink "$dest")"
+    if [[ "$target" == "$DOTFILES_DIR/$AGENT_INSTRUCTIONS" || "$target" == "$DOTFILES_DIR/$path" ]]; then
+      continue
+    fi
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    conflicts+=("~/$path")
+  fi
+done
+# End global instruction conflicts.
+
 # Codex discovers user-authored skills under ~/.agents/skills. Setup owns its
 # individual links while preserving unrelated entries in the real directory.
 shared_skills_src="$DOTFILES_DIR/.claude/skills"
@@ -781,7 +821,7 @@ for file in "${DOTFILES[@]}"; do
 done
 
 # =============================================================================
-# Section 4: Claude Code / Codex / XDG Config Symlinks
+# Section 4: Claude Code / Codex / XDG Config and Global Instruction Symlinks
 # =============================================================================
 
 # Tracked files only — see the Section 2 comment.
@@ -801,6 +841,7 @@ done
 
 link_codex_user_config
 link_codex_user_hooks
+link_agent_instructions
 
 link_claude_skills
 link_skills_for_codex

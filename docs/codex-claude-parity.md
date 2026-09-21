@@ -124,6 +124,29 @@ charter from disk first, and charter bodies are never duplicated in spawned task
 
 The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and `.focused-code-review/` ignore entries remain for historical artifacts; new runs must not use them.
 
+## Instruction sources
+
+Both runtime entry points share one `instructions/AGENTS.md`: setup links it to
+`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. Source sharing is exact; runtime
+policies and discovery differ. Edit the canonical file, not the runtime links.
+Frontend/backend guidance lives beside it and is read on demand. Dotfiles root
+`AGENTS.md` remains project-specific; root `CLAUDE.md` contains only `@AGENTS.md`
+so Claude loads it even without native AGENTS support. Codex reads AGENTS.md
+natively. Its global `AGENTS.override.md`, if present, supersedes AGENTS.md.
+
+Claude native AGENTS support requires more than v2.1.277: it also depends on
+feature-flag availability and session settings, and can be unavailable on the
+first session after installation/upgrading, with telemetry disabled, or on
+third-party providers. Outsidey retains native loading without a compatibility
+stub; verify it in a fresh supported session. A project/ancestor CLAUDE.md or
+CLAUDE.local.md can suppress native loading under the default setting. See
+[Claude loading rules](https://code.claude.com/docs/en/memory#agents-md) and
+[Codex discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+goodbyespy shares its project rules through AGENTS.md and imports them from a
+CLAUDE.md with explicitly Claude-only workflow instructions. Codex uses the
+existing native code-review router rather than Claude-only review skills.
+
 ## Intentional gaps
 
 - Codex treats current-turn conversational confirmation as authoritative for editing `.env*`, credentials, private keys, `secrets/`, or existing/applied migrations; destructive/unbounded/schema-changing SQL and remote Supabase mutations; force-push and leading `+` refspecs; commit-safeguard bypasses; package publishing; recursive-force deletion; `chmod 777`; and downloaded-content-to-shell pipelines. Native prompt rules supplement this for exact argv prefixes and can produce a second UI prompt. Hooks cannot originate an approval prompt, and `PermissionRequest` only observes a prompt Codex already chose to show.
@@ -166,9 +189,26 @@ There is no user-extensible seatbelt hook to add the missing rule (openai/codex#
 
 ## Verification
 
+Instruction consolidation verified September 21, 2026: all 28 shell test scripts
+passed. The credential test required unsandboxed access to its disposable macOS
+keychain. Both live global links resolve to `instructions/AGENTS.md`, and the
+startup integrity check emits no warning. Fresh no-tool Claude sessions loaded
+global and project rules in dotfiles, goodbyespy, and Outsidey; fresh no-tool
+Codex sessions loaded the expected rules in dotfiles and goodbyespy, including
+tool-specific delegation/AWS routing and the native review skill. The moved
+frontend/backend files are unchanged. ShellCheck passes for the cloud setup and
+changed tests; local setup/startup retain their pre-existing SC2329/SC1091
+diagnostics. Existing sessions need restarting to load the new instructions.
+
 September 2026 verification: all 26 `tests/*.sh` scripts passed, including 1,274 native policy/hook parity checks. Generator fixtures cover exact matching, discovery failures, malformed help, unmatched allowances, and policy-validation failures with output preservation. Startup fixtures cover correct settings, reviewer/profile drift, and missing/dangling links. Relevant ShellCheck checks pass with existing SC1091/SC2015/SC2016 diagnostics excluded.
 
 Codex Doctor 0.153.4 loaded strict configuration with zero failures; macOS security inspection remained unavailable. Fresh CLI session metadata confirmed Sol medium, `on-request`, and `auto_review`; Git status, startup tests, and an automatically approved escalated `/usr/bin/true` succeeded. The app-bundled runtime (0.150.0-alpha.12.2) also passed fresh Git status and escalated `/usr/bin/true` checks. Sol prompt rendering exposed all 54 skills in both runtimes without a truncation warning. Plan xhigh is configuration-tested; an interactive Plan toggle and app UI restart remain rollout checks.
+
+Instruction migration checks are in `tests/agent-instructions.sh`, cloud link
+checks in `tests/cloud-setup.sh`, and startup link checks in
+`tests/codex-startup.sh`. They cover migrations, custom conflicts, prompt choices,
+missing sources, repeat setup, and owned-link cleanup. Run every shell test
+separately and preserve its exit status; any failed script fails the suite.
 
 Run:
 
@@ -176,7 +216,7 @@ Run:
 jq empty .codex/user-hooks.json
 shellcheck .codex/hooks/*.sh tests/codex-parity.sh
 bash tests/codex-parity.sh
-for test in tests/*.sh; do bash "$test"; done
+for test in tests/*.sh; do bash "$test" || exit "$?"; done
 codex execpolicy check --rules .codex/rules/default.rules '<command>'
 codex --strict-config doctor
 bash .codex/plugin-doctor.sh
