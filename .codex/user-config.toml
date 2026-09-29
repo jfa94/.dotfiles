@@ -5,7 +5,7 @@ model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "xhigh"
 model_auto_compact_token_limit = 200000
 web_search = "live"
-model = "gpt-6-astra"
+model = "gpt-6-sol"
 mcp_oauth_credentials_store = "keyring"
 
 service_tier = "default"
@@ -96,8 +96,8 @@ NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = ""
 NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME = ""
 NODE_REPL_INSTRUCTIONS_USE_CASE_COMPUTER_USE = ""
 BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
-BROWSER_USE_CODEX_APP_VERSION = "26.911.61220"
-NODE_REPL_TRUSTED_SERVICES = '{"browser":"/Users/Javier/.codex/plugins/cache/openai-bundled/browser/26.911.61220/scripts/browser-service.mjs","sky":"@oai/sky/service"}'
+BROWSER_USE_CODEX_APP_VERSION = "26.915.31945"
+NODE_REPL_TRUSTED_SERVICES = '{"browser":"/Users/Javier/.codex/plugins/cache/openai-bundled/browser/26.915.31945/scripts/browser-service.mjs","sky":"@oai/sky/service"}'
 SKY_CUA_SERVICE_PATH = "/Users/Javier/.codex/computer-use/Codex Computer Use.app"
 CODEX_CLI_PATH = "/Applications/ChatGPT.app/Contents/Resources/codex"
 
@@ -155,6 +155,7 @@ notifications = true
 notification_condition = "unfocused"
 status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]
 status_line_use_colors = true
+screen_reader_detection_done = true
 
 [tui.keymap.editor]
 insert_newline = ["shift-enter", "ctrl-enter"]
@@ -231,6 +232,7 @@ source = "/Users/Javier/.cache/codex-runtimes/codex-primary-runtime/plugins/open
 
 [desktop]
 followUpQueueMode = "queue"
+conversationDetailMode = "STEPS_PROSE"
 
 [notice]
 hide_rate_limit_model_nudge = true

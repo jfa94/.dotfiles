@@ -597,6 +597,9 @@
     },
     "claude-fable-5-1": {
       "effortLevel": "high"
+    },
+    "claude-sonnet-5-5": {
+      "effortLevel": "high"
     }
   },
   "awaySummaryEnabled": false,

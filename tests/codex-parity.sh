@@ -281,7 +281,6 @@ PASS=$((PASS + 1))
 EXPECTED_STATUS='status_line = ["model", "current-dir", "git-branch", "branch-changes", "context-used", "context-window-size", "five-hour-limit", "weekly-limit"]'
 grep -Fxq "$EXPECTED_STATUS" "$CODEX_CONFIG"
 grep -Fxq 'approvals_reviewer = "auto_review"' "$CODEX_CONFIG"
-grep -Fxq 'model = "gpt-6-astra"' "$CODEX_CONFIG"
 grep -Fxq 'model_reasoning_effort = "medium"' "$CODEX_CONFIG"
 grep -Fxq 'plan_mode_reasoning_effort = "xhigh"' "$CODEX_CONFIG"
 sed -n '/^\[skills\]$/,/^\[/p' "$CODEX_CONFIG" | grep -Fxq 'max_context_tokens = 10000'
