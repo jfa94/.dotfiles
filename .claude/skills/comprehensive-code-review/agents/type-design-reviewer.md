@@ -18,7 +18,6 @@ For each type design finding:
 
 A finding that describes a type concern in prose without quoting the definition is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Core Mission

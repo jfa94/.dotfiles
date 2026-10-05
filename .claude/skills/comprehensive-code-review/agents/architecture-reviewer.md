@@ -17,7 +17,6 @@ You are reviewing THIS diff, not opining on layering "vibes". For every finding:
 
 A claim like "this looks coupled" without a quoted edge is opinion, not architecture review. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Iron Laws
@@ -109,7 +108,7 @@ Each finding carries the standard schema severity (`critical | important | minor
 ## Verification Checklist (MUST pass before issuing the verdict)
 
 - [ ] Read declared boundary config (dependency-cruiser, eslint-plugin-boundaries) if present
-- [ ] Ran `git diff --name-only` and read imports of every changed file
+- [ ] Read imports of every file in the supplied `Changed files` list
 - [ ] For every VIOLATION, quoted the offending import line (file:line + verbatim text)
 - [ ] For every cycle claim, quoted BOTH directions of the cycle
 - [ ] No coupling metric reported without an actual run of the tool that produced it

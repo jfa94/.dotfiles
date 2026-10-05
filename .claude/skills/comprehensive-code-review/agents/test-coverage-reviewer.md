@@ -17,7 +17,6 @@ A FINDING MUST TAKE ONE OF TWO SHAPES — BOTH REQUIRE A CODE QUOTE AND A CONCRE
 
 A finding described only in prose without a code quote is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Core Responsibilities

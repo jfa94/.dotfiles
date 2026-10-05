@@ -11,8 +11,6 @@ description: Use when designing or changing a relational database schema — cre
 
 Two tiers of discipline. **Iron Laws** are categorical — breaking one corrupts data or is unambiguously wrong. **Decision Gates** are genuine trade-offs — the discipline is to _choose consciously and say why_, never to default by accident.
 
-**Violating the letter of the rules is violating the spirit of the rules.**
-
 ## When to use
 
 Designing or changing a schema: creating/altering tables, choosing keys or types, adding constraints, modelling relationships, writing migrations, reviewing a schema.

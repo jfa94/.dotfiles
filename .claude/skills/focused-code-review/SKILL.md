@@ -41,18 +41,18 @@ whole-codebase or spec-conformance review at `/comprehensive-code-review`.
 
 ```
 1. NO FINDING WITHOUT A VERIFIED FILE:LINE CITATION — verify-citations.mjs enforces;
-   unverifiable findings are dropped before emission. No exceptions.
+   unverifiable findings are dropped before emission.
 2. NO REPORT UNTIL THE WORKFLOW RESOLVES (workflow-result.json written, carrying reviewer
-   AND Codex terminal states). No exceptions.
+   AND Codex terminal states).
 3. NO INVENTED CATEGORIES — the fixed set in the sibling's references/report-format.md;
-   misfits go to "Other" with reviewer name preserved. No exceptions.
+   misfits go to "Other" with reviewer name preserved.
 4. EVERYTHING DISPATCHES VIA THE WORKFLOW — no hand-dispatched reviewer Task calls, no
-   Bash Codex runs, no direct background calls. No exceptions.
+   Bash Codex runs, no direct background calls.
 5. REFUTED = DEAD EVERYWHERE — a refuted or previously-adjudicated finding never re-enters
    the report body, Themes, or fix guidance (including residuals or "weakened versions").
    A different concern at the same site is a NEW finding that must survive its own
    refutation. Refuted critical/important findings are appended to the disposition ledger
-   at report time. No exceptions.
+   at report time.
 ```
 
 ## Red Flags — STOP and re-read this prompt
@@ -123,7 +123,6 @@ one JSON line; branch on `status`:
 
 ## Phase 2 — Launch the Workflow (single call)
 
-<EXTREMELY-IMPORTANT>
 Launch ONE Workflow with the preflight's `workflowArgs` passed **verbatim** — do not add, drop, or
 rewrite any field (the PreToolUse hook deep-equals the args against the preflight's provenance
 record and denies drift):
@@ -137,7 +136,6 @@ Workflow({
 
 It owns the reviewer fan-out, the Codex adversarial review, AND the Codex-verify refutation pass,
 all concurrently. Do NOT launch Codex yourself and do NOT hand-dispatch reviewer Task calls.
-</EXTREMELY-IMPORTANT>
 
 ## Phase 3 — Harvest
 

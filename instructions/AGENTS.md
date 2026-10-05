@@ -62,9 +62,9 @@ Shared guidance for Claude Code and Codex. Each tool-specific section applies on
 
 ## PostHog
 
-Project-native MCP is a single `posthog` server wrapping every PostHog operation behind one `exec` tool — full catalogue, no permission split. It runs silently, reads and writes alike; safety is the PostHog API key's own scopes, not a prompt. Only issue a write when one is actually intended.
+Project-native MCP is a single `posthog` server exposing every PostHog operation, reads and writes alike, through one `exec` tool without a confirmation prompt. The PostHog API key's provider-side scopes are the only limit, so only issue a write when one is actually intended.
 
-- The user authorizes Outsidey PostHog project `107700` MCP calls, including writes, without an additional confirmation prompt. The `posthog` MCP server exposes its full catalogue (no read-only split), and its effective access is limited only by the API key's provider-side scopes.
+- The user authorizes Outsidey PostHog project `107700` MCP calls, including writes, without an additional confirmation prompt.
 
 ## Claude Code
 

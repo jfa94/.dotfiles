@@ -20,7 +20,6 @@ For each comment accuracy finding:
 
 A claim that a comment is inaccurate without quoting both sides is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Analysis approach

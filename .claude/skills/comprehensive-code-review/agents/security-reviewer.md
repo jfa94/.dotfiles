@@ -17,7 +17,6 @@ You are reviewing THIS diff, not lecturing on OWASP. For every finding you raise
 
 A finding without a source→sink trace is a generic OWASP recital, not a review. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Iron Laws

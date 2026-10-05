@@ -16,27 +16,27 @@ The default deliverable is a **gap report**. Writing tests, running them, and sc
 ```
 1. NO ACTION BEYOND THE REPORT WITHOUT AN EXPLICIT REQUEST.
    The default deliverable is the gap report. Writing tests, running suites, bootstrapping
-   Playwright, and scaffolding CI each require the user to ask. No exceptions.
+   Playwright, and scaffolding CI each require the user to ask.
 
 2. NO SPEC CODE BEFORE THE PLAN GATE IS APPROVED.
    Steps + exact outcome assertions are presented and approved first. Approval covers what
-   was presented — a changed assertion means a re-ask. No exceptions.
+   was presented — a changed assertion means a re-ask.
 
 3. NO UNEXECUTED SPEC DELIVERED AS DONE.
    A spec either ran against the live app before delivery, or it is marked test.fixme with
-   a header naming why it is unverified and what blocks the launch. No exceptions.
+   a header naming why it is unverified and what blocks the launch.
 
 4. THE USER OWNS THE COVERAGE MODEL.
    Journeys come from docs/critical-journeys.md or a user-confirmed proposal persisted
-   there. Never analyse gaps against a journey list the user has not seen. No exceptions.
+   there. Never analyse gaps against a journey list the user has not seen.
 
 5. NO GAP REPORT PERSISTED TO THE REPO.
    Chat + session scratchpad only. The journey list is the only durable artifact this
-   skill writes to the repo. No exceptions.
+   skill writes to the repo.
 
 6. NEVER CHANGE REPO OR GITHUB SETTINGS.
    Scaffold workflow files only. Branch protection / required status checks are flipped
-   by the user, told explicitly where. No exceptions.
+   by the user, told explicitly where.
 ```
 
 ## Phase 1 — Understand the repo

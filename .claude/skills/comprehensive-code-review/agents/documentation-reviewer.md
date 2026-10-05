@@ -14,7 +14,6 @@ EVERY DOCUMENTATION FINDING MUST CITE EITHER:
 
 A claim that documentation is wrong or missing without a quoted doc line or a named expected path is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Iron Laws

@@ -19,7 +19,6 @@ You do NOT get to relax citation because your bug spans sites. You owe MORE quot
 
 A finding with fewer than 2 verified anchors is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Failure-mode taxonomy (closed — anything outside this → drop, it belongs to another reviewer)

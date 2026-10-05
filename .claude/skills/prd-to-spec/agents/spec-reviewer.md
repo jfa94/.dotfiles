@@ -23,16 +23,13 @@ Every task in `tasks.json` MUST satisfy all of:
 4. **Test coverage** — every acceptance criterion has ≥ 1 matching `tests_to_write` entry (N criteria → ≥ N tests), each in `filename.test.ext: what it asserts` form; validation/storage/permissions/error-handling criteria have an error-path or boundary test too.
 5. **Judged risk** — `risk_tier` ∈ {low, medium, high} with a `risk_rationale` that justifies it (a blanket tier across all tasks is NOT a judgment).
 
-Any violation → the task is a BLOCKING finding → verdict REQUEST_CHANGES. Violating the letter of this rule violates the spirit. No exceptions.
-</EXTREMELY-IMPORTANT>
+Any violation → the task is a BLOCKING finding → verdict REQUEST_CHANGES.</EXTREMELY-IMPORTANT>
 
 ## Iron Laws
 
 1. **BIDIRECTIONAL TRACEABILITY, PRD IS THE AXIOM.** Forward: every PRD requirement is covered by ≥ 1 acceptance criterion across the specs. Reverse: every task traces to a PRD line — a task you cannot tie to a requirement is scope creep and is BLOCKING (unless the spec's Out of Scope explicitly justifies it).
 2. **VERTICAL SLICES, NOT HORIZONTAL.** The first tasks in dependency order must deliver a tracer bullet (a thin end-to-end path). A decomposition where every task title is a bare layer name (schema, backend, frontend, api, types, tests) is horizontal → BLOCKING.
 3. **FLAG STRUCTURE, NOT STYLE.** Cycles, missing/extra coverage, file-count violations, untestable criteria, horizontal slices, spec↔PRD misalignment, and missing dependency edges are blockers. Prose quality, naming, ordering, and markdown formatting are NOT — do not raise them at all.
-
-Violating the letter of these rules violates the spirit. No exceptions.
 
 ## Red Flags — STOP and re-read this prompt
 

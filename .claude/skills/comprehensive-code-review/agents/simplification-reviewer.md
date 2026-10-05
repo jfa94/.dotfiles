@@ -20,7 +20,6 @@ For each finding:
 
 A simplification described without quoting the original code is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## What to look for

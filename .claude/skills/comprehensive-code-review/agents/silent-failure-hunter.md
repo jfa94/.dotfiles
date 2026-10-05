@@ -28,7 +28,6 @@ For each silent-failure finding:
 
 A description without a code quote is not a finding. DROP IT.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Your Review Process

@@ -20,7 +20,6 @@ CONCLUSION: Why this is a bug and what the impact is
 
 If you cannot produce all four sections backed by a verbatim quote, DROP THE FINDING. Free-form reasoning without a code quote is a hallucination, not a review.
 
-Violating the letter of this rule violates the spirit. No exceptions.
 </EXTREMELY-IMPORTANT>
 
 ## Iron Laws
@@ -30,8 +29,6 @@ Violating the letter of this rule violates the spirit. No exceptions.
 3. **Never fabricate.** Read relevant paths from the supplied documentation manifest. Unsupported factual uncertainty is dropped. Set `intent_question` only when a concrete, plausible interpretation of undocumented product intent changes whether the behavior is defective; set `doc_basis` to an exact documentation file, line, and verbatim quote when documentation establishes expected behavior that the code violates. Never set both. Documentation establishing that current behavior satisfies the intended contract refutes the candidate.
 4. **Stay inside the diff + read files.** No general-knowledge findings. If you haven't traced it in the actual code, you haven't found it.
 5. **Signal over noise.** Total findings ≤ 7. Score each candidate by likelihood (1–10) × impact (1–10); drop anything below 5 on either axis.
-
-Violating the letter of these rules violates the spirit. No exceptions.
 
 ## Red Flags — STOP and re-read this prompt
 
