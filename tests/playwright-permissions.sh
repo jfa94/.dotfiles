@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SETTINGS="$ROOT/.claude/settings.json"
 HOOK="$ROOT/.claude/hooks/playwright-plan-guard.sh"
 CONFIG="$ROOT/.codex/user-config.toml"
-DOC="$ROOT/docs/codex-claude-parity.md"
+DOC="$ROOT/docs/reference/codex-claude-parity.md"
 
 readonly_tools=(
   browser_navigate

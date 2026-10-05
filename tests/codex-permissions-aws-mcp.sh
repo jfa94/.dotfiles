@@ -102,7 +102,21 @@ for hook in protected-files-check.sh dangerous-patterns-check.sh; do
     exit 1
   }
 done
-PASS=$((PASS + 4))
+[[ "$(grep -oE "^SECRET_EXEMPT_RE='[^']*'" "$ROOT/.codex/hooks/pre-commit-check.sh")" == "$(grep -oE "^SECRET_EXEMPT_RE='[^']*'" "$ROOT/.claude/hooks/pre-commit-check.sh")" ]] || {
+  echo "FAIL pre-commit SECRET_EXEMPT_RE drifted between .codex and .claude hooks" >&2
+  exit 1
+}
+# Staged/pending resolution and the TruffleHog scan are one marked block in both gates.
+shared_block() {
+  awk '/^# >>> shared pre-commit block$/{on=1} on{print} /^# <<< shared pre-commit block$/{if(on)done=1; on=0} END{exit !done}' "$1"
+}
+CODEX_BLOCK=$(shared_block "$ROOT/.codex/hooks/pre-commit-check.sh") || { echo "FAIL .codex pre-commit shared block markers missing" >&2; exit 1; }
+CLAUDE_BLOCK=$(shared_block "$ROOT/.claude/hooks/pre-commit-check.sh") || { echo "FAIL .claude pre-commit shared block markers missing" >&2; exit 1; }
+[[ "$CODEX_BLOCK" == "$CLAUDE_BLOCK" ]] || {
+  echo "FAIL pre-commit shared block drifted between .codex and .claude hooks" >&2
+  exit 1
+}
+PASS=$((PASS + 6))
 
 assert_shell_command "cat $ROOT/.env.local" allow
 assert_shell_command "printf value > $ROOT/.env.local" allow

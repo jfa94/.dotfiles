@@ -2,6 +2,8 @@
 
 Audited against `.claude/settings.json`, `.claude/plugins.txt`, and the Codex plugin catalog in July 2026. Superpowers state is excluded; plugin availability is covered explicitly below.
 
+Related: [instruction sources](../explanation/instruction-sources.md), [September 2026 permission and catalog corrections](../explanation/codex-permission-corrections.md), [sandbox troubleshooting](../guides/troubleshoot-codex-sandbox.md), [verification](../guides/verify-codex-parity.md).
+
 ## Mapping
 
 | Claude behavior              | Codex implementation                                                                                                                                                                           | Parity                                                                                               |
@@ -23,7 +25,7 @@ Audited against `.claude/settings.json`, `.claude/plugins.txt`, and the Codex pl
 | SQL/Supabase                 | Project-scoped `read_only=true` MCP; confirmed mutations use `agent-env-run` with the Supabase CLI                                                                                              | MCP cannot mutate; the CLI route remains explicit                                                    |
 | Compound/dangerous commands  | Conversational confirmation plus narrow exec-policy prompts; only literal critical recursive-force deletion is hook-denied                                                                     | Approximate; prefix rules cannot represent every shell shape                                         |
 | npm → pnpm                   | Deny hook that suggests the pnpm command                                                                                                                                                       | Exact for recognized shell forms; no rewrite, because an allow with `updatedInput` would approve the whole chain |
-| Pre-commit secrets           | Protected names, regex scan, required TruffleHog                                                                                                                                               | Approximate scanner coverage; failures deny                                                          |
+| Pre-commit secrets           | Protected names, regex scan, required TruffleHog                                                                                                                                               | Equivalent shared scan; failures deny in both runtimes; Claude's generic password regex skips test files |
 | Pre-push quality             | Required pnpm quality or typecheck/lint/test/deps gates                                                                                                                                        | Codex fails closed; Claude warns and skips when pnpm is missing                                                     |
 | Semgrep                      | Scan of files changed vs origin/HEAD, origin/main or origin/master (all tracked files when none resolves); scanner must exit 0 with valid output, failed scans are never cached                | Codex fails closed; Claude warns on missing scanner or invalid output                                                 |
 | Post-edit Prettier           | Project-local configured formatter                                                                                                                                                             | Exact for supported extensions; missing/failing formatter surfaces error                             |
@@ -33,20 +35,6 @@ Audited against `.claude/settings.json`, `.claude/plugins.txt`, and the Codex pl
 | Code review                  | Codex-only `.codex/skills/code-review` router references Claude's canonical specialist prompts                                                                                                 | Equivalent reviewer roles; runtime orchestration differs                                             |
 
 Claude intentionally retains warning-only push-check exceptions: missing pnpm skips its quality gate; missing Semgrep, a failed scan, invalid scanner output, or an unusable diff base skips its SAST gate with a warning. Reported quality failures and Semgrep findings still deny. Codex fails closed for these missing or failed prerequisites.
-
-## Permission and catalog corrections (September 2026)
-
-Normal work uses Sol medium; native Plan mode uses Sol xhigh. There is no separate planning profile. The existing model-availability metadata is preserved.
-
-The previous reviewer setting sent eligible escalations directly to the user. `approvals_reviewer = "auto_review"` now enables Codex's built-in reviewer while retaining `approval_policy = "on-request"` and `workspace-net`. No custom reviewer policy is installed. Explicit denials require a materially safer approach or user intervention; review reduces prompts but does not guarantee Claude Auto-mode decisions. Protected-file confirmation, dangerous-command controls, SQL/Supabase restrictions, secret scanning, and commit/push quality gates still apply. See [automatic review](https://learn.chatgpt.com/docs/sandboxing/auto-review).
-
-Run ordinary Git commands with the exec tool's explicit `workdir`, for example `{"cmd":"git status","workdir":"/Users/Javier/.dotfiles"}`. The compound-command hook recommends this form. `git -C <path>` does not match ordinary Git prefixes; existing Git and Playwright rules need no widening.
-
-The AWS generator previously covered ten service lists plus STS/configure, leaving 22 canonical services absent (and some allowances in existing services unrepresented). It now derives all 35 service groups, including local configure commands, from `.claude/settings.json`. It expands each operation pattern against installed `aws <service> help`, validates the generated policy with native exec-policy parsing, and atomically replaces the output. Missing help, unmatched patterns, unsupported allowance syntax, and validation failures stop generation visibly and preserve the old file. Rerun `bash .codex/rules/generate-aws-read.sh` after AWS CLI or canonical allowance changes. Argument-dependent `aws s3 cp s3://* -` remains reviewable. Only exact enumerated operations are allowed; generic read-verb rules are not used.
-
-The combined available-skills description catalog caused truncation; the earlier diagnostic found 54 CLI-discovered skills, including 24 AWS skills. `[skills] max_context_tokens = 10000` raises the catalog budget to the supported explicit maximum without disabling skills or editing vendor assets. Inventory counts can change as plugins update. See the [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
-
-These were configuration gaps. Remaining platform differences include argv-prefix matching, sandbox behavior, hook capabilities, and nondeterministic reviewer decisions.
 
 ## Plugin inventory
 
@@ -82,8 +70,6 @@ Claude enables the official Playwright MCP globally and explicitly allows its na
 
 Codex continues to use `browser@openai-bundled` and `chrome@openai-bundled` under the existing `workspace-net`, `on-request`, and `auto_review` configuration. Its Browser surface provides read-only page evaluation through `tab.playwright.evaluate` in Plan Mode. Navigation and ordinary actions use the bundled computer-use policy, so side-effect confirmations remain controlled by that plugin and can differ from Claude. `.codex/rules/default.rules` only governs shell command prefixes; it cannot persist approvals for bundled browser actions. Exact per-tool approval settings are available for separately configured MCP servers, but this repository intentionally does not add a second Microsoft Playwright server. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp) and [Playwright MCP security guidance](https://github.com/microsoft/playwright-mcp/blob/main/README.md#security).
 
-AWS setup registers `aws/agent-toolkit-for-aws`, installs `aws-core`, `uv`/`uvx`, and AWS CLI via Homebrew on macOS or the official user-local installer (minimum 2.35.0) on Linux/cloud. It never edits AWS credentials or profiles. Codex permits AWS knowledge, documentation, skill, and region tools but repository hooks deny authenticated MCP `call_aws`, `run_script`, and presigned-URL operations.
-
 ## Code-review skills and artifacts
 
 Claude retains `/focused-code-review` and `/comprehensive-code-review` under `.claude/skills/`. Codex exposes its own `$code-review` router from `.codex/skills/code-review`; this keeps the Codex interface out of Claude Code while avoiding copied reviewer prompts. Claude-owned agents, prompts, and verification assets remain canonical under `.claude/skills/comprehensive-code-review/` and the Codex router references them directly.
@@ -102,7 +88,7 @@ Both runtimes write each review to a unique directory:
 
 ```text
 .code-review/runs/<UTC timestamp>-<profile>-<nonce>/
-├── report.md
+├── review.md
 ├── run.json
 └── raw/
 ```
@@ -122,38 +108,16 @@ charter from disk first, and charter bodies are never duplicated in spawned task
 
 The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and `.focused-code-review/` ignore entries remain for historical artifacts; new runs must not use them.
 
-## Instruction sources
-
-Both runtime entry points share one `instructions/AGENTS.md`: setup links it to
-`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. Source sharing is exact; runtime
-policies and discovery differ. Edit the canonical file, not the runtime links.
-Frontend/backend guidance lives beside it and is read on demand. Dotfiles root
-`AGENTS.md` remains project-specific; root `CLAUDE.md` contains only `@AGENTS.md`
-so Claude loads it even without native AGENTS support. Codex reads AGENTS.md
-natively. Its global `AGENTS.override.md`, if present, supersedes AGENTS.md.
-
-Claude native AGENTS support requires more than v2.1.277: it also depends on
-feature-flag availability and session settings, and can be unavailable on the
-first session after installation/upgrading, with telemetry disabled, or on
-third-party providers. Outsidey retains native loading without a compatibility
-stub; verify it in a fresh supported session. A project/ancestor CLAUDE.md or
-CLAUDE.local.md can suppress native loading under the default setting. See
-[Claude loading rules](https://code.claude.com/docs/en/memory#agents-md) and
-[Codex discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
-
-goodbyespy shares its project rules through AGENTS.md and imports them from a
-CLAUDE.md with explicitly Claude-only workflow instructions. Codex uses the
-existing native code-review router rather than Claude-only review skills.
-
 ## Intentional gaps
 
 - Codex treats current-turn conversational confirmation as authoritative for editing `.env*`, credentials, private keys, `secrets/`, or existing/applied migrations; destructive/unbounded/schema-changing SQL and remote Supabase mutations; force-push and leading `+` refspecs; commit-safeguard bypasses; package publishing; recursive-force deletion; `chmod 777`; and downloaded-content-to-shell pipelines. Native prompt rules supplement this for exact argv prefixes and can produce a second UI prompt. Hooks cannot originate an approval prompt, and `PermissionRequest` only observes a prompt Codex already chose to show.
 - AWS operation auto-allow follows all translatable canonical Claude allowances through `.codex/rules/generate-aws-read.sh`. `aws s3 cp s3://key -` remains reviewable because prefix rules cannot constrain the destination. Other AWS commands reach approval review through the rules layer default; secret-value reads still deny through the hook.
-- Root filesystem read access includes `.env*` outside trusted workspaces, subject to OS permissions. Edits require current-turn confirmation and commits remain gated. Exact Outsidey parity makes `~/.aws/credentials` readable to Codex. SSH material, private keys/certificates, `secrets/`, and Codex authentication are also readable — filesystem read-denies were removed because any deny entry silently keeps `require_escalated` commands sandboxed (see Sandbox-profile troubleshooting). The pre-commit hook remains a conditional hard failure when staged content is sensitive.
+- Root filesystem read access includes `.env*` outside trusted workspaces, subject to OS permissions. Edits require current-turn confirmation and commits remain gated. Exact Outsidey parity makes `~/.aws/credentials` readable to Codex. SSH material, private keys/certificates, `secrets/`, and Codex authentication are also readable — filesystem read-denies were removed because any deny entry silently keeps `require_escalated` commands sandboxed (see [Sandbox-profile troubleshooting](../guides/troubleshoot-codex-sandbox.md)). The pre-commit hook remains a conditional hard failure when staged content is sensitive.
 - Hooks resolve their target directory from `tool_input.workdir` (`hook-lib.sh:project_dir`), falling back to the PreToolUse payload's session `cwd`. Codex instructs the model to always pass `workdir` per command and commonly starts sessions outside the project root, so the session `cwd` alone is stale for repo-scoped hooks (pre-commit, pre-push, Semgrep, prettier, `.codex` dir checks).
-- The pre-commit gate scans the index plus whatever this same command's own `git add` would stage (`git add --dry-run`), because PreToolUse fires before the command runs — otherwise `git add secret.pem && git commit` would scan an empty index. Unresolvable `git add` arguments (shell substitution, redirects) deny rather than skip the scan. Both hooks also scan tracked modifications when the command carries `-a`/`--all`. The gate resolves one target repository (the first `git -C` directory). Known residual: `git commit <pathspec>` (commit-only-paths) is not resolved and bypasses the scan.
-- The pre-commit gate's secret-path pattern (`SECRET_PATH_RE`) is hand-kept identical between `.codex/hooks/pre-commit-check.sh`, `.claude/hooks/pre-commit-check.sh`, `.claude/hooks/protected-files-check.sh` and `.claude/hooks/dangerous-patterns-check.sh` — no shared library on the Claude side — and pinned equal by `tests/codex-permissions-aws-mcp.sh`. `.env.example`/`.sample`/`.template` remain exempted and committable by design.
+- The pre-commit gate scans the index plus whatever this same command's own `git add` would stage (`git add --dry-run`), because PreToolUse fires before the command runs — otherwise `git add secret.pem && git commit` would scan an empty index. Unresolvable `git add` arguments (shell substitution, redirects) deny rather than skip the scan. Both hooks also scan tracked modifications when the command carries `-a`/`--all`. The gate resolves one target repository (the first `git -C` directory) and, after the dry run, resolves every path from its root, so commits from a subdirectory are scanned correctly. A file that is both staged and re-added is scanned in both its index and worktree versions. Submodule pointers and symlinks are not content-scanned (git commits the pointer or link text). Staged names git still quotes with `core.quotePath=false` (containing `"`, `\` or control characters) deny. Unreadable files, scanner errors, a missing TruffleHog, or an unenterable repository deny in both runtimes. Known residual: `git commit <pathspec>` (commit-only-paths) is not resolved and bypasses the scan.
+- The pre-commit gate's secret-path pattern (`SECRET_PATH_RE`) is hand-kept identical between `.codex/hooks/pre-commit-check.sh`, `.claude/hooks/pre-commit-check.sh`, `.claude/hooks/protected-files-check.sh` and `.claude/hooks/dangerous-patterns-check.sh` — no shared library on the Claude side — and pinned equal by `tests/codex-permissions-aws-mcp.sh`, which also pins `SECRET_EXEMPT_RE` and the byte-identical `shared pre-commit block` (staged/pending resolution and the TruffleHog scan) in both pre-commit hooks. `.env.example`/`.sample`/`.template` remain exempted and committable by design.
 - `critical-rm-check.sh` has one unconditional denial: an actual `rm` or direct `sudo rm` invocation with both recursive and force flags and a literal critical target. Static command and option words are recognized through syntactic quotes and backslashes without evaluation; expansion-bearing option words remain ambiguous. It blocks `/`, the exact home root, system-owned trees, and `/Users` outside the current home. Home descendants and temporary roots/subpaths are confirmable exceptions. It resolves parent components physically without following a plain final symlink, but literal trailing `/` and `/.` spellings follow that final component as `rm` does. Repository roots, sibling projects, non-system paths, and ambiguous expansions pass to conversational confirmation. Malformed input and internal parsing, dependency, serialization, or candidate-target resolution failures deny with fixed JSON. Quoted diagnostics and search arguments are not invocations.
+- Claude hard-denies `git push --mirror` as a force-push form: `permissions.deny` covers the literal `git push --mirror*` and `git -C * push --mirror*` spellings, and `dangerous-patterns-check.sh` denies abbreviated `--m` forms. The same hook denies git options that execute an arbitrary program, matched by their shortest accepted prefixes: `rebase --exec`/`-x`, `fetch --upload-pack`, `ls-remote --upload-pack`/`--exec`, and `push --receive-pack`/`--exec`. `git-c-allow.sh` does not auto-approve `git -C` forms carrying them. Known Codex gap: `default.rules` prefix-allows `git push` and `git ls-remote`, so `--mirror` and `ls-remote --upload-pack`/`--exec` are auto-allowed there.
 - Conditional safeguards remain separate from promptable actions: pre-commit secret scanning and sensitive-path checks, pre-push quality gates, Semgrep, AWS secret-value protection, and AWS MCP routing can still deny until their reported condition is remediated.
 - Supabase MCP URLs remain project-scoped with `read_only=true`. Approved mutations use `agent-env-run` and the Supabase CLI after explicit current-turn confirmation; Codex has no writable Supabase MCP path.
 - Codex config sets the default model, with `medium` reasoning and `xhigh` in Plan mode. There is no startup model-lock mutation; the configured default is not an enforced session lock.
@@ -162,67 +126,3 @@ existing native code-review router rather than Claude-only review skills.
 - Dynamic Claude `ask` hooks use native sandbox/exec-policy prompts where expressible; unsupported Codex shapes use the conversational confirmation gate.
 - Model-availability NUX and all Superpowers state remain untouched.
 - Newline-containing filenames are an acknowledged limitation in changed-file scanner lists.
-
-## Sandbox-profile troubleshooting
-
-Claude WebFetch domain allowlists do not control Codex shell networking. If a session reports `could not resolve host: github.com`, `gh` cannot reach `api.github.com`, or `.git` refuses writes, first suspect that its `workspace-net` permission profile was replaced rather than a DNS or allowlist failure.
-
-Changing approval or permission mode from the TUI mode picker replaces the custom profile with a built-in preset that disables network access and makes `.git` read-only. The picker cannot restore `workspace-net`; start a new session instead of repeatedly escalating commands.
-
-Confirm the diagnosis with:
-
-```sh
-sqlite3 ~/.codex/state_5.sqlite "select id,cwd,substr(sandbox_policy,1,80) from threads order by updated_at desc limit 5;"
-```
-
-`special/root` indicates the downgraded built-in profile; `path:"/"` indicates the expected `workspace-net` profile.
-
-pnpm keeps its content-addressable store and dlx cache outside the workspace, so a project with a `packageManager` pin fails with `[ERROR] unable to open database file` when the profile lacks its pnpm write grants (or was replaced by a TUI preset). Restore the grants; do not shim Corepack — its cache is equally unwritable.
-
-Codex's embedded macOS seatbelt policy is `(deny default)` with no `mach-register` grant, so any Chromium- or Electron-based command (Playwright, Puppeteer, the bundled `browser`/`computer-use` plugins) dies at launch:
-
-```
-FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS.
-bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.<pid>: Permission denied (1100)
-```
-
-There is no user-extensible seatbelt hook to add the missing rule (openai/codex#24742 is open, unimplemented), so the only fix is to run the command with `sandbox_permissions="require_escalated"`, which drops the seatbelt entirely. Escalation only works when the active permission profile has zero `= "deny"` filesystem entries — a single deny-read entry makes Codex silently keep the command sandboxed instead of honoring escalation, with no warning surfaced. `workspace-net` is kept deny-free for exactly this reason; reintroducing a deny entry breaks escalation for every command, not just browsers.
-
-## Verification
-
-Instruction consolidation verified September 21, 2026: all 28 shell test scripts
-passed. The credential test required unsandboxed access to its disposable macOS
-keychain. Both live global links resolve to `instructions/AGENTS.md`, and the
-startup integrity check emits no warning. Fresh no-tool Claude sessions loaded
-global and project rules in dotfiles, goodbyespy, and Outsidey; fresh no-tool
-Codex sessions loaded the expected rules in dotfiles and goodbyespy, including
-tool-specific delegation/AWS routing and the native review skill. The moved
-frontend/backend files are unchanged. ShellCheck passes for the cloud setup and
-changed tests; local setup/startup retain their pre-existing SC2329/SC1091
-diagnostics. Existing sessions need restarting to load the new instructions.
-
-September 2026 verification: all 26 `tests/*.sh` scripts passed, including 1,274 native policy/hook parity checks. Generator fixtures cover exact matching, discovery failures, malformed help, unmatched allowances, and policy-validation failures with output preservation. Startup fixtures cover correct settings, reviewer/profile drift, and missing/dangling links. Relevant ShellCheck checks pass with existing SC1091/SC2015/SC2016 diagnostics excluded.
-
-Codex Doctor 0.153.4 loaded strict configuration with zero failures; macOS security inspection remained unavailable. Fresh CLI session metadata confirmed Sol medium, `on-request`, and `auto_review`; Git status, startup tests, and an automatically approved escalated `/usr/bin/true` succeeded. The app-bundled runtime (0.150.0-alpha.12.2) also passed fresh Git status and escalated `/usr/bin/true` checks. Sol prompt rendering exposed all 54 skills in both runtimes without a truncation warning. Plan xhigh is configuration-tested; an interactive Plan toggle and app UI restart remain rollout checks.
-
-Instruction migration checks are in `tests/agent-instructions.sh`, cloud link
-checks in `tests/cloud-setup.sh`, and startup link checks in
-`tests/codex-startup.sh`. They cover migrations, custom conflicts, prompt choices,
-missing sources, repeat setup, and owned-link cleanup. Run every shell test
-separately and preserve its exit status; any failed script fails the suite.
-
-Run:
-
-```sh
-jq empty .codex/user-hooks.json
-shellcheck .codex/hooks/*.sh tests/codex-parity.sh
-bash tests/codex-parity.sh
-for test in tests/*.sh; do bash "$test" || exit "$?"; done
-codex execpolicy check --rules .codex/rules/default.rules '<command>'
-codex --strict-config doctor
-bash .codex/plugin-doctor.sh
-```
-
-Normal setup never upgrades existing plugin marketplaces. Use `bash .codex/update-plugins.sh` explicitly from outside an active Codex task; after it validates hook manifests and targets, restart Codex/ChatGPT and review changed hooks. The plugin doctor reports bundle, app dependency, OAuth, tool-discovery, and hook-validation layers separately so a missing connector is not misreported as a missing bundle.
-
-Start fresh CLI and app sessions to load the new settings; existing sessions may retain previous settings. Check Sol medium, Plan xhigh, catalog warnings, ordinary Git/test commands, and harmless automatic escalations. Exercise dangerous cases only through policy fixtures. Fresh startup, resume, manual compaction, and automatic compaction at 200,000 tokens require interactive smoke testing. User config and user hooks are authored at `.codex/user-config.toml` and `.codex/user-hooks.json`, then linked to `~/.codex/config.toml` and `~/.codex/hooks.json`. Their non-discovered source names prevent Codex from also loading them as project-local configuration inside this repository. The seven parallel Bash policy handlers deliberately share the generic `Checking shell command policy` status so Codex can collapse their activity without claiming that a command-specific gate is running before each script self-filters. Fresh approval testing should verify automatic review, approve/decline paths on disposable `.env` and migration files, and harmless quoted diagnostics; do not smoke-test live force-pushes, publishing, Supabase mutations, or destructive deletion. The clean filter must preserve authored configuration above trailing `[hooks.state]` while stripping only trusted hashes. Because the tracked file never contains `[hooks.state]`, restoring or checking out `.codex/user-config.toml` drops every hook-trust hash and the hooks need re-review via `/hooks`; fix drifted keys (`approvals_reviewer`, `default_permissions`) in place instead.

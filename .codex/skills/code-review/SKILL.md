@@ -61,6 +61,6 @@ Do not report completion until:
 - every selected reviewer is DONE or BLOCKED;
 - every eligible finding has completed its fresh refutation policy or is explicitly retained because verification failed;
 - deterministic citation verification and deduplication completed;
-- `run.json`, raw machine artifacts, and `report.md` exist in the unique run directory; and
+- `run.json`, raw machine artifacts, and `review.md` exist in the unique run directory; and
 - the absolute last response line is `STATUS: DONE` or `STATUS: DONE_WITH_CONCERNS — <reason>`.
   Use concerns when the overall result is NEEDS-DECISION even though every track completed.

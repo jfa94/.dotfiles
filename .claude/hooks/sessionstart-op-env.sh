@@ -21,8 +21,7 @@ VALIDATE='
     and (.name | IN("HOME", "PATH", "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS") | not)
     and (.value | explode | any(. == 0) | not);
   if type != "array" then "all"
-  else ([.[] | select(ok)] | map(.name)) as $names
-    | (length - ($names | length)) + (($names | length) - ($names | unique | length))
+  else length - ([.[] | select(ok) | .name] | unique | length)
   end
 '
 

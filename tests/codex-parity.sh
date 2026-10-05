@@ -209,6 +209,33 @@ assert_decision "pre-commit does not treat --amend as -a" \
   pre-commit-check.sh "git commit --amend -m x" allow "$SCRATCH"
 git -C "$SCRATCH" checkout -q -- README.md
 
+# --- pre-commit gate: subdirectories, submodules, symlinks, quoted names ----
+mkdir -p "$SCRATCH/sub"
+echo "key = $FAKE_AWS_KEY" > "$SCRATCH/sub/k.txt"
+assert_decision "pre-commit denies a secret added from a subdirectory" \
+  pre-commit-check.sh "git add k.txt && git commit -m x" deny "$SCRATCH/sub"
+echo hi > "$SCRATCH/sub/k.txt"
+assert_decision "pre-commit allows a plain file added from a subdirectory" \
+  pre-commit-check.sh "git add k.txt && git commit -m x" allow "$SCRATCH/sub"
+rm -rf "$SCRATCH/sub"
+
+git -C "$SCRATCH" update-index --add --cacheinfo "160000,1111111111111111111111111111111111111111,nested"
+assert_decision "pre-commit allows a staged submodule pointer" \
+  pre-commit-check.sh "git commit -m x" allow "$SCRATCH"
+git -C "$SCRATCH" reset -q
+
+ln -s nowhere "$SCRATCH/link"
+assert_decision "pre-commit allows a dangling symlink" \
+  pre-commit-check.sh "git add link && git commit -m x" allow "$SCRATCH"
+rm -f "$SCRATCH/link"
+
+echo hi > "$SCRATCH/café.md"
+git -C "$SCRATCH" add café.md
+assert_decision "pre-commit allows a staged non-ASCII file name" \
+  pre-commit-check.sh "git commit -m x" allow "$SCRATCH"
+git -C "$SCRATCH" reset -q
+rm -f "$SCRATCH/café.md"
+
 rm -rf "$SCRATCH"
 trap - EXIT
 

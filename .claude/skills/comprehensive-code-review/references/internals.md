@@ -20,7 +20,8 @@ its `raw/` and `raw/inputs/` subdirectories. It immediately writes `run.json` wi
 `profile`, `runId`, `scopeLabel`, `mode`, `passNumber` (from `init --pass-number <n>`, integer ≥1,
 default 1 — the review⇄fix loop iteration this run is), `startedAt`, and `status: "RUNNING"`;
 after report emission `review-run.mjs finish` adds `completedAt` and sets `DONE` or
-`DONE_WITH_CONCERNS`. Early stops become `ABORTED` with a reason (the preflight aborts its own run
+`DONE_WITH_CONCERNS`; with `--report review.md` it refuses (leaving the run `RUNNING`) unless that
+file exists and is non-empty. Early stops become `ABORTED` with a reason (the preflight aborts its own run
 on post-init errors). Runs are never cleared or reused. `outDir` is mandatory; the workflow has no
 legacy/default output directory.
 

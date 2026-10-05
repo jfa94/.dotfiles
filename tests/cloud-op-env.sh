@@ -315,6 +315,9 @@ done
 new_case; printf '[{"name":"A","value":"1"},{"name":"A","value":"2"}]' > "$FAKE_OUT_FILE"
 expect_failure "duplicate name" "1Password data invalid (1 entries rejected)"
 
+new_case; printf '[{"name":"A","value":5},{"name":"B","value":"1"},{"name":"B","value":"2"}]' > "$FAKE_OUT_FILE"
+expect_failure "invalid plus duplicate" "1Password data invalid (2 entries rejected)"
+
 for name in OP_TOKEN OP_ANYTHING CLAUDE_CODE_X HOME PATH BASH_ENV ENV SHELLOPTS BASHOPTS; do
   new_case; jq -n --arg n "$name" '[{name:$n,value:"1"}]' > "$FAKE_OUT_FILE"
   expect_failure "reserved name $name" "1Password data invalid (1 entries rejected)"

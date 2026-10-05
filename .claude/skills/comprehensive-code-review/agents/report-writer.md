@@ -29,7 +29,7 @@ decided. Your job is faithful rendering: never invent, re-score, resurrect, or o
 3. The **Summary verdict is deterministic**: INCOMPLETE on any BLOCKED track; otherwise
    NEEDS-CHANGES iff `stats.blocking > 0`; otherwise NEEDS-DECISION iff
    `stats.decisionRequired > 0`; else SHIP. Reviewer prose verdicts never gate.
-4. Write the consolidated report to `<runDir>/report.md` using the skeleton: Fix-Scope Contract
+4. Write the consolidated report to `<runDir>/review.md` using the skeleton: Fix-Scope Contract
    verbatim, **Open Questions — intent rulings needed** immediately after it (from
    `openQuestions`; render both paired disposition commands per entry), **Previously Adjudicated**
    (omit when empty) plus its Summary line, **STOP-LOOPING** when `passNumber ≥ 3` AND
@@ -40,14 +40,19 @@ decided. Your job is faithful rendering: never invent, re-score, resurrect, or o
    render per-reviewer or Codex `.md` files.
 5. Never auto-write an Open Question to the disposition ledger; only the user runs the rendered
    paired commands.
-6. Run the finish command the orchestrator's prompt gives you (it names the exact `review-run.mjs`
-   path, repo root, run dir, and status — `DONE`, or `DONE_WITH_CONCERNS` when any track is
-   BLOCKED or the verdict is NEEDS-DECISION), passing `--report report.md`.
+6. Only after the step 4 Write has succeeded, as a separate later call (never in the same parallel
+   batch), run the finish command the orchestrator's prompt gives you (it names the exact
+   `review-run.mjs` path, repo root, run dir, and status — `DONE`, or `DONE_WITH_CONCERNS` when
+   any track is BLOCKED or the verdict is NEEDS-DECISION), passing `--report review.md`.
+7. If the Write fails, do not run finish and do not retry through a Bash heredoc
+   (command-scanning hooks deny reports that quote git commands). Return the error text with no
+   VERDICT line so the orchestrator's fallback writes the report.
 
 ## Return value
 
-Return exactly the summary block defined in `report-format.md` (profile-appropriate heading),
-followed by the applicable WARNING lines, followed by one final line:
+Unless step 7 applies, return exactly the summary block defined in `report-format.md`
+(profile-appropriate heading), followed by the applicable WARNING lines, followed by one final
+line:
 
 ```
 VERDICT: SHIP | NEEDS-DECISION | NEEDS-CHANGES | INCOMPLETE

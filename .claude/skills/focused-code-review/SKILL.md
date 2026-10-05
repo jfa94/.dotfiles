@@ -203,15 +203,16 @@ directory, `runDir`/`runId`/`repoRoot`, profile `focused`, the Phase 1 scope fac
 scopeLabel, manifestMode, warnings, plus "focused review (5 reviewers + Codex), not the
 comprehensive one" for the Scope section), the Phase 3 `codex` state, and the exact finish
 command:
-`node "<sibling dir>/scripts/review-run.mjs" finish --repo-root "$REPO_ROOT" --run-dir "$RUN_DIR" --status <DONE|DONE_WITH_CONCERNS> --report report.md`
+`node "<sibling dir>/scripts/review-run.mjs" finish --repo-root "$REPO_ROOT" --run-dir "$RUN_DIR" --status <DONE|DONE_WITH_CONCERNS> --report review.md`
 (status DONE_WITH_CONCERNS when any track is BLOCKED or the verdict is NEEDS-DECISION). With this
 skill's five reviewers + Codex, only these categories populate: Security, Quality,
 Simplification, Silent Failures, Systemic, Adversarial-Codex, Other.
 
 Relay the subagent's summary block + WARNING lines to the user verbatim, plus the report path.
 
-**Fallback:** if the subagent fails or returns no VERDICT line, read the sibling's
-`references/report-format.md` yourself, write `<runDir>/report.md`, run the finish command, and
+**Fallback:** if the subagent fails, returns no VERDICT line, or `<runDir>/review.md` is missing
+after it returns (check with one existence test), read the sibling's
+`references/report-format.md` yourself, write `<runDir>/review.md`, run the finish command, and
 print the summary block per that reference.
 
 ## Phase 6 — STATUS line

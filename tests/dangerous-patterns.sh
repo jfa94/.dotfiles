@@ -162,6 +162,14 @@ assert_claude "fetch --upload-pack" "git fetch --upload-pack=sh origin" deny
 assert_claude "fetch --upl" "git -C . fetch --upl=sh" deny
 assert_claude "ls-remote --u" "git ls-remote --u=sh origin" deny
 assert_claude "push --receive-pack" "git push --receive-pack=sh origin" deny
+assert_claude "ls-remote --exe" "git ls-remote --exe=sh origin" deny
+assert_claude "ls-remote --exec" "git ls-remote --exec=sh origin" deny
+assert_claude "-C ls-remote --exec" "git -C /x ls-remote --exec=sh origin" deny
+assert_claude "ls-remote --exit-code" "git ls-remote --exit-code origin main" pass
+assert_claude "push --mirror" "git push --mirror origin" deny
+assert_claude "push --m" "git push --m origin" deny
+assert_claude "push trailing --mirror" "git push origin --mirror" deny
+assert_claude "-C push --mirror" "git -C /x push --mirror origin" deny
 assert_claude "push --rece" "git push --rece=sh origin" deny
 assert_claude "push --exec" "git -C . push --e=sh origin" deny
 assert_claude "rebase -X strategy" "git rebase -X theirs main" pass

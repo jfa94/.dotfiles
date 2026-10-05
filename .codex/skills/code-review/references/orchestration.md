@@ -163,11 +163,11 @@ questions remain non-gating. Render the canonical “Open Questions — intent r
 ready-to-paste user disposition commands; never auto-write a question to the ledger. Render
 `intent-confirmed` findings normally with their disposition tag and render `doc_basis` as evidence.
 
-Write the only human render to `report.md`, then transition the run once:
+Write the only human render to `review.md`, then transition the run once:
 
 ```bash
 node ~/.claude/skills/comprehensive-code-review/scripts/review-run.mjs finish \
-  --run-dir "$RUN_DIR" --status "$STATUS" --report report.md
+  --run-dir "$RUN_DIR" --status "$STATUS" --report review.md
 ```
 
 Use `DONE_WITH_CONCERNS` for NEEDS-DECISION; otherwise use `DONE` or `DONE_WITH_CONCERNS` as the

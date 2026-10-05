@@ -1,4 +1,6 @@
-# Claude Auto-mode troubleshooting
+# Claude Auto-mode denials
+
+What to do when prompted: [Troubleshoot Claude Auto-mode confirmation prompts](../guides/troubleshoot-claude-auto-mode.md).
 
 ## Confirmation after repeated denials
 
@@ -33,7 +35,7 @@ approve the specific intended action if appropriate. Selecting a permanent
 confirmed cause here that warrants an approval hook, classifier-policy change,
 or version change.
 
-## Preserve validation failures
+## Why validation failures were masked
 
 Two command defects were independently reproduced during the investigation:
 
@@ -48,41 +50,6 @@ See the [Bash pipeline reference](https://www.gnu.org/software/bash/manual/html_
 and [zsh parameters](https://zsh.sourceforge.io/Doc/Release/Parameters.html).
 These defects establish unreliable status reporting, not the cause of the
 classifier decisions or evidence that the reported lint/test runs failed.
-
-Run validation commands individually without output-filter pipelines. For
-goodbyespy, execute each of these in a separate tool call from the project root:
-
-```sh
-corepack pnpm@10.34.3 exec tsc --noEmit
-```
-
-```sh
-corepack pnpm@10.34.3 exec eslint .
-```
-
-```sh
-env -u NEXT_PUBLIC_SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_KEY -u NEXT_SECRET_SUPABASE_KEY corepack pnpm@10.34.3 exec vitest run utils/sweep/createSweep.test.ts
-```
-
-The pinned Corepack invocation is a goodbyespy project requirement. Its documented
-`env -u` prefix removes inherited hosted Supabase settings from the child process
-so Vitest can load local test settings. It does not edit environment files. The
-suite uses a real local database with a localhost guard; keep that isolation and
-the project's test prerequisites. These examples are not global package-version
-or test-environment defaults.
-
-If output filtering is necessary, enable `set -o pipefail` in the same Bash or
-zsh invocation, and leave the pipeline as the final command:
-
-```sh
-set -o pipefail
-corepack pnpm@10.34.3 exec eslint . 2>&1 | tail -5
-```
-
-A nonzero result requires inspecting the full diagnostics before reporting the
-outcome. Do not infer a passing gate from empty output or a printed success
-marker. Standalone commands are the default; shell-specific status arrays and
-custom wrappers add no value for these examples.
 
 ## Verification and limits
 

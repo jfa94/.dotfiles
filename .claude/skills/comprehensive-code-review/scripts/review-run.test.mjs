@@ -56,9 +56,13 @@ test("init atomically creates unique run state and raw directory", (t) => {
   assert.equal(existsSync(path.join(inputsDir, "review-input.txt")), true);
 });
 
+const writeReport = (run, body = "# Review\n") =>
+  writeFileSync(path.join(run.runDir, "review.md"), body);
+
 test("finish records terminal state and rejects a second transition", (t) => {
   const root = fixture(t);
   const run = init(root, "comprehensive");
+  writeReport(run);
   const finished = JSON.parse(
     execFileSync(process.execPath, [
       script,
@@ -68,13 +72,13 @@ test("finish records terminal state and rejects a second transition", (t) => {
       "--status",
       "DONE_WITH_CONCERNS",
       "--report",
-      "report.md",
+      "review.md",
       "--reason",
       "one reviewer blocked",
     ]),
   );
   assert.equal(finished.status, "DONE_WITH_CONCERNS");
-  assert.equal(finished.report, "report.md");
+  assert.equal(finished.report, "review.md");
   const again = spawnSync(process.execPath, [
     script,
     "finish",
@@ -90,6 +94,7 @@ test("finish records terminal state and rejects a second transition", (t) => {
 test("finish with the same terminal status is an idempotent no-op", (t) => {
   const root = fixture(t);
   const run = init(root, "focused");
+  writeReport(run);
   const first = JSON.parse(
     execFileSync(process.execPath, [
       script,
@@ -99,13 +104,13 @@ test("finish with the same terminal status is an idempotent no-op", (t) => {
       "--status",
       "DONE",
       "--report",
-      "report.md",
+      "review.md",
     ]),
   );
   assert.equal(first.status, "DONE");
   const again = spawnSync(
     process.execPath,
-    [script, "finish", "--run-dir", run.runDir, "--status", "DONE", "--report", "report.md"],
+    [script, "finish", "--run-dir", run.runDir, "--status", "DONE", "--report", "review.md"],
     { encoding: "utf8" },
   );
   assert.equal(again.status, 0, again.stderr);
@@ -148,6 +153,42 @@ test("finish rejects a run outside the canonical artifact tree", (t) => {
   ]);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr.toString(), /canonical/);
+});
+
+const finishWithReport = (run, report = "review.md") =>
+  spawnSync(
+    process.execPath,
+    [script, "finish", "--run-dir", run.runDir, "--status", "DONE", "--report", report],
+    { encoding: "utf8" },
+  );
+
+const runStatus = (run) =>
+  JSON.parse(readFileSync(path.join(run.runDir, "run.json"), "utf8")).status;
+
+test("finish refuses a missing report and leaves the run RUNNING", (t) => {
+  const run = init(fixture(t), "comprehensive");
+  const result = finishWithReport(run);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /missing or empty/);
+  assert.equal(runStatus(run), "RUNNING");
+});
+
+test("finish refuses an empty report and leaves the run RUNNING", (t) => {
+  const run = init(fixture(t), "comprehensive");
+  writeReport(run, "");
+  const result = finishWithReport(run);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /missing or empty/);
+  assert.equal(runStatus(run), "RUNNING");
+});
+
+test("finish rejects the old report.md name", (t) => {
+  const run = init(fixture(t), "comprehensive");
+  writeFileSync(path.join(run.runDir, "report.md"), "# Review\n");
+  const result = finishWithReport(run, "report.md");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--report must be review\.md/);
+  assert.equal(runStatus(run), "RUNNING");
 });
 
 // --- disposition subcommand + pass-number ---

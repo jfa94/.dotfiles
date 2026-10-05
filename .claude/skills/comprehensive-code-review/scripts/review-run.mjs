@@ -127,7 +127,14 @@ const finish = (args) => {
   ) {
     fail("--run-dir must be a canonical .code-review/runs/<runId> directory");
   }
-  if (args.report && args.report !== "report.md") fail("--report must be report.md");
+  if (args.report) {
+    if (args.report !== "review.md") fail("--report must be review.md");
+    let report;
+    try {
+      report = statSync(path.join(runDir, args.report));
+    } catch {}
+    if (!report?.isFile() || report.size === 0) fail(`${args.report} is missing or empty`);
+  }
   const statePath = path.join(runDir, "run.json");
   let current;
   try {

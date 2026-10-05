@@ -27,9 +27,9 @@ fi
 # (-rf, -fr, -Rf, -r -f, -f -r): flag groups may precede and follow the r-group.
 RECURSIVE_RM='rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*[rR][a-zA-Z]*([[:space:]]+-[a-zA-Z]+)*'
 
-# Policy denies — mirrored from settings.json permissions.deny. They live in BOTH:
-# settings.json is primary, but the CLI can strip that array on auto-rewrite, so
-# these are duplicated here as a backstop (see anthropics/claude-code#22659,
+# Policy denies. Literal spellings mirror settings.json permissions.deny (the CLI
+# can strip that array on auto-rewrite, so they are duplicated here as a backstop);
+# bundled and abbreviated forms are enforced only here (see anthropics/claude-code#22659,
 # #51843, #6699). The push-refspec pattern ([^;&|]* bounds it to the same
 # command) catches `git push origin +branch` force-pushes flag rules miss.
 # Backslash-newline is joined first (grep is line-based). Bundled shorts and
@@ -50,6 +50,7 @@ for PAT in \
   "${GIT} commit[[:space:]]${ARGS}-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|\$)" \
   "${GIT} (commit|push|rebase)[[:space:]]${ARGS}--no-veri" \
   "${GIT} commit[[:space:]]${ARGS}--no-g" \
+  "${GIT} push[[:space:]]${ARGS}--m" \
   "${RECURSIVE_RM}[[:space:]]+(~|\\\$HOME)" \
   '(pnpm|npm|yarn) publish'; do
   if printf '%s' "$JOINED" | grep -qE "$PAT"; then
@@ -65,7 +66,7 @@ for PAT in \
   "${GIT} rebase[[:space:]]${ARGS}--ex" \
   "${GIT} rebase[[:space:]]${ARGS}-[a-zA-Z]*x" \
   "${GIT} fetch[[:space:]]${ARGS}--upl" \
-  "${GIT} ls-remote[[:space:]]${ARGS}--u" \
+  "${GIT} ls-remote[[:space:]]${ARGS}--(u|exe)" \
   "${GIT} push[[:space:]]${ARGS}--(rece|e)"; do
   if printf '%s' "$JOINED" | grep -qE "$PAT"; then
     jq -cn '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git option executes an arbitrary command — run it manually"}}'

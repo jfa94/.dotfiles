@@ -296,11 +296,11 @@ test("excluded paths dropped: dist/ segment and lockfile", (t) => {
 
 test("review artifacts are always excluded from findings", (t) => {
   const out = run(t, {
-    files: { ".code-review/runs/example/report.md": "generated review report" },
+    files: { ".code-review/runs/example/review.md": "generated review report" },
     reviewers: [
       reviewer("quality", [
         finding({
-          file: ".code-review/runs/example/report.md",
+          file: ".code-review/runs/example/review.md",
           line: 1,
           verbatim: "generated review report",
         }),

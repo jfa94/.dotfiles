@@ -4,7 +4,7 @@
 
 ```
 <runDir>/                            # .code-review/runs/<runId>/
-├── report.md                        # final consolidated report (this format) — the only human render
+├── review.md                        # final consolidated report (this format) — the only human render
 ├── run.json                         # runtime/profile/run identity + lifecycle status
 └── raw/                             # machine record; no per-reviewer or Codex .md renders
     ├── workflow-result.json         # reviewer fan-out output (persisted by the workflow)
@@ -415,13 +415,13 @@ Report-level (not a reviewer's):
 
 ## Summary block (returned to the orchestrator, printed to the user)
 
-After writing `report.md`, produce this block (values from `verified-findings.json` `stats` and
+After writing `review.md`, produce this block (values from `verified-findings.json` `stats` and
 the reviewers table):
 
 ```
 ## <Comprehensive|Focused> Code Review complete
 
-Report: <runDir>/report.md
+Report: <runDir>/review.md
 Reviewers: <n> DONE, <n> SKIPPED, <n> BLOCKED
 Findings: <total> verified post-dedup (<n> critical, <n> important, <n> minor; <n> duplicates merged; <n> blocking)
 Open questions: <n> intent rulings needed (<n> decision-required)   # only when > 0

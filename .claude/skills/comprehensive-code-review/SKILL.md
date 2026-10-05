@@ -185,13 +185,14 @@ Spawn a subagent with the charter at `<this skill's base directory>/agents/repor
 skill base directory, `runDir`/`runId`/`repoRoot`, profile `comprehensive`, the Phase 1 scope
 facts (mode, scopeLabel, manifestMode, seeds ran/skipped, warnings), the Phase 3 `codex` state,
 and the exact finish command:
-`node "<base>/scripts/review-run.mjs" finish --repo-root "$REPO_ROOT" --run-dir "$RUN_DIR" --status <DONE|DONE_WITH_CONCERNS> --report report.md`
+`node "<base>/scripts/review-run.mjs" finish --repo-root "$REPO_ROOT" --run-dir "$RUN_DIR" --status <DONE|DONE_WITH_CONCERNS> --report review.md`
 (status DONE_WITH_CONCERNS when any track is BLOCKED or the verdict is NEEDS-DECISION).
 
 Relay the subagent's summary block + WARNING lines to the user verbatim, plus the report path.
 
-**Fallback:** if the subagent fails or returns no VERDICT line, read
-`references/report-format.md` yourself, write `<runDir>/report.md`, run the finish command, and
+**Fallback:** if the subagent fails, returns no VERDICT line, or `<runDir>/review.md` is missing
+after it returns (check with one existence test), read
+`references/report-format.md` yourself, write `<runDir>/review.md`, run the finish command, and
 print the summary block per that reference.
 
 ## Phase 6 — STATUS line

@@ -44,6 +44,8 @@ assert_hook "rebase -ix" "git -C /x rebase -ix sh main" pass
 assert_hook "rebase --ex" "git -C /x rebase --ex=sh" pass
 assert_hook "fetch --upl" "git -C /x fetch --upl=sh" pass
 assert_hook "ls-remote --u" "git -C /x ls-remote --u=sh" pass
+assert_hook "ls-remote --exec" "git -C /x ls-remote --exec=sh origin" pass
+assert_hook "ls-remote --exit-code" "git -C /x ls-remote --exit-code origin" allow
 assert_hook "push --rece" "git -C /x push --rece=sh" pass
 assert_hook "push --e" "git -C /x push --e=sh" pass
 assert_hook "diff --output" "git -C /x diff --output=/tmp/f" pass
@@ -54,6 +56,12 @@ DANGEROUS="$ROOT/.claude/hooks/dangerous-patterns-check.sh"
 out=$("$DANGEROUS" <<< "$(jq -cn --arg c "git -C . push -fu" '{tool_input:{command:$c}}')")
 [[ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" = deny ]] || {
   echo "FAIL git-c-allow / push -fu not denied by dangerous-patterns" >&2
+  exit 1
+}
+PASS=$((PASS + 1))
+out=$("$DANGEROUS" <<< "$(jq -cn --arg c "git -C . push --mirror origin" '{tool_input:{command:$c}}')")
+[[ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" = deny ]] || {
+  echo "FAIL git-c-allow / push --mirror not denied by dangerous-patterns" >&2
   exit 1
 }
 PASS=$((PASS + 1))

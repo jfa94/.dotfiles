@@ -29,7 +29,7 @@ TWO='remote -v|config --get|config --list|cherry -v|tag -l'
 # Options that run a program or write a file (shortest git-accepted prefixes per
 # subcommand). Matching segments fall through to a prompt; dangerous-patterns denies the exec ones.
 A='[[:space:]]+(.*[[:space:]])?'
-INJECT="^git -C [^ ]+ (rebase${A}(--ex|-[a-zA-Z]*x)|fetch${A}--upl|ls-remote${A}--u|push${A}--(rece|e)|[a-z-]+${A}--out)"
+INJECT="^git -C [^ ]+ (rebase${A}(--ex|-[a-zA-Z]*x)|fetch${A}--upl|ls-remote${A}--(u|exe)|push${A}--(rece|e)|[a-z-]+${A}--out)"
 
 # Split on chain operators (&&, ||, ;, |, &, newline — tr splits doubles into
 # an empty segment, skipped); every non-empty segment must match. An operator

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Cloud environment bootstrap for Claude Code (claude.ai/code).
 # Runs as root at environment build time, before Claude Code launches.
-# Invoked by the environment setup-script shim (see docs/cloud-environments.md).
+# Invoked by the environment setup-script shim (see docs/guides/set-up-cloud-environment.md).
 # Must ALWAYS exit 0: a nonzero exit fails the whole environment build, and a
 # degraded environment beats no environment. Failures are collected + reported.
 

@@ -66,9 +66,9 @@ if jq -e '.permissions.allow[] | select(test("^Edit\\(/(?:private/)?(?:tmp|var/)
   fail "$SETTINGS contains project-relative temp Edit permission"
 fi
 
-grep -Fq '.codex/skills/code-review' docs/codex-claude-parity.md \
+grep -Fq '.codex/skills/code-review' docs/reference/codex-claude-parity.md \
   || fail 'parity doc missing Codex-only skill location'
-grep -Fq '.code-review/runs/<UTC timestamp>-<profile>-<nonce>/' docs/codex-claude-parity.md \
+grep -Fq '.code-review/runs/<UTC timestamp>-<profile>-<nonce>/' docs/reference/codex-claude-parity.md \
   || fail 'parity doc missing shared artifact contract'
 grep -Fq 'Codex-specific routers must reference those resources rather than copy them.' AGENTS.md \
   || fail 'root AGENTS.md missing canonical Claude resource policy'

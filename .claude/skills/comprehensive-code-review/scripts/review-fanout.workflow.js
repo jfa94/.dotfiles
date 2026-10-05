@@ -615,11 +615,8 @@ async function refuteFindings(findings, { prompt, labelBase }) {
   );
 }
 
-// Refute every structured Codex finding with fresh agents and persist the
-// annotated set to codex-verify-result.json. Same invariant as the reviewer
-// Verify stage: native criticals need 2 independent unanimous refuters (a
-// single refuter is the weakest link for the highest-stakes drops); every
-// other severity keeps 1. Annotates `codexFindings` in place.
+// Refute every structured Codex finding via refuteFindings and persist the
+// annotated set to codex-verify-result.json.
 async function refuteCodexFindings(codexFindings, input) {
   log(
     "Codex verify: refuting " +
