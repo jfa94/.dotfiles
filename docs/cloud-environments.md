@@ -127,7 +127,9 @@ override a refresh.
   the session's env files persist. One read costs 2 of the token's 1000 hourly reads.
 - **Failure.** The session continues with a warning in its context. A failed
   refresh keeps the last values ("may be stale"); a fresh VM has none ("no
-  project variables are loaded"). A successful refresh removes variables deleted
+  project variables are loaded"). The read times out after 45 s (hook timeout
+  60 s). Setting only one of the two inputs is a failure ("configuration
+  incomplete"), not an opt-out. A successful refresh removes variables deleted
   in 1Password, so a same-named variable in the cloud UI reappears: remove duplicates.
 - **Validation is all-or-nothing.** Names must match `[A-Za-z_][A-Za-z0-9_]*`
   and be unique; `OP_*`, `CLAUDE_*`, `HOME`, `PATH`, `BASH_ENV`, `ENV`,
@@ -201,4 +203,6 @@ override a refresh.
 - `tests/cloud-setup.sh` covers syntax, degraded-install behavior, symlinks,
   and the SDK install (arguments, failure, no pnpm).
 - `tests/cloud-op-env.sh` covers the 1Password hook and fetcher with fake
-  tools: gating, dependencies, value round trips, refresh, failures, secrecy.
+  tools: hook registration, gating, dependencies, value round trips, refresh,
+  failures, secrecy; it also runs the fetcher's `node --test` suite
+  (`cloud/op-env/fetch-variables.test.mjs`).
