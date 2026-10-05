@@ -433,6 +433,9 @@ pathspecs.
 
 ```
 for each finding in (workflowResult.reviewers[*].findings + codex findings):
+    if finding's reviewer.status != "DONE":
+        finding.verification = "dropped_reviewer_not_done"      -> move to dropped list
+        continue                                                # BLOCKED reviewers were never refuted
     if is_excluded_build_output(finding.file):
         finding.verification = "dropped_excluded_build_output" -> move to dropped list
         continue                                                # backstops Codex; reviewers are pre-filtered
@@ -546,7 +549,13 @@ deterministic passes over the verified findings (change the script and this spec
    it: git cannot re-include a file whose parent directory is excluded, so the line is inert. A
    missing file is a no-op (fresh repo); an unreadable/invalid one sets `dispositionsError` in the
    output and skips matching (fail-open, the `codexPayloadError` pattern). Entries with status
-   `overturned` never match. `accepted-risk`, `by-design`, and `intent-confirmed` are effective
+   `overturned` and entries with an unknown status never match (an unknown status is logged to stderr,
+   never treated as active; the shared rule lives in `scripts/disposition-ledger.mjs`, imported by
+   both `review-run.mjs` and `verify-citations.mjs`). `review-run.mjs disposition` refuses to
+   overwrite an entry with `decidedBy: "user"` unless the incoming write is also `user` (output
+   carries `skipped: "user ruling preserved"`). Each matched challenge is also emitted in the
+   top-level `overturnedDispositions[]` (`{id, file, title}`, recorded at match time so dedup cannot
+   lose it); Phase 4 writes each back as `--status overturned --decided-by report`. `accepted-risk`, `by-design`, and `intent-confirmed` are effective
    only when `decidedBy === "user"`; incorrectly attributed entries are ignored. **Match** = same
    repo-relative `file` AND (exact normalized title OR ≥2 fingerprint keywords all present in the
    normalized title+why), where normalization = lowercase, strip non-alphanumerics, collapse

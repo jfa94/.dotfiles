@@ -362,7 +362,7 @@ the 4→3 collapse loses no signal.
   "challenge_unmatched": "<true; the challenge id matched no active ledger entry — kept and surfaced>",
   "outside_diff": "<true; only on non-systemic findings citing a file outside changedFiles (diff modes)>",
   "refute_reason": "<refuter counter-evidence; only when verification is refuted>",
-  "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|dropped_systemic_incomplete|dropped_systemic_anchor_unverified|codex_file_missing|codex_line_out_of_range"
+  "verification": "ok|relocated_ok|refuted|dropped_no_match|dropped_no_citation|dropped_quote_too_short|dropped_systemic_incomplete|dropped_systemic_anchor_unverified|dropped_excluded_build_output|dropped_reviewer_not_done|codex_file_missing|codex_line_out_of_range"
 }
 ```
 

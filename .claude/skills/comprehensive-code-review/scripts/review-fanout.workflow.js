@@ -53,7 +53,24 @@ const FINDINGS_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        allOf: [{ not: { required: ["intent_question", "doc_basis"] } }],
+        allOf: [
+          { not: { required: ["intent_question", "doc_basis"] } },
+          // critical/important must state reachability (else severity is unaudited)
+          {
+            not: {
+              properties: { severity: { enum: ["critical", "important"] } },
+              not: { required: ["reachability"] },
+            },
+          },
+          // a systemic finding must carry failure_mode, scenario and anchors
+          {
+            not: {
+              required: ["kind"],
+              properties: { kind: { const: "systemic" } },
+              not: { required: ["failure_mode", "scenario", "anchors"] },
+            },
+          },
+        ],
         required: ["severity", "file", "line", "verbatim", "title", "why"],
         properties: {
           severity: { enum: ["critical", "important", "minor"] },
@@ -459,7 +476,7 @@ const CODEX_RUNNER_SCHEMA = {
 function buildCodexRunnerPrompt(input) {
   const codex = input.codex;
   const outDir = input.outDir;
-  const repoRoot = input.repoRoot || ".";
+  const repoRoot = input.repoRoot;
   const jsonPath = repoRoot + "/" + outDir + "/raw/codex-adversarial.json";
   const stderrPath =
     repoRoot + "/" + outDir + "/raw/codex-adversarial.stderr.log";
@@ -569,56 +586,52 @@ function applyVerificationVotes(finding, verdicts, needed) {
   }
 }
 
+// Refute each finding with fresh agents and annotate it in place. Criticals get
+// 2 independent refuters and are dropped only on a unanimous refute — a single
+// refuter is the weakest link for the highest-stakes drops; others keep 1.
+// A null verdict (verifier skipped/died) keeps the finding: parallel() resolves
+// a thrown thunk to null, so a crashed refuter lands in the same keep path.
+async function refuteFindings(findings, { prompt, labelBase }) {
+  const votesFor = (f) => (f.severity === "critical" ? 2 : 1);
+  const verdictSets = await parallel(
+    findings.map((f) => () => {
+      const votes = votesFor(f);
+      return parallel(
+        Array.from(
+          { length: votes },
+          (_, v) => () =>
+            agent(prompt(f), {
+              label: labelBase(f) + (votes > 1 ? ":v" + (v + 1) : ""),
+              phase: "Verify",
+              model: VERIFIER_MODEL,
+              schema: VERIFY_SCHEMA,
+            }),
+        ),
+      );
+    }),
+  );
+  verdictSets.forEach((vs, i) =>
+    applyVerificationVotes(findings[i], vs, votesFor(findings[i])),
+  );
+}
+
 // Refute every structured Codex finding with fresh agents and persist the
 // annotated set to codex-verify-result.json. Same invariant as the reviewer
 // Verify stage: native criticals need 2 independent unanimous refuters (a
 // single refuter is the weakest link for the highest-stakes drops); every
 // other severity keeps 1. Annotates `codexFindings` in place.
 async function refuteCodexFindings(codexFindings, input) {
-  const eligible = codexFindings;
   log(
     "Codex verify: refuting " +
-      eligible.length +
-      " of " +
       codexFindings.length +
       " findings (all native severities).",
   );
-  const verdictSets = await parallel(
-    eligible.map((f) => () => {
-      const votes = f.severity === "critical" ? 2 : 1;
-      return parallel(
-        Array.from(
-          { length: votes },
-          (_, v) => () =>
-            agent(
-              buildCodexVerifyPrompt(f, input.inputs),
-              {
-              label:
-                "verify:codex:" +
-                f.file +
-                ":" +
-                f.line_start +
-                (votes > 1 ? ":v" + (v + 1) : ""),
-              phase: "Verify",
-              model: VERIFIER_MODEL,
-              schema: VERIFY_SCHEMA,
-              },
-            ),
-        ),
-      );
-    }),
-  );
-  // A null verdict (verifier skipped/died) keeps the finding — same
-  // keep-on-uncertainty bias as the reviewer refuters. Note: a rejecting
-  // agent() call is NOT missing error handling here — parallel() resolves a
-  // thrown thunk to null per its documented semantics, so a crashed refuter
-  // already lands in this null-keeps-the-finding path, same as a clean skip.
-  verdictSets.forEach((vs, i) => {
-    const needed = eligible[i].severity === "critical" ? 2 : 1;
-    applyVerificationVotes(eligible[i], vs, needed);
+  await refuteFindings(codexFindings, {
+    prompt: (f) => buildCodexVerifyPrompt(f, input.inputs),
+    labelBase: (f) => "verify:codex:" + f.file + ":" + f.line_start,
   });
   await persistResult(
-    input.repoRoot || ".",
+    input.repoRoot,
     input.outDir,
     "codex-verify-result.json",
     "codexFindings",
@@ -626,8 +639,8 @@ async function refuteCodexFindings(codexFindings, input) {
       runtime: input.runtime,
       profile: input.profile,
       runId: input.runId,
-      scopeLabel: input.scopeLabel || null,
-      mode: input.mode || null,
+      scopeLabel: input.scopeLabel,
+      mode: input.mode,
       codexFindings,
     },
   );
@@ -1065,45 +1078,9 @@ const results = await pipeline(
       (f) => f.severity === "critical" || f.severity === "important",
     );
     if (toVerify.length === 0) return res;
-    // Criticals get 2 independent refuters and are dropped only on a unanimous
-    // refute — a single refuter is the weakest link for the highest-stakes
-    // drops. Importants keep the single refuter.
-    const verdictSets = await parallel(
-      toVerify.map((f) => () => {
-        const votes = f.severity === "critical" ? 2 : 1;
-        return parallel(
-          Array.from(
-            { length: votes },
-            (_, v) => () =>
-              agent(
-                buildVerifyPrompt(
-                  res.name,
-                  f,
-                  input.inputs,
-                ),
-                {
-                label:
-                  "verify:" +
-                  res.name +
-                  ":" +
-                  f.file +
-                  ":" +
-                  f.line +
-                  (votes > 1 ? ":v" + (v + 1) : ""),
-                phase: "Verify",
-                model: VERIFIER_MODEL,
-                schema: VERIFY_SCHEMA,
-                },
-              ),
-          ),
-        );
-      }),
-    );
-    // A null verdict (verifier skipped/died) keeps the finding — verification
-    // failure must not silently delete a reviewer's finding.
-    verdictSets.forEach((vs, i) => {
-      const needed = toVerify[i].severity === "critical" ? 2 : 1;
-      applyVerificationVotes(toVerify[i], vs, needed);
+    await refuteFindings(toVerify, {
+      prompt: (f) => buildVerifyPrompt(res.name, f, input.inputs),
+      labelBase: (f) => "verify:" + res.name + ":" + f.file + ":" + f.line,
     });
     return res;
   },
@@ -1120,14 +1097,14 @@ const consolidated = {
   runtime: input.runtime,
   profile: input.profile,
   runId: input.runId,
-  scopeLabel: input.scopeLabel || null,
-  mode: input.mode || null,
+  scopeLabel: input.scopeLabel,
+  mode: input.mode,
   reviewers: results.filter(Boolean),
   codex,
 };
 
 await persistResult(
-  input.repoRoot || ".",
+  input.repoRoot,
   input.outDir,
   "workflow-result.json",
   "reviewers",

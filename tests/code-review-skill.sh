@@ -151,6 +151,7 @@ trap - EXIT
 
 node --test \
   "$CLAUDE_REVIEW/scripts/review-run.test.mjs" \
+  "$CLAUDE_REVIEW/scripts/disposition-ledger.test.mjs" \
   "$CLAUDE_REVIEW/scripts/review-benchmark.test.mjs" \
   "$CLAUDE_REVIEW/scripts/verify-citations.test.mjs" \
   "$CLAUDE_REVIEW/scripts/review-fanout.workflow.test.mjs" \

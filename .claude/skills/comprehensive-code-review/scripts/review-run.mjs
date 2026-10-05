@@ -10,18 +10,17 @@ import {
 } from "node:fs";
 import path from "node:path";
 
+import {
+  VALID_DISPOSITION,
+  collapseWs,
+  isActiveDisposition,
+  normalizeClaim,
+} from "./disposition-ledger.mjs";
+
 const VALID_RUNTIME = new Set(["claude", "codex"]);
 const VALID_PROFILE = new Set(["focused", "comprehensive"]);
 const VALID_MODE = new Set(["working-tree", "base", "full"]);
 const VALID_TERMINAL = new Set(["DONE", "DONE_WITH_CONCERNS", "ABORTED"]);
-const VALID_DISPOSITION = new Set([
-  "accepted-risk",
-  "wont-fix",
-  "refuted",
-  "overturned",
-  "by-design",
-  "intent-confirmed",
-]);
 const VALID_DECIDED_BY = new Set(["caller", "report", "user"]);
 const RUN_ID = /^\d{8}T\d{6}Z-(focused|comprehensive)-[A-Za-z0-9]{6}$/;
 
@@ -51,12 +50,6 @@ const required = (args, key) => {
 
 const timestamp = () =>
   new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-
-const collapseWs = (s) => String(s).replace(/\s+/g, " ").trim();
-// Same normalization as verify-citations.mjs matchDisposition — the two
-// scripts must agree on what "same title" means.
-const normalizeClaim = (s) =>
-  collapseWs(String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, " "));
 
 const readLedger = (repoRoot) => {
   const ledgerPath = path.join(repoRoot, ".code-review", "dispositions.json");
@@ -215,6 +208,13 @@ const disposition = (args) => {
       normalizeClaim(d.fingerprint.title ?? "") === normTitle,
   );
   let entry;
+  if (existing?.decidedBy === "user" && decidedBy !== "user") {
+    // An automated write-back must not clobber a ruling the user made.
+    process.stdout.write(
+      `${JSON.stringify({ ...existing, ledgerPath, skipped: "user ruling preserved" })}\n`,
+    );
+    return;
+  }
   if (existing) {
     existing.status = status;
     existing.reason = reason;
@@ -267,18 +267,9 @@ const renderDispositions = (args) => {
   const eligible = ledger.dispositions
     .filter((entry) => {
       const file = entry?.fingerprint?.file;
-      if (!file || entry.status === "overturned") return false;
+      if (!file || !isActiveDisposition(entry)) return false;
       if (!existsSync(path.join(repoRoot, file))) return false;
-      if (!full && !changedFiles.has(file)) return false;
-      if (
-        ["accepted-risk", "by-design", "intent-confirmed"].includes(
-          entry.status,
-        ) &&
-        entry.decidedBy !== "user"
-      ) {
-        return false;
-      }
-      return true;
+      return full || changedFiles.has(file);
     })
     .sort((a, b) => String(b.decidedAt || "").localeCompare(String(a.decidedAt || "")))
     .slice(0, 20);

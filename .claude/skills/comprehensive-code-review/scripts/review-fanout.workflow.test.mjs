@@ -243,6 +243,19 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
     .schema.properties.findings.items;
   assert.deepEqual(reviewerSchema.allOf, [
     { not: { required: ["intent_question", "doc_basis"] } },
+    {
+      not: {
+        properties: { severity: { enum: ["critical", "important"] } },
+        not: { required: ["reachability"] },
+      },
+    },
+    {
+      not: {
+        required: ["kind"],
+        properties: { kind: { const: "systemic" } },
+        not: { required: ["failure_mode", "scenario", "anchors"] },
+      },
+    },
   ]);
   // Top-level oneOf/allOf/anyOf are rejected by the API for tool input
   // schemas; exclusivity is enforced in applyVerificationVotes instead.

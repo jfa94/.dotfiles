@@ -771,6 +771,9 @@ test("challenge with matching id stays actionable; unmatched id is annotated", (
   assert.equal(matched.findings.length, 1);
   assert.equal(matched.findings[0].challenge_unmatched, undefined);
   assert.equal(matched.previouslyAdjudicated.length, 0);
+  assert.deepEqual(matched.overturnedDispositions, [
+    { id: 1, file: "src/a.js", title: "t" },
+  ]);
   const unmatched = run(t, {
     files: { "src/a.js": SRC },
     reviewers: [reviewer("quality", [finding({ challenges_disposition: 99 })])],
@@ -778,6 +781,7 @@ test("challenge with matching id stays actionable; unmatched id is annotated", (
   });
   assert.equal(unmatched.findings.length, 1);
   assert.equal(unmatched.findings[0].challenge_unmatched, true);
+  assert.deepEqual(unmatched.overturnedDispositions, []);
 });
 
 test("overturned entries never suppress", (t) => {
@@ -1104,4 +1108,72 @@ test("dedup preserves verified documentation evidence when the primary finding c
   assert.equal(out.findings.length, 1);
   assert.equal(out.findings[0].reviewer, "security-reviewer");
   assert.deepEqual(out.findings[0].doc_basis, basis);
+});
+
+test("BLOCKED reviewer findings are dropped as never refuted", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [
+      reviewer("quality", [finding({ severity: "critical" })], {
+        status: "BLOCKED",
+        blocked_reason: "could not finish",
+      }),
+    ],
+  });
+  assert.equal(out.findings.length, 0);
+  assert.equal(out.dropped.length, 1);
+  assert.equal(out.dropped[0].verification, "dropped_reviewer_not_done");
+  assert.equal(out.stats.perReviewer.quality.droppedOther, 1);
+});
+
+test("a ledger entry with an unknown status never suppresses a finding", (t) => {
+  const out = run(t, {
+    files: { "src/a.js": SRC },
+    reviewers: [reviewer("quality", [finding()])],
+    dispositions: [dispo({ status: "wontfix" })],
+  });
+  assert.equal(out.findings.length, 1);
+  assert.equal(out.previouslyAdjudicated.length, 0);
+});
+
+test("a critical Codex doc_basis needs two verified bases; a non-critical needs one", (t) => {
+  const good = {
+    file: "docs/contract.md",
+    line: 1,
+    verbatim: "Failed retries must surface to callers.",
+  };
+  const bad = { ...good, verbatim: "This independent vote hallucinated its quote." };
+  const codexFinding = (severity) => ({
+    severity,
+    title: "Retries swallowed",
+    body: "b",
+    file: "src/a.js",
+    line_start: 2,
+    line_end: 2,
+    confidence: 0.9,
+  });
+  const verifyPass = (severity, candidates) =>
+    run(t, {
+      files: { "src/a.js": SRC, "docs/contract.md": "Failed retries must surface to callers.\n" },
+      codex: {
+        target: { mode: "working-tree", explicit: true },
+        result: { verdict: "needs-attention", summary: "s", findings: [codexFinding(severity)] },
+      },
+      codexVerify: {
+        codexFindings: [
+          {
+            ...codexFinding(severity),
+            doc_basis: good,
+            doc_basis_candidates: candidates,
+          },
+        ],
+      },
+    }).findings[0];
+  const critOne = verifyPass("critical", [good, bad]);
+  assert.ok(critOne.documentation_basis_error);
+  assert.equal(critOne.doc_basis, undefined);
+  const critTwo = verifyPass("critical", [good, good]);
+  assert.equal(critTwo.documentation_verification, "ok");
+  const highOne = verifyPass("high", [good, bad]);
+  assert.equal(highOne.documentation_verification, "ok");
 });

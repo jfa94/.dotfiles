@@ -17,6 +17,13 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
+import {
+  VALID_DISPOSITION,
+  collapseWs,
+  isActiveDisposition,
+  normalizeClaim,
+} from "./disposition-ledger.mjs";
+
 const MIN_QUOTE = 10;
 const EXCLUDED_SEGMENTS = new Set([
   ".code-review",
@@ -63,16 +70,9 @@ function parseArgs(argv) {
   return opts;
 }
 
-const collapseWs = (s) => String(s).replace(/\s+/g, " ").trim();
-
 function relKey(repoRoot, file) {
   return path.relative(repoRoot, path.resolve(repoRoot, file));
 }
-
-// Fingerprint normalization for disposition matching: lowercase, strip
-// punctuation, collapse whitespace — resilient to rewording, blind to lines.
-const normalizeClaim = (s) =>
-  collapseWs(String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, " "));
 
 function isExcluded(rel) {
   const segments = rel.split(path.sep);
@@ -172,22 +172,21 @@ function main() {
       dispositions = r.value.dispositions.filter((d) => {
         const validShape =
           d &&
-          d.status !== "overturned" &&
           Number.isInteger(d.id) &&
           d.fingerprint &&
           typeof d.fingerprint.file === "string" &&
           typeof d.fingerprint.title === "string";
         if (!validShape) return false;
-        // Intent and risk rulings suppress or promote actionable work. Only
-        // an explicit user decision may activate them.
-        if (
-          d.status === "accepted-risk" ||
-          d.status === "by-design" ||
-          d.status === "intent-confirmed"
-        ) {
-          return d.decidedBy === "user";
+        if (!VALID_DISPOSITION.has(d.status)) {
+          console.error(
+            "verify-citations: ignoring disposition #" +
+              d.id +
+              " with unknown status " +
+              JSON.stringify(d.status),
+          );
+          return false;
         }
-        return true;
+        return isActiveDisposition(d);
       });
     }
   }
@@ -258,11 +257,15 @@ function main() {
     bump(finding.reviewer, "verified");
   };
 
-  // --- Reviewer findings (§6 order: excluded → refuted → systemic → citation) ---
+  // --- Reviewer findings (§6 order: not-done → excluded → refuted → systemic → citation) ---
   for (const reviewer of workflowResult.reviewers || []) {
     for (const raw of reviewer.findings || []) {
       const f = { ...raw, reviewer: reviewer.name };
-      if (f.file && isExcluded(relKey(repoRoot, f.file))) {
+      // The verify stage refutes only DONE reviewers, so a BLOCKED reviewer's
+      // findings were never refuted and must not ship.
+      if (reviewer.status !== "DONE") {
+        drop(f, "dropped_reviewer_not_done");
+      } else if (f.file && isExcluded(relKey(repoRoot, f.file))) {
         drop(f, "dropped_excluded_build_output");
       } else if (f.refuted) {
         drop(f, "refuted");
@@ -363,6 +366,9 @@ function main() {
         } else {
           if (v.intent_question) match.intent_question = v.intent_question;
           if (v.doc_basis) match.doc_basis = v.doc_basis;
+          if (Array.isArray(v.doc_basis_candidates)) {
+            match.doc_basis_candidates = v.doc_basis_candidates;
+          }
         }
       }
     }
@@ -392,7 +398,17 @@ function main() {
       confidence: c.confidence,
       kind: "local",
       ...(c.intent_question ? { intent_question: c.intent_question } : {}),
-      ...(c.doc_basis ? { doc_basis: c.doc_basis } : {}),
+      ...(c.doc_basis
+        ? {
+            doc_basis: c.doc_basis,
+            // Never taken from the LLM-transcribed annotation: native
+            // criticals need two independent documentation bases.
+            doc_basis_required: c.severity === "critical" ? 2 : 1,
+          }
+        : {}),
+      ...(Array.isArray(c.doc_basis_candidates)
+        ? { doc_basis_candidates: c.doc_basis_candidates }
+        : {}),
     };
     if (c.refuted) {
       drop(Object.assign(f, { refute_reason: c.refute_reason }), "refuted");
@@ -477,13 +493,23 @@ function main() {
   // was already decided in a prior pass — reported separately, never
   // actionable — UNLESS it explicitly challenges that disposition by id.
   const previouslyAdjudicated = [];
+  const overturnedDispositions = [];
   const dispositionMatched = [];
   for (const f of verified) {
     const d = matchDisposition(f);
     if (f.challenges_disposition != null) {
       // Challenges stay actionable (they survived their own refutation in the
       // workflow); a challenge that matches nothing is surfaced, not dropped.
-      if (!d || d.id !== f.challenges_disposition) f.challenge_unmatched = true;
+      if (!d || d.id !== f.challenges_disposition) {
+        f.challenge_unmatched = true;
+      } else if (!overturnedDispositions.some((o) => o.id === d.id)) {
+        // Recorded here, before dedup, so a dropped twin cannot lose the signal.
+        overturnedDispositions.push({
+          id: d.id,
+          file: d.fingerprint.file,
+          title: d.fingerprint.title,
+        });
+      }
       dispositionMatched.push(f);
     } else if (d) {
       const annotated = Object.assign({}, f, {
@@ -622,6 +648,7 @@ function main() {
     findings: deduped,
     openQuestions,
     previouslyAdjudicated,
+    overturnedDispositions,
     dropped,
     codexPayloadError,
     codexVerifyError,

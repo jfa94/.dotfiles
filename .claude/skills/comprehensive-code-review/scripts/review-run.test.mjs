@@ -198,7 +198,7 @@ test("disposition creates ledger with id 1 and normalized repo-relative file", (
 
 test("disposition upserts on same file + normalized title, appends on new title", (t) => {
   const root = fixture(t);
-  dispositionCmd(root);
+  dispositionCmd(root, { status: "refuted", "decided-by": "report" });
   const upserted = JSON.parse(
     dispositionCmd(root, {
       title: "TOCTOU: between stat and RENAME!!", // same normalized title
@@ -213,6 +213,30 @@ test("disposition upserts on same file + normalized title, appends on new title"
   const appended = JSON.parse(dispositionCmd(root, { title: "other claim" }));
   assert.equal(appended.id, 2);
   assert.equal(readLedger(root).dispositions.length, 2);
+});
+
+test("an automated write never overwrites a user ruling; a user write does overwrite", (t) => {
+  const root = fixture(t);
+  dispositionCmd(root);
+  const skipped = JSON.parse(
+    dispositionCmd(root, {
+      status: "refuted",
+      reason: "auto refuted",
+      "decided-by": "report",
+    }),
+  );
+  assert.equal(skipped.skipped, "user ruling preserved");
+  assert.equal(skipped.status, "accepted-risk");
+  const [entry] = readLedger(root).dispositions;
+  assert.equal(entry.status, "accepted-risk");
+  assert.equal(entry.decidedBy, "user");
+  assert.equal(entry.reason, "single-writer topology");
+
+  const overwritten = JSON.parse(
+    dispositionCmd(root, { status: "wont-fix", reason: "user changed mind" }),
+  );
+  assert.equal(overwritten.skipped, undefined);
+  assert.equal(overwritten.status, "wont-fix");
 });
 
 test("intent rulings require user attribution and paired commands upsert one claim", (t) => {
@@ -279,6 +303,14 @@ test("render-dispositions separates suppression from confirmed requirements and 
     decidedBy: "caller",
     decidedAt: new Date().toISOString(),
   });
+  ledger.dispositions.push({
+    id: 4,
+    status: "wontfix", // typo: unknown statuses must not suppress anything
+    fingerprint: { file: "src/upload.ts", title: "Typo status ruling", keywords: [] },
+    reason: "typo",
+    decidedBy: "user",
+    decidedAt: new Date().toISOString(),
+  });
   writeFileSync(
     path.join(root, ".code-review", "dispositions.json"),
     `${JSON.stringify(ledger, null, 2)}\n`,
@@ -300,6 +332,7 @@ test("render-dispositions separates suppression from confirmed requirements and 
   assert.match(rendered.confirmedBlock, /Retries must surface/);
   assert.match(rendered.confirmedBlock, /report a matching unfixed defect normally/);
   assert.doesNotMatch(rendered.reviewerBlock, /Untrusted old ruling/);
+  assert.doesNotMatch(rendered.reviewerBlock, /Typo status ruling/);
   assert.equal(rendered.renderedCount, 2);
 });
 
