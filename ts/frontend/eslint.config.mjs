@@ -110,6 +110,7 @@ export default defineConfig(
             'boundaries/elements': [
                 {type: 'app', pattern: 'src/app/*', mode: 'folder'},
                 {type: 'components', pattern: 'src/components/*', mode: 'folder'},
+                {type: 'hooks', pattern: 'src/hooks/*', mode: 'folder'},
                 {type: 'services', pattern: 'src/services/*', mode: 'folder'},
                 {type: 'domain', pattern: 'src/domain/*', mode: 'folder'},
                 {type: 'lib', pattern: 'src/lib/*', mode: 'folder'},
@@ -126,9 +127,11 @@ export default defineConfig(
                     default: 'disallow',
                     rules: [
                         // App layer can import everything except domain internals
-                        {from: {type: 'app'}, allow: [{to: {type: ['components', 'lib', 'services', 'domain', 'types', 'utils', 'config']}}]},
+                        {from: {type: 'app'}, allow: [{to: {type: ['components', 'hooks', 'lib', 'services', 'domain', 'types', 'utils', 'config']}}]},
                         // Components: NO services (use hooks or server actions instead)
-                        {from: {type: 'components'}, allow: [{to: {type: ['components', 'lib', 'domain', 'types', 'utils']}}]},
+                        {from: {type: 'components'}, allow: [{to: {type: ['components', 'hooks', 'lib', 'domain', 'types', 'utils']}}]},
+                        // Hooks: client-side glue to services; never to components or app
+                        {from: {type: 'hooks'}, allow: [{to: {type: ['hooks', 'services', 'domain', 'lib', 'types', 'utils', 'config']}}]},
                         // Services: orchestration layer
                         {from: {type: 'services'}, allow: [{to: {type: ['domain', 'lib', 'types', 'utils', 'config']}}]},
                         // Domain: pure business logic, minimal deps
