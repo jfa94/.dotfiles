@@ -7,8 +7,8 @@ description: >
   Every critical and important finding (including Codex's) is adversarially verified by a fresh
   refuter agent before it can ship. Consolidates all findings into a single deduplicated report
   with verified file:line citations.
-  Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>]
-argument-hint: "[--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>]"
+  Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]
+argument-hint: "[--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]"
 hooks:
   PreToolUse:
     - matcher: Workflow
@@ -83,7 +83,7 @@ Scope). Then run the preflight, mapping the skill arguments (`$ARGUMENTS`) strai
 ```bash
 node "<this skill's base directory>/scripts/review-preflight.mjs" \
   --repo-root "<absolute repo root>" --profile comprehensive \
-  [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] \
+  [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>] \
   --request-stdin <<'REQ_EOF_x7'
 <the synthesized request text>
 REQ_EOF_x7
@@ -168,6 +168,11 @@ node "<this skill's base directory>/scripts/review-run.mjs" disposition \
   --repo-root "$REPO_ROOT" --file "<f.file>" --title "<f.title>" \
   --status refuted --reason "<f.refute_reason>" --decided-by report --run-id "$RUN_ID"
 ```
+
+For each `overturnedDispositions[]` entry (a challenge that matched its ledger entry), run the same
+command with `--file "<file>" --title "<title>" --status overturned --reason "challenged with new
+evidence" --decided-by report --run-id "$RUN_ID"`. A result with `skipped` means a user ruling was
+preserved: relay it to the user, who decides.
 
 (Upsert semantics — no duplicates. The ledger is local, untracked working state under the ignored
 `.code-review/`; never add it to git or edit the repo's `.gitignore` to re-include it.)

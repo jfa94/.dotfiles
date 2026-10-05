@@ -8,8 +8,8 @@ description: >
   and every finding is dropped unless it has a verified file:line citation — but fewer dimensions,
   so the report is tighter to triage. Reviews a diff (working tree by default, or `--base <ref>`).
   For a whole-codebase audit or spec-conformance, use comprehensive-code-review instead.
-  Usage: /focused-code-review [--base <ref>] [--context <path>] [--pass <n>]
-argument-hint: "[--base <ref>] [--context <path>] [--pass <n>]"
+  Usage: /focused-code-review [--base <ref>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]
+argument-hint: "[--base <ref>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]"
 hooks:
   PreToolUse:
     - matcher: Workflow
@@ -95,7 +95,7 @@ user's own words where possible. Then run the sibling's preflight, mapping the s
 ```bash
 node "<sibling dir>/scripts/review-preflight.mjs" \
   --repo-root "<absolute repo root>" --profile focused \
-  [--base <ref>] [--context <path>] [--pass <n>] \
+  [--base <ref>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>] \
   --request-stdin <<'REQ_EOF_x7'
 <the synthesized request text>
 REQ_EOF_x7
@@ -185,6 +185,11 @@ node "<sibling dir>/scripts/review-run.mjs" disposition \
   --repo-root "$REPO_ROOT" --file "<f.file>" --title "<f.title>" \
   --status refuted --reason "<f.refute_reason>" --decided-by report --run-id "$RUN_ID"
 ```
+
+For each `overturnedDispositions[]` entry (a challenge that matched its ledger entry), run the same
+command with `--file "<file>" --title "<title>" --status overturned --reason "challenged with new
+evidence" --decided-by report --run-id "$RUN_ID"`. A result with `skipped` means a user ruling was
+preserved: relay it to the user, who decides.
 
 (Upsert semantics — no duplicates. The ledger is local, untracked working state under the ignored
 `.code-review/`; never add it to git or edit the repo's `.gitignore` to re-include it.)

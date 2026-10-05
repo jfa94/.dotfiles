@@ -5,7 +5,7 @@ model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "xhigh"
 model_auto_compact_token_limit = 200000
 web_search = "live"
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 mcp_oauth_credentials_store = "keyring"
 
 service_tier = "default"
@@ -75,7 +75,7 @@ bearer_token_env_var = "SUPABASE_ACCESS_TOKEN"
 required = false
 
 [mcp_servers.posthog]
-url = "https://mcp.posthog.com/mcp?mode=cli&readonly=true"
+url = "https://mcp.posthog.com/mcp?mode=cli"
 bearer_token_env_var = "POSTHOG_MCP_TOKEN"
 required = false
 
@@ -167,6 +167,7 @@ close = ["q", "ctrl-c", "ctrl-backspace"]
 "gpt-5.5" = 4
 "gpt-5.6-sol" = 4
 gpt-6-astra = 4
+"gpt-6.1-sol" = 3
 
 [plugins."github@openai-curated"]
 enabled = false

@@ -239,6 +239,17 @@ test("codex runtime rejects focused --full/--spec instead of warning", (t) => {
   assert.equal(existsSync(path.join(root, ".code-review")), false);
 });
 
+test("--reviewer-model passes through to workflowArgs; invalid values error", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 9;\n");
+  const unset = run(root, ["--profile", "focused"]);
+  assert.equal("reviewerModel" in unset.workflowArgs, false);
+  const out = run(root, ["--profile", "focused", "--reviewer-model", "sonnet", "--pass", "2"]);
+  assert.equal(out.workflowArgs.reviewerModel, "sonnet");
+  const bad = run(root, ["--profile", "focused", "--reviewer-model", "gpt"], { expectFail: true });
+  assert.match(bad.message, /--reviewer-model/);
+});
+
 test("unknown flags are rejected before any run is created", (t) => {
   const root = repo(t);
   writeFileSync(path.join(root, "src.js"), "const a = 9;\n");
@@ -250,6 +261,13 @@ test("unknown flags are rejected before any run is created", (t) => {
 
 test("comprehensive --full sends the inventory with hotspot priority", (t) => {
   const root = repo(t);
+  writeFileSync(path.join(root, "gone.js"), "const g = 1;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "add gone");
+  writeFileSync(path.join(root, "gone.js"), "const g = 2;\n");
+  git(root, "commit", "-qam", "touch gone");
+  git(root, "rm", "-q", "gone.js");
+  git(root, "commit", "-qm", "delete gone");
   const out = run(root, ["--profile", "comprehensive", "--full"]);
   assert.equal(out.status, "ok");
   assert.equal(out.workflowArgs.mode, "full");
@@ -258,6 +276,7 @@ test("comprehensive --full sends the inventory with hotspot priority", (t) => {
   const reviewInput = readFileSync(out.workflowArgs.inputs.reviewInputPath, "utf8");
   assert.match(reviewInput, /ENTIRE codebase/i);
   assert.match(reviewInput, /hotspot/i);
+  assert.doesNotMatch(reviewInput, /gone\.js/);
   // full mode Codex window: <=30 commits clamps to the root commit
   const { cacheRoot } = fakeCodexCache(t, ["2.0.0"]);
   const withCodex = run(root, ["--profile", "comprehensive", "--full", "--codex-cache-root", cacheRoot]);
@@ -425,6 +444,16 @@ test("comprehensive runs installed seed tools in parallel with caps; focused ski
     readFileSync(focused.workflowArgs.inputs.reviewInputPath, "utf8"),
     /Static-analysis seeds/,
   );
+});
+
+test("an unparseable package.json warns that lint/typecheck seeds were skipped", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "package.json"), "{ not json");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "bad package.json");
+  writeFileSync(path.join(root, "src.js"), "const a = 2;\n");
+  const out = run(root, ["--profile", "comprehensive"]);
+  assert.ok(out.warnings.some((w) => /package\.json unparseable/.test(w)), JSON.stringify(out.warnings));
 });
 
 test("a seed tool exceeding its timeout is killed and skipped with a note", (t) => {

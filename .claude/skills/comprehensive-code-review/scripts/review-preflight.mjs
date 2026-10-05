@@ -88,6 +88,7 @@ const parseFlags = (argv) => {
     "codex-cache-root",
     "seed-timeout-ms",
     "max-args-bytes",
+    "reviewer-model",
   ]);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
@@ -209,15 +210,15 @@ function runSeedTool({ name, cmd, args }, repoRoot, timeoutMs) {
   });
 }
 
-function collectSeedTools(repoRoot, mode, changedFiles) {
+function collectSeedTools(repoRoot, mode, changedFiles, warnings) {
   const tools = [];
   const pkgPath = path.join(repoRoot, "package.json");
   let pkg = null;
   if (readableFile(pkgPath)) {
     try {
       pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-    } catch {
-      pkg = null;
+    } catch (e) {
+      warnings.push(`package.json unparseable: lint/typecheck seeds skipped (${e.message})`);
     }
   }
   const pm = detectPackageManager(repoRoot);
@@ -406,8 +407,8 @@ function buildManifestReviewInput({ repoRoot, runDir, diffText, diffArgs, repoRe
   ].join("\n");
 }
 
-async function collectSeeds({ repoRoot, runDir, mode, changedFiles, timeoutMs, skipped }) {
-  const tools = collectSeedTools(repoRoot, mode, changedFiles);
+async function collectSeeds({ repoRoot, runDir, mode, changedFiles, timeoutMs, skipped, warnings }) {
+  const tools = collectSeedTools(repoRoot, mode, changedFiles, warnings);
   if (tools.length === 0) return { seeds: [], manifest: null };
   const results = await Promise.all(tools.map((tool) => runSeedTool(tool, repoRoot, timeoutMs)));
   const seeds = [];
@@ -462,6 +463,10 @@ async function main() {
   const passNumber = flags.pass ? Number(flags.pass) : 1;
   if (!Number.isInteger(passNumber) || passNumber < 1) {
     throw new PreflightError("--pass must be an integer >= 1");
+  }
+  const reviewerModel = flags["reviewer-model"];
+  if (reviewerModel !== undefined && !["sonnet", "opus", "haiku"].includes(reviewerModel)) {
+    throw new PreflightError("--reviewer-model must be sonnet, opus or haiku");
   }
   const seedTimeoutMs = flags["seed-timeout-ms"] ? Number(flags["seed-timeout-ms"]) : 120000;
   const maxArgsBytes = flags["max-args-bytes"] ? Number(flags["max-args-bytes"]) : 8192;
@@ -597,7 +602,9 @@ async function main() {
     let reviewInput;
     if (mode === "full") {
       const churn = computeChurn(repoRoot);
+      const changedSet = new Set(changedFiles);
       const hotspots = [...churn.entries()]
+        .filter(([file]) => changedSet.has(file))
         .sort((a, b) => b[1] - a[1])
         .slice(0, 20)
         .map(([file, count]) => `${count}\t${file}`);
@@ -688,6 +695,7 @@ async function main() {
         changedFiles,
         timeoutMs: seedTimeoutMs,
         skipped,
+        warnings,
       });
       seeds = collected.seeds;
       if (collected.manifest) appendFileSync(reviewInputPath, collected.manifest);
@@ -755,6 +763,7 @@ async function main() {
       },
       reviewers,
       codex,
+      ...(reviewerModel ? { reviewerModel } : {}),
     };
     const serializedBytes = Buffer.byteLength(
       JSON.stringify({ scriptPath: workflowPath, args: workflowArgs }),
