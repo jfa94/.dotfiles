@@ -25,27 +25,50 @@ fi
 
 # Matches any rm whose flags include r, in any grouping/order
 # (-rf, -fr, -Rf, -r -f, -f -r): flag groups may precede and follow the r-group.
-RECURSIVE_RM='rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*r[a-zA-Z]*([[:space:]]+-[a-zA-Z]+)*'
+RECURSIVE_RM='rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*[rR][a-zA-Z]*([[:space:]]+-[a-zA-Z]+)*'
 
 # Policy denies — mirrored from settings.json permissions.deny. They live in BOTH:
 # settings.json is primary, but the CLI can strip that array on auto-rewrite, so
 # these are duplicated here as a backstop (see anthropics/claude-code#22659,
 # #51843, #6699). The push-refspec pattern ([^;&|]* bounds it to the same
 # command) catches `git push origin +branch` force-pushes flag rules miss.
+# Backslash-newline is joined first (grep is line-based). Bundled shorts and
+# abbreviated long options are segment-bounded; `-m "x -nothing"` over-matches (safe).
+JOINED=${CMD//$'\\\n'/}
+GIT='git( -C [^[:space:]]+)?'
+ARGS='([^;&|]*[[:space:]])?'
 for PAT in \
-  'git( -C [^[:space:]]+)? push[[:space:]].*--force' \
-  'git( -C [^[:space:]]+)? push[[:space:]].*--no-verify' \
-  'git( -C [^[:space:]]+)? push[[:space:]].*-f([[:space:]]|$)' \
-  'git( -C [^[:space:]]+)? push[[:space:]][^;&|]*[[:space:]]\+[^[:space:]]' \
-  'git( -C [^[:space:]]+)? commit[[:space:]].*--no-verify' \
-  'git( -C [^[:space:]]+)? commit[[:space:]].*--no-gpg-sign' \
-  'git( -C [^[:space:]]+)? commit[[:space:]].*-n([[:space:]]|$)' \
-  'git( -C [^[:space:]]+)? rebase[[:space:]].*--no-verify' \
+  "${GIT} push[[:space:]].*--force" \
+  "${GIT} push[[:space:]].*--no-verify" \
+  "${GIT} push[[:space:]].*-f([[:space:]]|\$)" \
+  "${GIT} push[[:space:]][^;&|]*[[:space:]]\\+[^[:space:]]" \
+  "${GIT} commit[[:space:]].*--no-verify" \
+  "${GIT} commit[[:space:]].*--no-gpg-sign" \
+  "${GIT} commit[[:space:]].*-n([[:space:]]|\$)" \
+  "${GIT} rebase[[:space:]].*--no-verify" \
+  "${GIT} push[[:space:]]${ARGS}-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|\$)" \
+  "${GIT} commit[[:space:]]${ARGS}-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|\$)" \
+  "${GIT} (commit|push|rebase)[[:space:]]${ARGS}--no-veri" \
+  "${GIT} commit[[:space:]]${ARGS}--no-g" \
   "${RECURSIVE_RM}[[:space:]]+(~|\\\$HOME)" \
   '(pnpm|npm|yarn) publish'; do
-  if printf '%s' "$CMD" | grep -qE "$PAT"; then
+  if printf '%s' "$JOINED" | grep -qE "$PAT"; then
     jq -cn --arg r "Blocked by policy: $PAT" \
       '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
+    exit 0
+  fi
+done
+
+# Options that make git run an arbitrary program. Case-sensitive: rebase -X is
+# the harmless strategy option. Prefixes are the shortest git accepts per command.
+for PAT in \
+  "${GIT} rebase[[:space:]]${ARGS}--ex" \
+  "${GIT} rebase[[:space:]]${ARGS}-[a-zA-Z]*x" \
+  "${GIT} fetch[[:space:]]${ARGS}--upl" \
+  "${GIT} ls-remote[[:space:]]${ARGS}--u" \
+  "${GIT} push[[:space:]]${ARGS}--(rece|e)"; do
+  if printf '%s' "$JOINED" | grep -qE "$PAT"; then
+    jq -cn '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git option executes an arbitrary command — run it manually"}}'
     exit 0
   fi
 done

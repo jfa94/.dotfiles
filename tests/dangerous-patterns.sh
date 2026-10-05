@@ -133,4 +133,38 @@ assert_claude "relative workdir" "rm -rf coverage" allow \
   "$(basename "$SCRATCH")" "$(dirname "$SCRATCH")"
 assert_claude "workdir fallback" "rm -rf coverage" allow "" "$SCRATCH"
 
+# Capital -R is recursive too.
+assert_claude "capital R home" 'rm -Rf ~' deny
+assert_claude "capital R after f" 'rm -fR $HOME/x' deny
+assert_claude "capital R outside repo" "rm -Rf /etc/foo" deny
+
+# Bundled short flags and abbreviated long options are policy denies.
+assert_claude "commit -nm" "git commit -nm x" deny
+assert_claude "commit -anm" "git commit -anm x" deny
+assert_claude "commit --no-veri" "git commit -am x --no-veri" deny
+assert_claude "commit --no-gp" "git commit --no-gp -m x" deny
+assert_claude "push -fu" "git push -fu origin main" deny
+assert_claude "push -fu with -C" "git -C . push -fu" deny
+assert_claude "rebase --no-veri" "git rebase --no-veri main" deny
+assert_claude "push -f after continuation" $'git push origin x \\\n -f' deny
+assert_claude "push --follow-tags" "git push --follow-tags" pass
+assert_claude "push -u" "git push -u origin x" pass
+assert_claude "commit --amend --no-edit" "git commit --amend --no-edit" pass
+assert_claude "plain commit" "git commit -m x" pass
+assert_claude "later segment -lf" "git push origin x && ls -lf" pass
+
+# Options that execute arbitrary programs.
+assert_claude "rebase -x" "git rebase -x 'sh' main" deny
+assert_claude "rebase -ix" "git rebase -ix sh main" deny
+assert_claude "rebase --exec" "git rebase --exec=sh main" deny
+assert_claude "rebase --ex" "git -C . rebase --ex=sh" deny
+assert_claude "fetch --upload-pack" "git fetch --upload-pack=sh origin" deny
+assert_claude "fetch --upl" "git -C . fetch --upl=sh" deny
+assert_claude "ls-remote --u" "git ls-remote --u=sh origin" deny
+assert_claude "push --receive-pack" "git push --receive-pack=sh origin" deny
+assert_claude "push --rece" "git push --rece=sh origin" deny
+assert_claude "push --exec" "git -C . push --e=sh origin" deny
+assert_claude "rebase -X strategy" "git rebase -X theirs main" pass
+assert_claude "rebase --no-exec" "git rebase --no-exec main" pass
+
 echo "dangerous patterns: $PASS checks passed"

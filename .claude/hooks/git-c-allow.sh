@@ -26,6 +26,11 @@ case $CMD in (*'$('*|*'`'*|*'>'*|*'<'*) exit 0;; esac
 SUBS='add|mv|commit|checkout|branch|stash|push|diff|log|show|check-ignore|blame|fetch|rev-parse|shortlog|reflog|describe|ls-files|ls-remote|ls-tree|merge-base|rebase|worktree|status'
 TWO='remote -v|config --get|config --list|cherry -v|tag -l'
 
+# Options that run a program or write a file (shortest git-accepted prefixes per
+# subcommand). Matching segments fall through to a prompt; dangerous-patterns denies the exec ones.
+A='[[:space:]]+(.*[[:space:]])?'
+INJECT="^git -C [^ ]+ (rebase${A}(--ex|-[a-zA-Z]*x)|fetch${A}--upl|ls-remote${A}--u|push${A}--(rece|e)|[a-z-]+${A}--out)"
+
 # Split on chain operators (&&, ||, ;, |, &, newline — tr splits doubles into
 # an empty segment, skipped); every non-empty segment must match. An operator
 # inside quotes mangles its segment, which then fails the match and falls
@@ -35,6 +40,7 @@ while IFS= read -r seg; do
   seg=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
   [ -n "$seg" ] || continue
   printf '%s' "$seg" | grep -qE "^git -C [^- ][^ ]* (($SUBS)|($TWO))( |\$)" || exit 0
+  printf '%s' "$seg" | grep -qE "$INJECT" && exit 0
   MATCHED=1
 done < <(printf '%s\n' "$CMD" | tr ';|&\n' '\n\n\n\n')
 [ "$MATCHED" -eq 1 ] || exit 0

@@ -624,7 +624,7 @@
       "Never write secrets, API keys, or tokens into source files. Use .env* files only.",
       "Never modify .env, .env.*, or credential files without explicit confirmation.",
       "Never use --no-verify, --no-gpg-sign, -n, or any flag that bypasses git hooks or signing.",
-      "Never force-push in any form (--force, -f, --force-with-lease, --force-if-includes); these are hard-denied at the permissions layer.",
+      "Never force-push in any form (--force, -f, --force-with-lease, --force-if-includes); literal spellings are hard-denied by permissions.deny and bundled or abbreviated ones by the dangerous-patterns hook.",
       "Never push, merge, or close PRs on repos other than dotfiles without explicit confirmation. (Dotfiles repo: direct commits to main are pre-approved.)",
       "Never run destructive AWS mutations (delete-*, terminate-*, or put-* on production resources) without confirmation.",
       "Never publish packages (pnpm/npm/yarn publish) under any circumstance.",
