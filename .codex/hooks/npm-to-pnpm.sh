@@ -3,7 +3,6 @@ set -uo pipefail
 
 INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-DESC=$(printf '%s' "$INPUT" | jq -r '.tool_input.description // empty' 2>/dev/null)
 [[ -z "$CMD" ]] && exit 0
 
 NEW=$(printf '%s' "$CMD" | perl -pe '
@@ -17,16 +16,7 @@ NEW=$(printf '%s' "$CMD" | perl -pe '
 
 [[ "$NEW" = "$CMD" ]] && exit 0
 
-jq -cn \
-  --arg new "$NEW" \
-  --arg desc "$DESC" \
-  --arg msg "npm to pnpm: $CMD => $NEW" \
-  '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "allow",
-      permissionDecisionReason: "Rewrote npm to pnpm",
-      updatedInput: { command: $new, description: $desc }
-    },
-    systemMessage: $msg
-  }'
+# Deny with the pnpm form instead of rewriting: an allow carrying updatedInput
+# would auto-approve the whole chained command, including plan mode.
+jq -cn --arg r "Use pnpm, not npm. Run instead: $NEW" \
+  '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'

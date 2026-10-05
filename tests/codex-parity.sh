@@ -75,6 +75,20 @@ assert_decision "quoted rm diagnostic" critical-rm-check.sh \
 rm -rf "$RM_SCRATCH"
 trap - EXIT
 
+# --- npm-to-pnpm: deny with the pnpm command, never an allow/updatedInput ---
+assert_npm_suggestion() {
+  local command=$1 suggestion=$2 output
+  assert_decision "npm-to-pnpm denies: $command" npm-to-pnpm.sh "$command" deny
+  output=$(run_hook npm-to-pnpm.sh "$(jq -cn --arg c "$command" '{tool_input:{command:$c}}')")
+  jq -e --arg s "$suggestion" '(.hookSpecificOutput.permissionDecisionReason | contains($s)) and (.hookSpecificOutput.updatedInput == null)' \
+    <<< "$output" >/dev/null || { echo "FAIL npm-to-pnpm suggestion for '$command': $output" >&2; exit 1; }
+}
+assert_npm_suggestion "npm install" "pnpm install"
+assert_npm_suggestion "npx foo" "pnpm dlx foo"
+assert_npm_suggestion "echo hi && npm test" "pnpm test"
+assert_decision "npm-to-pnpm ignores pnpm" npm-to-pnpm.sh "pnpm install" allow
+assert_decision "npm-to-pnpm ignores mentions" npm-to-pnpm.sh "echo npm" allow
+
 # --- pre-commit gate: per-command workdir, not stale session cwd ---------
 # Codex passes each command's working directory as tool_input.workdir and
 # tells the model to always set it; sessions are commonly started outside
@@ -159,6 +173,20 @@ echo 'ssh-ed25519 AAAA...' > "$SCRATCH/id_ed25519.pub"
 assert_decision "pre-commit allows a public key" \
   pre-commit-check.sh "git add id_ed25519.pub && git commit -m x" allow "$SCRATCH"
 rm -f "$SCRATCH/id_ed25519.pub"
+
+# Assembled at runtime so this file doesn't trip the secret scan itself.
+FAKE_AWS_KEY="AKIA$(printf 'IOSFODNN7EXAMPLE')"
+# --- pre-commit gate: `commit -a/--all` stages tracked modifications -------
+echo "key = $FAKE_AWS_KEY" >> "$SCRATCH/README.md"
+assert_decision "pre-commit denies a secret in a tracked file committed with -am" \
+  pre-commit-check.sh "git commit -am x" deny "$SCRATCH"
+assert_decision "pre-commit denies a secret committed with --all" \
+  pre-commit-check.sh "git commit --all -m x" deny "$SCRATCH"
+assert_decision "pre-commit ignores unstaged changes without -a" \
+  pre-commit-check.sh "git commit -m x" allow "$SCRATCH"
+assert_decision "pre-commit does not treat --amend as -a" \
+  pre-commit-check.sh "git commit --amend -m x" allow "$SCRATCH"
+git -C "$SCRATCH" checkout -q -- README.md
 
 rm -rf "$SCRATCH"
 trap - EXIT

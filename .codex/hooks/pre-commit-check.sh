@@ -41,6 +41,13 @@ while IFS= read -r seg; do
   ADD_OUT=$(eval "git add --dry-run --ignore-missing $rest" 2>/dev/null) || true
   PENDING+=$(printf '%s\n' "$ADD_OUT" | sed -nE "s/^add '(.*)'\$/\\1/p")$'\n'
 done < <(printf '%s' "$CMD" | tr ';&|' '\n' | grep -E '^[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?add([[:space:]]|$)')
+# `commit -a/--all` also stages tracked modifications; a ` -…a…` token in any
+# message over-matches, which only scans more. Residual: `commit <pathspec>`.
+if printf '%s' "$CMD" | grep -qE '[[:space:]](--all|-[a-zA-Z]*a[a-zA-Z]*)([[:space:]]|$)'; then
+  # --name-only is repo-root relative; prefix the way back from this directory.
+  CDUP=$(git rev-parse --show-cdup 2>/dev/null || true)
+  PENDING+=$(git diff --name-only --diff-filter=ACMR 2>/dev/null | sed "s|^|${CDUP}|")$'\n'
+fi
 PENDING=$(printf '%s\n' "$PENDING" | sed '/^$/d')
 
 ALL_FILES=$(printf '%s\n%s\n' "$STAGED" "$PENDING" | sed '/^$/d' | sort -u)

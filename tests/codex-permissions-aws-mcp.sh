@@ -91,7 +91,18 @@ CLAUDE_SECRET_RE=$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.claude/hooks/pre-c
   exit 1
 }
 grep -qF "(^|/)(id_rsa|id_ed25519|id_ecdsa|id_dsa)\$" "$ROOT/.codex/hooks/pre-commit-check.sh"
-PASS=$((PASS + 2))
+# The Edit/Write gate and the shell backstop carry the same regex and exemption.
+for hook in protected-files-check.sh dangerous-patterns-check.sh; do
+  [[ "$(grep -oE "^SECRET_PATH_RE='[^']*'" "$ROOT/.claude/hooks/$hook")" == "$CLAUDE_SECRET_RE" ]] || {
+    echo "FAIL SECRET_PATH_RE drifted in .claude/hooks/$hook" >&2
+    exit 1
+  }
+  [[ "$(grep -oE "^SECRET_EXEMPT_RE='[^']*'" "$ROOT/.claude/hooks/$hook")" == "$(grep -oE "^SECRET_EXEMPT_RE='[^']*'" "$ROOT/.claude/hooks/pre-commit-check.sh")" ]] || {
+    echo "FAIL SECRET_EXEMPT_RE drifted in .claude/hooks/$hook" >&2
+    exit 1
+  }
+done
+PASS=$((PASS + 4))
 
 assert_shell_command "cat $ROOT/.env.local" allow
 assert_shell_command "printf value > $ROOT/.env.local" allow

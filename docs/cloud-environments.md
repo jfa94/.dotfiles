@@ -62,9 +62,9 @@ Key facts (spike-verified 2026-08):
 - Sessions reuse the cached env snapshot — a dotfiles push does NOT reach
   cloud sessions until the env rebuilds. Force a rebuild by editing the
   environment config (e.g. bump the cache-bust comment in the shim).
-- Hook `systemMessage` output is not rendered by the cloud UI (cosmetic only —
-  the npm→pnpm rewrite itself works; verify via `npm --version` printing
-  pnpm's version).
+- Hook `systemMessage` output is not rendered by the cloud UI (cosmetic only).
+  The npm→pnpm hook denies `npm`/`npx` and suggests the pnpm command; verify by
+  running `npm install x` and checking the deny reason.
 
 ## One-time setup per project
 
@@ -124,7 +124,7 @@ On claude.ai → Code → your repo → environment settings:
 1. `ls -la ~/.claude` shows symlinks into `~/.dotfiles`; Claude quotes a
    rule from `instructions/AGENTS.md`; skills appear under `/`; `/plugin` lists superpowers,
    factory, ponytail, codex, web-designer.
-2. Hooks fire: `npm install x` → pnpm rewrite; no model-lock warning.
+2. Hooks fire: `npm install x` → denied with a `pnpm install x` suggestion; no model-lock warning.
 3. `/mcp` shows only project-bound Supabase/PostHog connectors (PostHog as one
    `posthog` server, full catalogue); `mcp__supabase__list_projects` and
    `mcp__posthog__exec` allowed silently. Supabase is project-scoped and
