@@ -50,8 +50,7 @@ Key facts (spike-verified 2026-08):
   (CONNECT 403) → **Codex CLI cannot install** unless the environment uses a
   Custom allowlist including `chatgpt.com` (and `auth.openai.com` for login).
 - The session injects its own MCP servers (github, Supabase connector scoped
-  to the claude.ai project, PostHog, Google suite) from a per-session config;
-  the user-scope `supabase` entry in `~/.claude.json` coexists with these.
+  to the claude.ai project, PostHog, Google suite) from a per-session config.
 - The session repo checkout (`/home/user/<repo>`) is separate from
   `/root/.dotfiles`; the dotfiles clone is config-delivery only.
 - Fresh VM per session: nothing persists mid-session → Codex auth repeats per
@@ -140,5 +139,5 @@ On claude.ai → Code → your repo → environment settings:
   when those setup.sh functions change, update the cloud copies.
 - Env cache is ~7 days: config changes land on next rebuild, or force one by
   editing the environment's setup script (any whitespace change).
-- `tests/cloud-setup.sh` covers syntax, degraded-install behavior, symlinks,
-  and the MCP jq-merge.
+- `tests/cloud-setup.sh` covers syntax, degraded-install behavior, and
+  symlinks.
