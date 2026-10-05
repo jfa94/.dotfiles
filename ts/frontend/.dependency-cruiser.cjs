@@ -42,7 +42,6 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    includeOnly: '^src',
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.json' },
     cache: true,
