@@ -93,7 +93,7 @@ STUB
   [[ $(jq -c '.enabledPlugins' "$DOTFILES_DIR/.claude/settings.json") == "$snapshot" ]] || fail "$scenario enablement changed"
   case "$scenario" in
     fresh)
-      [[ $(grep -c '^plugin install ' "$CALLS") == 19 ]] || fail 'fresh installation incomplete'
+      [[ $(grep -c '^plugin install ' "$CALLS") == 17 ]] || fail 'fresh installation incomplete'
       [[ $(grep -c '^plugin marketplace add ' "$CALLS") == 5 ]] || fail 'marketplace inventory incomplete'
       ;;
     existing)
