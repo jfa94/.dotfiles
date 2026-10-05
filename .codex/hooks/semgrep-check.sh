@@ -19,17 +19,27 @@ DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+'
 CWD=$(project_dir "$INPUT")
 if ! cd "${DIR:-$CWD}"; then deny "Semgrep gate cannot enter target repository."; exit 0; fi
 
-DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)
-[[ -n "$DEFAULT" ]] || DEFAULT="main"
-
-CHANGED=$(git diff --diff-filter=ACMR --name-only "origin/${DEFAULT}...HEAD" 2>/dev/null || true)
+# Base: origin/HEAD target, then origin/main, then origin/master. With no base
+# the whole tree is new, so scan every tracked file.
+BASE=""
+for ref in "$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')" origin/main origin/master; do
+  if [[ -n "$ref" ]] && git rev-parse --verify --quiet "$ref" >/dev/null; then BASE=$ref; break; fi
+done
+if [[ -n "$BASE" ]]; then
+  if ! CHANGED=$(git diff --diff-filter=ACMR --name-only "${BASE}...HEAD" 2>/dev/null); then
+    deny "Semgrep gate could not diff against ${BASE}; refusing to treat an unscanned push as clean."
+    exit 0
+  fi
+else
+  CHANGED=$(git ls-files)
+fi
 [[ -n "$CHANGED" ]] || exit 0
 
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
 CACHE_FILE=""
 if [[ -n "$HEAD_SHA" ]]; then
-  CACHE_FILE="/tmp/semgrep-cache-${HEAD_SHA}.json"
-  find /tmp -maxdepth 1 -name 'semgrep-cache-*.json' ! -name "semgrep-cache-${HEAD_SHA}.json" -delete 2>/dev/null || true
+  CACHE_FILE="/tmp/semgrep-cache-v2-${HEAD_SHA}.json"
+  find /tmp -maxdepth 1 -name 'semgrep-cache-*.json' ! -name "semgrep-cache-v2-${HEAD_SHA}.json" -delete 2>/dev/null || true
 fi
 
 if [[ -n "$CACHE_FILE" && -f "$CACHE_FILE" ]]; then
@@ -56,16 +66,18 @@ else
     $skip || args+=("$f")
   done <<< "$CHANGED"
   [[ ${#args[@]} -eq 0 ]] && exit 0
-  if ! SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null); then
-    deny "Semgrep scan failed; refusing to treat an incomplete scan as success."
+  SEMGREP_OUT=$(semgrep --config auto --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null)
+  SEMGREP_RC=$?
+  if [[ "$SEMGREP_RC" -ne 0 ]]; then
+    deny "Semgrep scan failed (exit ${SEMGREP_RC}); refusing to treat an incomplete scan as success."
     exit 0
   fi
-  if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
+  if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results | arrays' >/dev/null 2>&1; then
     printf '%s' "$SEMGREP_OUT" > "$CACHE_FILE"
   fi
 fi
 
-if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
+if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results | arrays' >/dev/null 2>&1; then
   deny "Semgrep returned invalid output; refusing to treat an incomplete scan as success."
   exit 0
 fi

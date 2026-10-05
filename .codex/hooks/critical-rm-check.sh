@@ -57,6 +57,7 @@ fi
 HOME_PHYSICAL=$(cd -- "$HOME" 2>/dev/null && pwd -P) || fail_closed
 TMP_ROOTS=()
 for tmp_candidate in /tmp /private/tmp /var/tmp; do
+  [[ -e "$tmp_candidate" ]] || continue
   tmp_physical=$(cd -- "$tmp_candidate" 2>/dev/null && pwd -P) || fail_closed
   TMP_ROOTS+=("$tmp_physical")
 done

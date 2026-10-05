@@ -16,25 +16,32 @@ fi
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
 cd "${DIR:-${CLAUDE_PROJECT_DIR:-.}}" || exit 0
 
-# --- Detect default branch ---
-DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)
-[ -n "$DEFAULT" ] || DEFAULT="main"
-
-# --- Compute changed files vs default branch ---
-CHANGED=$(git diff --name-only "origin/${DEFAULT}...HEAD" 2>/dev/null || true)
+# Base: origin/HEAD target, then origin/main, then origin/master. With no base
+# the whole tree is new, so scan every tracked file.
+BASE=""
+for ref in "$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')" origin/main origin/master; do
+  if [ -n "$ref" ] && git rev-parse --verify --quiet "$ref" >/dev/null; then BASE=$ref; break; fi
+done
+if [ -n "$BASE" ]; then
+  if ! CHANGED=$(git diff --diff-filter=ACMR --name-only "${BASE}...HEAD" 2>/dev/null); then
+    echo "semgrep: could not diff against ${BASE}; SAST scan skipped, not blocking" >&2
+    exit 0
+  fi
+else
+  CHANGED=$(git ls-files)
+fi
 if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-# --- Caching: skip scan if we already have results for this HEAD ---
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
 if [[ -z "$HEAD_SHA" ]]; then
   # No HEAD — can't cache; proceed with fresh scan
   CACHE_FILE=""
 else
-  CACHE_FILE="/tmp/semgrep-cache-${HEAD_SHA}.json"
+  CACHE_FILE="/tmp/semgrep-cache-v2-${HEAD_SHA}.json"
   # Clean up stale cache files (any that don't match current HEAD)
-  find /tmp -maxdepth 1 -name 'semgrep-cache-*.json' ! -name "semgrep-cache-${HEAD_SHA}.json" -delete 2>/dev/null || true
+  find /tmp -maxdepth 1 -name 'semgrep-cache-*.json' ! -name "semgrep-cache-v2-${HEAD_SHA}.json" -delete 2>/dev/null || true
 fi
 
 if [[ -n "$CACHE_FILE" ]] && [ -f "$CACHE_FILE" ]; then
@@ -62,15 +69,20 @@ else
     $skip || args+=("$f")
   done <<< "$CHANGED"
   [[ ${#args[@]} -eq 0 ]] && exit 0
-  SEMGREP_OUT=$(semgrep --config auto --error --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null || true)
-  # Only cache if output is valid JSON with a .results key
-  if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
+  SEMGREP_OUT=$(semgrep --config auto --severity ERROR --severity WARNING --json "${args[@]}" 2>/dev/null)
+  SEMGREP_RC=$?
+  if [ "$SEMGREP_RC" -ne 0 ]; then
+    echo "semgrep exited ${SEMGREP_RC}; SAST scan incomplete, not blocking" >&2
+    exit 0
+  fi
+  # Only cache a clean run whose output has a .results array
+  if [[ -n "$CACHE_FILE" ]] && printf '%s' "$SEMGREP_OUT" | jq -e '.results | arrays' >/dev/null 2>&1; then
     printf '%s' "$SEMGREP_OUT" > "$CACHE_FILE"
   fi
 fi
 
 # --- Detect scan failure (don't let an errored scan look like a clean one) ---
-if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results' >/dev/null 2>&1; then
+if ! printf '%s' "$SEMGREP_OUT" | jq -e '.results | arrays' >/dev/null 2>&1; then
   echo "semgrep returned no valid results — scan error or no network for --config auto; SAST scan incomplete, not blocking" >&2
   exit 0
 fi

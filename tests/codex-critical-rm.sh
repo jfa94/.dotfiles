@@ -159,4 +159,17 @@ assert_raw_decision "denial serialization failure" "$valid_input" deny "$SCRATCH
 assert_raw_decision "invalid workdir candidate resolution" "$invalid_workdir_input" deny
 assert_raw_decision "failed home resolution" "$valid_input" deny "$PATH" "$SCRATCH/missing-home"
 
+# A temp root that does not exist (e.g. /private/tmp on Linux) is skipped, not
+# fail-closed. Simulated with a copy whose candidate list names a missing dir.
+sed 's|/tmp /private/tmp /var/tmp|/tmp /does-not-exist-tmp /var/tmp|' "$HOOK" > "$SCRATCH/hook-missing-tmp.sh"
+grep -q does-not-exist-tmp "$SCRATCH/hook-missing-tmp.sh"
+MISSING_TMP_INPUT=$(jq -cn --arg cwd "$SCRATCH/repo" '{cwd:$cwd,tool_input:{command:"echo hi",workdir:$cwd}}')
+output=$(HOME="$HOME" "$HOOK_SHELL" "$SCRATCH/hook-missing-tmp.sh" <<< "$MISSING_TMP_INPUT")
+[[ -z "$output" ]] || { echo "FAIL missing temp root denied an unrelated command: $output" >&2; exit 1; }
+output=$(HOME="$HOME" "$HOOK_SHELL" "$SCRATCH/hook-missing-tmp.sh" <<< \
+  "$(jq -cn --arg cwd "$SCRATCH/repo" '{cwd:$cwd,tool_input:{command:"rm -rf /etc/ssh",workdir:$cwd}}')")
+[[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<< "$output")" == deny ]] \
+  || { echo "FAIL missing temp root weakened the critical-rm deny: $output" >&2; exit 1; }
+PASS=$((PASS + 2))
+
 echo "critical rm: $PASS checks passed"
