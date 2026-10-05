@@ -33,6 +33,10 @@ Key facts (spike-verified 2026-08):
 
 - Build and session both run as root with `HOME=/root`; a `~/.claude` created
   at build time is fully honored (CLAUDE.md, skills, hooks, settings).
+  Re-checked 2026-10-05 on Claude Code 2.1.289 despite Anthropic's docs saying
+  cloud sessions run hooks only from the repo and server-managed settings:
+  user-level hooks run (`npm install x` is denied) and a plugin SessionStart hook's
+  `CLAUDE_ENV_FILE` export reaches Bash.
 - The session harness sets `SKIP_PLUGIN_MARKETPLACE=true`, so plugins **must**
   be installed at build time — session-start auto-install never happens.
 - **Environment UI env vars reach the session only, NOT the setup script.**
@@ -82,9 +86,10 @@ On claude.ai → Code → your repo → environment settings:
    The shim stays tiny so all real logic lives (and evolves) in this repo.
 
 2. **Environment variables** — prefer managed Supabase/PostHog connectors after
-   verifying their project binding. If the image provides `op`, set a
-   vault-restricted `OP_SERVICE_ACCOUNT_TOKEN` plus `AGENT_ENV_FILE` for
-   project-native 1Password references. Never paste provider tokens directly.
+   verifying their project binding. For project variables, set the two inputs
+   described in [Project variables from 1Password](#project-variables-from-1password):
+   `OP_SERVICE_ACCOUNT_TOKEN` and `OP_ENVIRONMENT_ID`. Never paste provider
+   tokens directly.
 
 3. **Network access** — Trusted covers everything except Codex. For Codex,
    switch to Custom and allow at least: `chatgpt.com`, `auth.openai.com`,
@@ -92,7 +97,56 @@ On claude.ai → Code → your repo → environment settings:
    back to rate-limited api.github.com and 403s), `raw.githubusercontent.com`,
    `astral.sh`, `claude.ai`, `mcp.supabase.com`, `api.supabase.com`,
    `github.com`, `release-assets.githubusercontent.com`,
-   `objects.githubusercontent.com`.
+   `objects.githubusercontent.com`. Every Custom environment also needs
+   `registry.npmjs.org` at build time (the 1Password SDK install; without it each
+   build reports one setup issue) and the account's 1Password host
+   (`my.1password.com` for this account) for the session read.
+
+## Project variables from 1Password
+
+A project's variables live in one 1Password Environment (1Password → Developer →
+Environments), which stays the single source of truth. A cloud environment (the
+claude.ai/code settings above) needs two inputs, set as its environment variables:
+
+- `OP_SERVICE_ACCOUNT_TOKEN` — a service account with read access to that
+  1Password Environment only. Access is fixed when the account is created.
+- `OP_ENVIRONMENT_ID` — Developer → View Environments → Manage environment →
+  Copy environment ID.
+
+`.claude/hooks/sessionstart-op-env.sh` (cloud only; matcher
+`startup|resume|clear|fork`) runs `cloud/op-env/fetch-variables.mjs`, which reads
+the Environment with the pinned `@1password/sdk` that `cloud-setup.sh` installs
+from `cloud/op-env/pnpm-lock.yaml`. The hook atomically replaces one per-VM file,
+`~/.local/state/claude-op-env/exports.sh` (mode 0600), and adds a single line to
+the session's `CLAUDE_ENV_FILE` that sources it. Values reach every Bash command.
+The file is referenced rather than appended because Claude Code writes one env
+file per hook and concatenates them by index, so an older appended block could
+override a refresh.
+
+- **Refresh.** On startup, resume, `/clear` and fork; not on compaction, where
+  the session's env files persist. One read costs 2 of the token's 1000 hourly reads.
+- **Failure.** The session continues with a warning in its context. A failed
+  refresh keeps the last values ("may be stale"); a fresh VM has none ("no
+  project variables are loaded"). A successful refresh removes variables deleted
+  in 1Password, so a same-named variable in the cloud UI reappears: remove duplicates.
+- **Validation is all-or-nothing.** Names must match `[A-Za-z_][A-Za-z0-9_]*`
+  and be unique; `OP_*`, `CLAUDE_*`, `HOME`, `PATH`, `BASH_ENV`, `ENV`,
+  `SHELLOPTS` and `BASHOPTS` are reserved; values may not contain NUL. The
+  warning reports only a count, never names or values. Values round-trip exactly
+  (newlines, quotes, `$(…)`, backticks, non-ASCII, empty).
+- **Opting out.** Removing both inputs stops loading in sessions created afterwards.
+- **Scope.** Values reach Bash commands and their children, not MCP servers. The
+  token itself is visible to Bash, like every cloud UI variable. Codex still drops
+  `*KEY*`/`*SECRET*`/`*TOKEN*` names from its tool subprocesses. `printenv` and
+  `env` are allow-listed, so values can be printed without a prompt.
+- **SDK status.** `@1password/sdk` is 0.x, its README labels Environments reading
+  beta, and it publishes no support policy, so the version is pinned exactly in
+  `cloud/op-env/package.json`. To bump it: change the pin, regenerate the lockfile
+  with the cloud's pnpm major (`pnpm dlx pnpm@<version>`), run
+  `bash tests/cloud-op-env.sh`, and repeat the pilot checks against a synthetic
+  Environment.
+- **Build time.** The SDK install uses no credentials. Failures appear in the
+  setup summary as "1Password SDK install failed" or "1Password SDK skipped (no pnpm)".
 
 ## One-time account steps
 
@@ -113,8 +167,10 @@ On claude.ai → Code → your repo → environment settings:
 - **AWS CLI** — SSO creds last 12–24h; per-session ritual judged not worth it.
   AWS work stays local.
 - **claude-in-chrome** — no browser on the VM.
-- **Local 1Password injection** — cloud uses managed connectors unless the
-  image supplies `op` and a vault-restricted service-account token.
+- **Local 1Password injection** — personal `op://` references, `agent-env-run`
+  and the `op` CLI are not used in cloud. Project variables come from a
+  project-scoped 1Password Environment (see above); everything else uses
+  managed connectors.
 
 ## Verification checklist (first session after changes)
 
@@ -132,6 +188,9 @@ On claude.ai → Code → your repo → environment settings:
 4. Tool sweep (`gh` intentionally absent — GitHub via MCP):
    `for t in jq perl pnpm trufflehog semgrep supabase uvx shellcheck node codex; do command -v $t || echo MISSING $t; done`
 5. `codex login --device-auth` end-to-end, then a codex-backed review skill.
+6. With the 1Password inputs set: the session opens with "Loaded N project
+   variables from 1Password." in its context, and each expected variable is
+   present: `[ -n "${NAME:-}" ] && echo "NAME set"`. Check presence only; never print values.
 
 ## Maintenance
 
@@ -139,5 +198,7 @@ On claude.ai → Code → your repo → environment settings:
   when those setup.sh functions change, update the cloud copies.
 - Env cache is ~7 days: config changes land on next rebuild, or force one by
   editing the environment's setup script (any whitespace change).
-- `tests/cloud-setup.sh` covers syntax, degraded-install behavior, and
-  symlinks.
+- `tests/cloud-setup.sh` covers syntax, degraded-install behavior, symlinks,
+  and the SDK install (arguments, failure, no pnpm).
+- `tests/cloud-op-env.sh` covers the 1Password hook and fetcher with fake
+  tools: gating, dependencies, value round trips, refresh, failures, secrecy.

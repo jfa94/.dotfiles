@@ -133,6 +133,15 @@ if ! command -v pnpm &>/dev/null; then
   npm install -g pnpm >>"$LOG" 2>&1 || note_fail "pnpm install failed"
 fi
 
+# SDK for sessionstart-op-env.sh; lockfile-pinned, no credentials at build time.
+# confirmModulesPurge=false: the build has no TTY, so a purge prompt would abort.
+if command -v pnpm &>/dev/null; then
+  pnpm install --dir "$DOTFILES_DIR/cloud/op-env" --frozen-lockfile --prod \
+    --config.confirmModulesPurge=false >>"$LOG" 2>&1 || note_fail "1Password SDK install failed"
+else
+  note_fail "1Password SDK skipped (no pnpm)"
+fi
+
 # Pinned direct download, NOT the official installer (setup.sh install_supabase):
 # the installer resolves the latest tag via anonymous api.github.com, which is
 # rate-limited (403) from shared cloud egress IPs.

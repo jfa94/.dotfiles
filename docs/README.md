@@ -42,7 +42,7 @@ For installation steps, see the root [README](../README.md).
 | [agent-credentials.md](agent-credentials.md)         | 1Password-backed agent tokens, per-project `.agent-env`, MCP authentication, new-machine and rotation steps                      |
 | [aws-agent-toolkit.md](aws-agent-toolkit.md)         | AWS Agent Toolkit guidance, account selection, and Codex AWS read access                                                         |
 | [claude-auto-mode.md](claude-auto-mode.md)           | Troubleshooting Claude Auto-mode confirmation fallbacks and wrapped lint/test commands                                           |
-| [cloud-environments.md](cloud-environments.md)       | Replicating the local Claude Code workflow on claude.ai/code cloud VMs                                                          |
+| [cloud-environments.md](cloud-environments.md)       | Replicating the local Claude Code workflow, and loading project variables from 1Password, on claude.ai/code cloud VMs           |
 | [codex-claude-parity.md](codex-claude-parity.md)     | Claude-to-Codex behavior mapping, hook gates, plugin inventory, code-review artifacts, intentional gaps, sandbox troubleshooting |
 
 ### Historical design records

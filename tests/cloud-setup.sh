@@ -50,6 +50,9 @@ mkdir -p "$stubs"
 for t in pnpm supabase trufflehog uv semgrep codex node gh perl npm; do
   printf '#!/bin/bash\nexit 0\n' > "$stubs/$t"
 done
+# pnpm stub records its arguments to an absolute path (the degraded run has no env passthrough)
+# shellcheck disable=SC2016  # stub body must expand when the stub runs
+printf '#!/bin/bash\necho "$@" >> "%s"\n' "$tmp/pnpm.log" > "$stubs/pnpm"
 printf '#!/bin/bash\nexit 0\n' > "$stubs/apt-get"
 printf '#!/bin/bash\nexit 1\n' > "$stubs/curl"
 # claude stub records its invocations
@@ -90,6 +93,12 @@ grep -q 'github:acme/mp' "$tmp/claude.log" && fail "github: prefix rejected by C
 grep -q 'plugin install good@acme --scope user' "$tmp/claude.log" || fail "enabled plugin not installed"
 grep -q 'disabled@acme' "$tmp/claude.log" && fail "disabled plugin should be skipped"
 grep -q 'cloud-setup finished clean' <<< "$out" || fail "expected clean summary, got: $out"
+
+# SDK install: frozen, production-only, non-interactive, pointed at the fetcher package.
+pnpm_line="$(grep -F -- "--dir $dot/cloud/op-env" "$tmp/pnpm.log")" || fail "SDK install not run against cloud/op-env"
+for flag in install --frozen-lockfile --prod --config.confirmModulesPurge=false; do
+  [[ " $pnpm_line " == *" $flag "* ]] || fail "SDK install missing $flag: $pnpm_line"
+done
 
 # --- setup preserves an existing ~/.claude.json -----------------------------
 
@@ -152,6 +161,15 @@ rm "$stubs/ln"
 run_setup >/dev/null 2>&1 || fail 'recovery failed'
 [[ -f "$home/.codex/AGENTS.md" ]] || fail 'recovery did not restore link'
 
+# A failing SDK install is named in the summary and the run still exits 0.
+mv "$stubs/pnpm" "$tmp/pnpm.ok"
+printf '#!/bin/bash\nexit 1\n' > "$stubs/pnpm"
+chmod +x "$stubs/pnpm"
+out="$(run_setup 2>&1)" || fail 'SDK install failure changed zero-exit contract'
+grep -q '1Password SDK install failed' <<< "$out" || fail 'SDK install failure not reported'
+grep -q 'issue(s)' <<< "$out" || fail 'SDK install failure absent from summary'
+mv "$tmp/pnpm.ok" "$stubs/pnpm"
+
 # --- degraded: tools missing + network dead -> reports issues, exits 0 ------
 # restricted PATH so the host's real CLIs can't satisfy the command -v guards
 
@@ -163,13 +181,16 @@ for c in bash sh git jq ln readlink mkdir dirname basename find chmod uname whoa
   [[ "$p" == /* ]] && ln -s "$p" "$realbin/$c"
 done
 
-for t in supabase trufflehog uv semgrep codex claude; do rm "$stubs/$t"; done
+# pnpm goes too; the npm stub "installs" it without providing it, so the fresh
+# command -v re-check is what must report the skipped SDK install.
+for t in pnpm supabase trufflehog uv semgrep codex claude; do rm "$stubs/$t"; done
 out="$(HOME="$home" PATH="$stubs:$realbin" CLAUDE_LOG="$tmp/claude.log" \
   CLOUD_SETUP_LOG="$tmp/setup-degraded.log" bash "$SCRIPT" 2>&1)" \
   || fail "degraded run exited nonzero"
 grep -q 'issue(s)' <<< "$out" || fail "degraded run should report issues"
 grep -q 'supabase CLI install failed' <<< "$out" || fail "vacuous curl not caught (supabase)"
 grep -q 'codex CLI install failed' <<< "$out" || fail "vacuous curl not caught (codex)"
+grep -q '1Password SDK skipped (no pnpm)' <<< "$out" || fail "missing pnpm not reported for SDK install"
 grep -Eq 'failed|not found' "$tmp/setup-degraded.log" \
   || fail "failures not mirrored to log file"
 

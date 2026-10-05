@@ -500,6 +500,17 @@
         ]
       },
       {
+        "matcher": "startup|resume|clear|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionstart-op-env.sh",
+            "timeout": 60,
+            "statusMessage": "Loading cloud project variables"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {

@@ -121,8 +121,10 @@ hooks, plugins, and Codex/Supabase CLIs) on claude.ai/code cloud VMs. Paste
 the tiny shim from [docs/cloud-environments.md](docs/cloud-environments.md)
 into each project's environment setup script. Managed PostHog/Supabase
 connectors remain authoritative when their project binding is verified; setup
-does not add duplicate unscoped MCP servers. AWS CLI is deliberately excluded;
-Codex re-auths per session via `codex login --device-auth`.
+does not add duplicate unscoped MCP servers. Project variables load at session
+start from the project's 1Password Environment (inputs `OP_SERVICE_ACCOUNT_TOKEN`
+and `OP_ENVIRONMENT_ID`). AWS CLI is deliberately excluded; Codex re-auths per
+session via `codex login --device-auth`.
 
 ## Claude Code and Codex CLIs
 

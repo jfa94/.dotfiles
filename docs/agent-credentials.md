@@ -158,8 +158,11 @@ Keychain copies until this checklist passes on every machine, then remove them
 only as a separately approved cleanup.
 
 Cloud and CI authentication are outside this local-workstation design. Managed
-connectors remain authoritative there; do not copy personal `op://` references
-into a headless environment.
+connectors remain authoritative there, and Claude Code cloud sessions load a
+project's variables from its 1Password Environment through a project-scoped
+service account (see
+[cloud-environments.md](cloud-environments.md#project-variables-from-1password)).
+Do not copy personal `op://` references into a headless environment.
 
 ## Verification
 
