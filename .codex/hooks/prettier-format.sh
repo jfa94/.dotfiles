@@ -5,7 +5,8 @@
 # unconfigured projects.
 set -uo pipefail
 
-. "${HOME}/.codex/hooks/hook-lib.sh"
+# shellcheck source=hook-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 INPUT=$(cat)
 CWD=$(project_dir "$INPUT")

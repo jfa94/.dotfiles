@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # shellcheck source=hook-lib.sh
-. "${HOME}/.codex/hooks/hook-lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 INPUT=$(cat)
 TOOL_NAME=$(json_get "$INPUT" '.tool_name // .toolName // empty' | tr '[:upper:]' '[:lower:]')

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-. "${HOME}/.codex/hooks/hook-lib.sh"
+# shellcheck source=hook-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 INPUT=$(cat)
 CMD=$(json_get "$INPUT" '.tool_input.command // empty')

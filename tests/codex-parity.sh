@@ -89,6 +89,27 @@ assert_npm_suggestion "echo hi && npm test" "pnpm test"
 assert_decision "npm-to-pnpm ignores pnpm" npm-to-pnpm.sh "pnpm install" allow
 assert_decision "npm-to-pnpm ignores mentions" npm-to-pnpm.sh "echo npm" allow
 
+# --- codex-dir-check: user-level .codex config needs confirmation ----------
+assert_path_decision() {
+  local name=$1 path=$2 expected=$3 output decision
+  output=$(run_hook codex-dir-check.sh "$(jq -cn --arg p "$path" --arg cwd "$ROOT" '{cwd:$cwd,tool_input:{file_path:$p}}')")
+  decision=allow
+  [[ -z "$output" ]] || decision=$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision // "allow"')
+  [[ "$decision" == "$expected" ]] || { echo "FAIL codex-dir-check $name: expected $expected, got $decision: $output" >&2; exit 1; }
+  PASS=$((PASS + 1))
+}
+assert_path_decision "user config" "$HOME/.codex/config.toml" deny
+assert_path_decision "project-local .codex" "$ROOT/.codex/x" allow
+assert_path_decision "relative project-local .codex" ".codex/x" allow
+assert_path_decision "user log dir" "$HOME/.codex/log/x" allow
+assert_path_decision "user cache dir" "$HOME/.codex/cache/x" allow
+assert_path_decision "user system skills" "$HOME/.codex/skills/.system/x" allow
+assert_path_decision "non-.codex path" "$HOME/notes.md" allow
+assert_decision "apply_patch on user hooks" codex-dir-check.sh \
+  "$(printf '*** Begin Patch\n*** Update File: %s/.codex/hooks.json\n*** End Patch' "$HOME")" deny
+assert_decision "apply_patch on project file" codex-dir-check.sh \
+  "$(printf '*** Begin Patch\n*** Update File: %s/.codex/x\n*** End Patch' "$ROOT")" allow
+
 # --- pre-commit gate: per-command workdir, not stale session cwd ---------
 # Codex passes each command's working directory as tool_input.workdir and
 # tells the model to always set it; sessions are commonly started outside

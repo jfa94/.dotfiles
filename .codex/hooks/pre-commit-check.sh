@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-. "${HOME}/.codex/hooks/hook-lib.sh"
+# shellcheck source=hook-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 # Kept identical to .claude/hooks/pre-commit-check.sh (drift-checked by
 # tests/codex-permissions-aws-mcp.sh). id_rsa/id_ed25519 etc. must NOT be

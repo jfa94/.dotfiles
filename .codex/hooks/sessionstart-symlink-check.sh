@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-. "${HOME}/.codex/hooks/hook-lib.sh"
+# shellcheck source=hook-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
 
 missing=()
 # hooks/ and rules/ are real dirs of per-file symlinks (setup.sh links files,
@@ -24,5 +25,5 @@ for line in 'approvals_reviewer = "auto_review"' 'default_permissions = "workspa
 done
 
 if [[ ${#drifted[@]} -gt 0 ]]; then
-  session_context "Codex config-drift warning: expected in config.toml: ${drifted[*]}. Codex rewrites this file; restore it from git (dotfiles .codex/user-config.toml) instead of using the TUI mode picker — the picker replaces workspace-net with a built-in preset that disables network and makes .git read-only."
+  session_context "Codex config-drift warning: expected in config.toml: ${drifted[*]}. Codex rewrites this file; fix those lines in place (do not restore the file from git: that drops [hooks.state] hook trust) and avoid the TUI mode picker — the picker replaces workspace-net with a built-in preset that disables network and makes .git read-only."
 fi

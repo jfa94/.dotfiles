@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deterministic citation verification for the comprehensive/quick code-review
+// Deterministic citation verification for the comprehensive/focused code-review
 // skills. Implements the spec in references/internals.md §6 so the
 // orchestrator LLM never hand-executes this procedure.
 //

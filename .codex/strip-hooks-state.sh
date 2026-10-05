@@ -10,7 +10,8 @@
 # Blank lines are buffered and flushed only when a later kept non-blank line
 # appears, so blank line(s) immediately preceding a stripped section drop too.
 #
-# stdin -> stdout. Identity transform when no [hooks.state] section exists.
+# stdin -> stdout. Not an identity transform even without [hooks.state]: it
+# also drops marketplace last_updated/last_revision and trailing blank lines.
 exec awk '
   /^\[hooks\.state/ { skip = 1; next }
   /^\[/             { skip = 0; mkt = ($0 ~ /^\[marketplaces/) }

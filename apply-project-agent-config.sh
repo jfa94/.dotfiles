@@ -127,7 +127,8 @@ done
 
 # User-scope PostHog/Supabase servers: give every non-Outsidey project (and
 # worktrees, which don't inherit the Outsidey root's curated server list) the
-# native servers instead of the write-capable claude.ai connectors.
+# native servers instead of the claude.ai connectors. PostHog here is the
+# full-catalogue (write-capable) server; Supabase stays read_only=true.
 remove_user_mcp_server() {
   local name="$1" claude_json="$HOME/.claude.json"
   if jq -e --arg n "$name" '.mcpServers[$n] != null' "$claude_json" >/dev/null 2>&1; then
