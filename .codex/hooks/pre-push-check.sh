@@ -9,7 +9,7 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 # Match git push at start or after a chain operator — `git commit && git push`
 # skipped a ^-anchored trigger entirely.
 # git invocation at a segment start, also inside ( ) / { } or behind a command wrapper.
-GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?'
+GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 grep -qE "(^|;|&|\|)${GIT_RE}push" <<< "$CMD" || exit 0
 # Honor git -C <dir>: gate the repo being pushed, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')

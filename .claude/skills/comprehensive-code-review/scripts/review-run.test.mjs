@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -179,6 +180,15 @@ test("finish refuses an empty report and leaves the run RUNNING", (t) => {
   const result = finishWithReport(run);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /missing or empty/);
+  assert.equal(runStatus(run), "RUNNING");
+});
+
+test("finish surfaces a stat error other than a missing report", (t) => {
+  const run = init(fixture(t), "comprehensive");
+  symlinkSync("review.md", path.join(run.runDir, "review.md"));
+  const result = finishWithReport(run);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /cannot stat review\.md: .*ELOOP/);
   assert.equal(runStatus(run), "RUNNING");
 });
 

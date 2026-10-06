@@ -170,6 +170,11 @@ assert_claude "push --mirror" "git push --mirror origin" deny
 assert_claude "push --m" "git push --m origin" deny
 assert_claude "push trailing --mirror" "git push origin --mirror" deny
 assert_claude "-C push --mirror" "git -C /x push --mirror origin" deny
+assert_claude "-c push --mirror" "git -c advice.x=1 push --mirror origin" deny
+assert_claude "--no-pager push --force" "git --no-pager push --force origin" deny
+assert_claude "double-space push -f" "git  push -f origin" deny
+assert_claude "--git-dir commit --no-verify" "git --git-dir /x/.git commit --no-verify -m x" deny
+assert_claude "-c log mentioning push" "git -c core.pager=cat log --oneline push --mirror-ish" pass
 # Longer than a pipe buffer: an early match must not be lost to SIGPIPE.
 assert_claude "push --mirror before many lines" "git push --mirror origin
 $(seq 1 30000)" deny

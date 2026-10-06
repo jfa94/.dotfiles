@@ -3,7 +3,13 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-HOOK="$ROOT/.claude/hooks/pre-commit-check.sh"
+# Runs every case against both runtimes' hooks (they share a drift-pinned block).
+RUNTIME=${1:-}
+if [[ -z "$RUNTIME" ]]; then
+  bash "$0" claude
+  exec bash "$0" codex
+fi
+HOOK="$ROOT/.$RUNTIME/hooks/pre-commit-check.sh"
 PASS=0
 
 SCRATCH=$(mktemp -d)
@@ -19,7 +25,7 @@ git -C "$SCRATCH" commit -q -m init
 assert_decision() {
   local name=$1 command=$2 expected=$3 dir=${4:-$SCRATCH} bin=${5:-} output decision
   output=$(PATH="${bin:+$bin:}$PATH" CLAUDE_PROJECT_DIR="$dir" "$HOOK" \
-    <<< "$(jq -cn --arg c "$command" '{tool_input:{command:$c}}')" 2>/dev/null)
+    <<< "$(jq -cn --arg c "$command" --arg d "$dir" '{cwd:$d,tool_input:{command:$c}}')" 2>/dev/null)
   if [[ -n "$output" ]]; then
     decision=$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecision')
   else
@@ -58,6 +64,7 @@ git -C "$SCRATCH" add .env
 assert_decision "triggers on a subshell commit" "(git commit -m x)" deny
 assert_decision "triggers on a brace-group commit" "{ git commit -m x; }" deny
 assert_decision "triggers on a wrapped commit" "env A=1 git commit -m x" deny
+assert_decision "triggers on a commit with git global options" "git -c core.x=1 --no-pager  commit -m x" deny
 assert_decision "ignores a quoted mention of git commit" 'grep -n "git commit" notes.md' allow
 git -C "$SCRATCH" reset -q
 rm -rf "$SCRATCH/.env" "$SCRATCH/sub"
@@ -71,6 +78,17 @@ echo 'FOO=bar' > "$SCRATCH/.env.example"
 assert_decision "allows .env.example" "git add .env.example && git commit -m x" allow
 rm -f "$SCRATCH/.env.example"
 
+# Secret paths at the repo root: git's relative paths have no leading slash.
+for f in fake.pem id_rsa id_ed25519 id_ecdsa .envrc secrets/a.txt; do
+  mkdir -p "$(dirname "$SCRATCH/$f")"
+  echo secret > "$SCRATCH/$f"
+  assert_decision "denies secret path $f" "git add ${f%%/*} && git commit -m x" deny
+  rm -rf "${SCRATCH:?}/${f%%/*}"
+done
+echo 'ssh-ed25519 AAAA' > "$SCRATCH/id_ed25519.pub"
+assert_decision "allows a public key" "git add id_ed25519.pub && git commit -m x" allow
+rm -f "$SCRATCH/id_ed25519.pub"
+
 echo "key = $FAKE_AWS_KEY" > "$SCRATCH/leak.txt"
 assert_decision "denies an untracked secret value added in the same command" "git add leak.txt && git commit -m x" deny
 rm -f "$SCRATCH/leak.txt"
@@ -82,10 +100,11 @@ assert_decision "ignores unstaged changes without -a" "git commit -m x" allow
 assert_decision "does not treat --amend as -a" "git commit --amend -m x" allow
 git -C "$SCRATCH" checkout -q -- README.md
 
-# Generic password patterns skip test files but not source files.
+# Claude's generic password patterns skip test files; Codex scans them too.
 mkdir -p "$SCRATCH/tests"
 echo "const $PW_KEY = \"hunter2hunter2\"" > "$SCRATCH/tests/a.test.ts"
-assert_decision "allows a password fixture in a test file" "git add tests && git commit -m x" allow
+if [[ "$RUNTIME" == claude ]]; then expected=allow; else expected=deny; fi
+assert_decision "password fixture in a test file" "git add tests && git commit -m x" "$expected"
 echo "const $PW_KEY = \"hunter2hunter2\"" > "$SCRATCH/config.ts"
 assert_decision "denies a password literal in source" "git add config.ts && git commit -m x" deny
 rm -rf "$SCRATCH/tests" "$SCRATCH/config.ts"
@@ -153,6 +172,20 @@ ln -s nowhere "$SCRATCH/link"
 assert_decision "allows a dangling symlink" "git add link && git commit -m x" allow
 rm -f "$SCRATCH/link"
 
+# Type change: a committed symlink replaced by a regular file holding a secret.
+ln -s README.md "$SCRATCH/tl"
+git -C "$SCRATCH" add tl
+git -C "$SCRATCH" commit -q -m tl
+rm "$SCRATCH/tl"
+echo "key = $FAKE_AWS_KEY" > "$SCRATCH/tl"
+git -C "$SCRATCH" add tl
+assert_decision "denies a secret in a staged type-changed file" "git commit -m x" deny
+git -C "$SCRATCH" reset -q
+assert_decision "denies a secret in a type-changed file added in the command" "git add tl && git commit -m x" deny
+assert_decision "denies a secret in a type-changed file committed with -a" "git commit -am x" deny
+rm "$SCRATCH/tl"
+git -C "$SCRATCH" checkout -q -- tl
+
 # Non-ASCII names staged beforehand reach the hook through --name-only, not the dry run.
 echo hi > "$SCRATCH/café.md"
 git -C "$SCRATCH" add café.md
@@ -173,4 +206,4 @@ git -C "$SCRATCH" commit -q -m mod
 git -C "$SCRATCH/mod" -c user.email=t@t.com -c user.name=t commit -q --allow-empty -m two
 assert_decision "allows -a over an advanced submodule" "git commit -am x" allow
 
-echo "pre-commit-check: $PASS checks passed"
+echo "pre-commit-check ($RUNTIME): $PASS checks passed"

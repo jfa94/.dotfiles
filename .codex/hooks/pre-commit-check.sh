@@ -16,7 +16,7 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 # Match git commit at start or after a chain operator (&&, ;, ||, &, |) —
 # `git add -A && git commit` skipped a ^-anchored trigger.
 # git invocation at a segment start, also inside ( ) / { } or behind a command wrapper.
-GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?'
+GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 grep -qE "(^|;|&|\|)${GIT_RE}commit" <<< "$CMD" || exit 0
 # Honor git -C <dir>: scan the repo the commit targets, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
@@ -25,7 +25,7 @@ if ! cd "${DIR:-$CWD}"; then deny "Pre-commit gate cannot enter target repositor
 
 # >>> shared pre-commit block
 # Byte-identical in both runtimes (drift-checked by tests/codex-permissions-aws-mcp.sh).
-if ! STAGED=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR 2>/dev/null); then
+if ! STAGED=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRT 2>/dev/null); then
   deny "Pre-commit gate could not inspect staged files."
   exit 0
 fi
@@ -56,7 +56,7 @@ fi
 # `commit -a/--all` also stages tracked modifications; a ` -…a…` token in any
 # message over-matches, which only scans more. Residual: `commit <pathspec>`.
 if grep -qE '[[:space:]](--all|-[a-zA-Z]*a[a-zA-Z]*)([[:space:]]|$)' <<< "$CMD"; then
-  PENDING+=$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR 2>/dev/null)$'\n'
+  PENDING+=$(git -c core.quotePath=false diff --name-only --diff-filter=ACMRT 2>/dev/null)$'\n'
 fi
 PENDING=$(printf '%s\n' "$PENDING" | sed '/^$/d')
 
@@ -71,30 +71,20 @@ fi
 # Scans the index or worktree version of $1 for verified secrets; denies on any
 # read or scanner failure. Call directly, never in a subshell: it exits on deny.
 scan_version() {
-  local f=$1 version=$2 blob err out detail read_ok=1
+  local f=$1 version=$2 blob err out msg=""
   blob=$(mktemp)
   err=$(mktemp)
-  if [[ "$version" == index ]]; then
-    git show ":$f" > "$blob" 2>"$err" || read_ok=0
-  else
-    cat -- "$f" > "$blob" 2>"$err" || read_ok=0
-  fi
-  if [[ "$read_ok" -eq 0 ]]; then
-    detail=$(tail -3 "$err" | tr '\n' ' ')
-    rm -f "$blob" "$err"
-    deny "Pre-commit gate could not read the $version version of $f: $detail"
-    exit 0
-  fi
+  if ! { if [[ "$version" == index ]]; then git show ":$f"; else cat -- "$f"; fi; } > "$blob" 2>"$err"; then
+    msg="Pre-commit gate could not read the $version version of $f: $(tail -3 "$err" | tr '\n' ' ')"
   # No --fail: its exit code conflates findings with errors; JSON output is the finding.
-  if ! out=$(trufflehog filesystem "$blob" --only-verified --no-update --json 2>"$err"); then
-    detail=$(tail -3 "$err" | tr '\n' ' ')
-    rm -f "$blob" "$err"
-    deny "TruffleHog failed while scanning $f: $detail"
-    exit 0
+  elif ! out=$(trufflehog filesystem "$blob" --only-verified --no-update --json 2>"$err"); then
+    msg="TruffleHog failed while scanning $f: $(tail -3 "$err" | tr '\n' ' ')"
+  elif [[ -n "$out" ]]; then
+    msg="TruffleHog detected a verified secret in file: $f"
   fi
   rm -f "$blob" "$err"
-  if [[ -n "$out" ]]; then
-    deny "TruffleHog detected a verified secret in file: $f"
+  if [[ -n "$msg" ]]; then
+    deny "$msg"
     exit 0
   fi
 }
@@ -117,7 +107,7 @@ fi
 # <<< shared pre-commit block
 
 # Regex sweep, added lines only: a commit that REMOVES a secret must not be blocked.
-STAGED_ADDED=$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null | grep -E '^\+' || true)
+STAGED_ADDED=$(git diff --cached --diff-filter=ACMRT -U0 2>/dev/null | grep -E '^\+' || true)
 PENDING_ADDED=""
 while IFS= read -r f; do
   [[ -n "$f" ]] || continue

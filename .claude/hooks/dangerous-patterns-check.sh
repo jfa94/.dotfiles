@@ -35,22 +35,23 @@ RECURSIVE_RM='rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*[rR][a-zA-Z]*([[:
 # Backslash-newline is joined first (grep is line-based). Bundled shorts and
 # abbreviated long options are segment-bounded; `-m "x -nothing"` over-matches (safe).
 JOINED=${CMD//$'\\\n'/}
-GIT='git( -C [^[:space:]]+)?'
+# GIT tolerates global options (-c k=v, -C dir, --no-pager) and repeated spaces.
+GIT='git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 ARGS='([^;&|]*[[:space:]])?'
 for PAT in \
-  "${GIT} push[[:space:]].*--force" \
-  "${GIT} push[[:space:]].*--no-verify" \
-  "${GIT} push[[:space:]].*-f([[:space:]]|\$)" \
-  "${GIT} push[[:space:]][^;&|]*[[:space:]]\\+[^[:space:]]" \
-  "${GIT} commit[[:space:]].*--no-verify" \
-  "${GIT} commit[[:space:]].*--no-gpg-sign" \
-  "${GIT} commit[[:space:]].*-n([[:space:]]|\$)" \
-  "${GIT} rebase[[:space:]].*--no-verify" \
-  "${GIT} push[[:space:]]${ARGS}-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|\$)" \
-  "${GIT} commit[[:space:]]${ARGS}-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|\$)" \
-  "${GIT} (commit|push|rebase)[[:space:]]${ARGS}--no-veri" \
-  "${GIT} commit[[:space:]]${ARGS}--no-g" \
-  "${GIT} push[[:space:]]${ARGS}--m" \
+  "${GIT}push[[:space:]].*--force" \
+  "${GIT}push[[:space:]].*--no-verify" \
+  "${GIT}push[[:space:]].*-f([[:space:]]|\$)" \
+  "${GIT}push[[:space:]][^;&|]*[[:space:]]\\+[^[:space:]]" \
+  "${GIT}commit[[:space:]].*--no-verify" \
+  "${GIT}commit[[:space:]].*--no-gpg-sign" \
+  "${GIT}commit[[:space:]].*-n([[:space:]]|\$)" \
+  "${GIT}rebase[[:space:]].*--no-verify" \
+  "${GIT}push[[:space:]]${ARGS}-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|\$)" \
+  "${GIT}commit[[:space:]]${ARGS}-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|\$)" \
+  "${GIT}(commit|push|rebase)[[:space:]]${ARGS}--no-veri" \
+  "${GIT}commit[[:space:]]${ARGS}--no-g" \
+  "${GIT}push[[:space:]]${ARGS}--m" \
   "${RECURSIVE_RM}[[:space:]]+(~|\\\$HOME)" \
   '(pnpm|npm|yarn) publish'; do
   if grep -qE "$PAT" <<< "$JOINED"; then
@@ -63,11 +64,11 @@ done
 # Options that make git run an arbitrary program. Case-sensitive: rebase -X is
 # the harmless strategy option. Prefixes are the shortest git accepts per command.
 for PAT in \
-  "${GIT} rebase[[:space:]]${ARGS}--ex" \
-  "${GIT} rebase[[:space:]]${ARGS}-[a-zA-Z]*x" \
-  "${GIT} fetch[[:space:]]${ARGS}--upl" \
-  "${GIT} ls-remote[[:space:]]${ARGS}--(u|exe)" \
-  "${GIT} push[[:space:]]${ARGS}--(rece|e)"; do
+  "${GIT}rebase[[:space:]]${ARGS}--ex" \
+  "${GIT}rebase[[:space:]]${ARGS}-[a-zA-Z]*x" \
+  "${GIT}fetch[[:space:]]${ARGS}--upl" \
+  "${GIT}ls-remote[[:space:]]${ARGS}--(u|exe)" \
+  "${GIT}push[[:space:]]${ARGS}--(rece|e)"; do
   if grep -qE "$PAT" <<< "$JOINED"; then
     jq -cn '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git option executes an arbitrary command — run it manually"}}'
     exit 0

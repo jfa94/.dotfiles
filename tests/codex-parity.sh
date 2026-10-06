@@ -122,103 +122,6 @@ assert_decision "pre-commit uses command workdir over stale session cwd" \
 assert_decision "pre-commit falls back to session cwd when workdir absent" \
   pre-commit-check.sh "git commit -m x" allow "" "$ROOT"
 
-# --- pre-commit gate: secrets staged by this same command ----------------
-# The gate runs BEFORE the command executes, so `git add secret && git
-# commit` has nothing staged yet at hook time. These exercise the pending-add
-# resolution (git add --dry-run) that closes that hole.
-SCRATCH=$(mktemp -d)
-trap 'rm -rf "$SCRATCH"' EXIT
-git -C "$SCRATCH" init -q
-git -C "$SCRATCH" config user.email t@t.com
-git -C "$SCRATCH" config user.name t
-echo readme > "$SCRATCH/README.md"
-git -C "$SCRATCH" add README.md
-GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.com \
-  git -C "$SCRATCH" commit -q -m init
-
-echo secret > "$SCRATCH/fake.pem"
-assert_decision "pre-commit denies secret added in the same command" \
-  pre-commit-check.sh "git add fake.pem && git commit -m x" deny "$SCRATCH"
-rm -f "$SCRATCH/fake.pem"
-
-echo hi > "$SCRATCH/notes.txt"
-assert_decision "pre-commit allows a plain file added in the same command" \
-  pre-commit-check.sh "git add . && git commit -m x" allow "$SCRATCH"
-rm -f "$SCRATCH/notes.txt"
-
-mkdir -p "$SCRATCH/sub"
-echo secret > "$SCRATCH/sub/id_rsa"
-assert_decision "pre-commit denies a secret pulled in by 'git add .'" \
-  pre-commit-check.sh "git add . && git commit -m x" deny "$SCRATCH"
-rm -rf "$SCRATCH/sub"
-
-assert_decision "pre-commit fails closed on unresolvable git add args" \
-  pre-commit-check.sh 'git add $(cat list) && git commit -m x' deny "$SCRATCH"
-mkdir -p "$SCRATCH/sub"
-echo 'X=1' > "$SCRATCH/sub/.env"
-assert_decision "pre-commit fails closed on a git add inside a cd subshell" \
-  pre-commit-check.sh "(cd sub && git add .env) && git commit -m x" deny "$SCRATCH"
-assert_decision "pre-commit fails closed on xargs git add" \
-  pre-commit-check.sh "printf sub/.env | xargs git add && git commit -m x" deny "$SCRATCH"
-assert_decision "pre-commit denies .env added behind env" \
-  pre-commit-check.sh "env A=1 git add sub/.env && (git commit -m x)" deny "$SCRATCH"
-rm -rf "$SCRATCH/sub"
-
-# --- pre-commit gate: SECRET_PATH_RE regression cases ---------------------
-# The bug this whole block exists for: id_rsa/id_ed25519 were anchored with a
-# required leading '/', so a repo-ROOT key (git's own relative path has no
-# leading slash) was never matched. sub/id_rsa above already covered the
-# nested case and passed even with the bug present.
-echo secret > "$SCRATCH/id_rsa"
-assert_decision "pre-commit denies id_rsa at repo root" \
-  pre-commit-check.sh "git add id_rsa && git commit -m x" deny "$SCRATCH"
-rm -f "$SCRATCH/id_rsa"
-
-echo secret > "$SCRATCH/id_ed25519"
-assert_decision "pre-commit denies id_ed25519 at repo root" \
-  pre-commit-check.sh "git add id_ed25519 && git commit -m x" deny "$SCRATCH"
-rm -f "$SCRATCH/id_ed25519"
-
-echo secret > "$SCRATCH/id_ecdsa"
-assert_decision "pre-commit denies id_ecdsa (new coverage)" \
-  pre-commit-check.sh "git add id_ecdsa && git commit -m x" deny "$SCRATCH"
-rm -f "$SCRATCH/id_ecdsa"
-
-echo 'export SECRET=x' > "$SCRATCH/.envrc"
-assert_decision "pre-commit denies .envrc" \
-  pre-commit-check.sh "git add .envrc && git commit -m x" deny "$SCRATCH"
-rm -f "$SCRATCH/.envrc"
-
-mkdir -p "$SCRATCH/secrets"
-echo secret > "$SCRATCH/secrets/a.txt"
-assert_decision "pre-commit denies a bare secrets/ dir" \
-  pre-commit-check.sh "git add secrets && git commit -m x" deny "$SCRATCH"
-rm -rf "$SCRATCH/secrets"
-
-echo 'FOO=bar' > "$SCRATCH/.env.example"
-assert_decision "pre-commit allows .env.example (false positive fixed)" \
-  pre-commit-check.sh "git add .env.example && git commit -m x" allow "$SCRATCH"
-rm -f "$SCRATCH/.env.example"
-
-echo 'ssh-ed25519 AAAA...' > "$SCRATCH/id_ed25519.pub"
-assert_decision "pre-commit allows a public key" \
-  pre-commit-check.sh "git add id_ed25519.pub && git commit -m x" allow "$SCRATCH"
-rm -f "$SCRATCH/id_ed25519.pub"
-
-# Assembled at runtime so this file doesn't trip the secret scan itself.
-FAKE_AWS_KEY="AKIA$(printf 'IOSFODNN7EXAMPLE')"
-# --- pre-commit gate: `commit -a/--all` stages tracked modifications -------
-echo "key = $FAKE_AWS_KEY" >> "$SCRATCH/README.md"
-assert_decision "pre-commit denies a secret in a tracked file committed with -am" \
-  pre-commit-check.sh "git commit -am x" deny "$SCRATCH"
-assert_decision "pre-commit denies a secret committed with --all" \
-  pre-commit-check.sh "git commit --all -m x" deny "$SCRATCH"
-assert_decision "pre-commit ignores unstaged changes without -a" \
-  pre-commit-check.sh "git commit -m x" allow "$SCRATCH"
-assert_decision "pre-commit does not treat --amend as -a" \
-  pre-commit-check.sh "git commit --amend -m x" allow "$SCRATCH"
-git -C "$SCRATCH" checkout -q -- README.md
-
 # --- git exec options: Codex hook decides exactly like Claude's dangerous-patterns ---
 while IFS='|' read -r name command expected; do
   assert_decision "git-exec $name" git-exec-check.sh "$command" "$expected"
@@ -236,40 +139,12 @@ ls-remote --exe|git ls-remote --exe=sh origin|deny
 -C ls-remote --exec|git -C /x ls-remote --exec=sh origin|deny
 push --receive-pack|git push --receive-pack=sh origin|deny
 push --exec|git push origin --exec=sh|deny
+-c rebase --exec|git -c core.x=1 rebase --exec=sh main|deny
+--no-pager fetch --upload-pack|git --no-pager  fetch --upload-pack=sh origin|deny
 ls-remote --exit-code|git ls-remote --exit-code origin main|allow
 rebase -X strategy|git rebase -X theirs main|allow
 fetch|git fetch origin|allow
 EXEC_CASES
-
-# --- pre-commit gate: subdirectories, submodules, symlinks, quoted names ----
-mkdir -p "$SCRATCH/sub"
-echo "key = $FAKE_AWS_KEY" > "$SCRATCH/sub/k.txt"
-assert_decision "pre-commit denies a secret added from a subdirectory" \
-  pre-commit-check.sh "git add k.txt && git commit -m x" deny "$SCRATCH/sub"
-echo hi > "$SCRATCH/sub/k.txt"
-assert_decision "pre-commit allows a plain file added from a subdirectory" \
-  pre-commit-check.sh "git add k.txt && git commit -m x" allow "$SCRATCH/sub"
-rm -rf "$SCRATCH/sub"
-
-git -C "$SCRATCH" update-index --add --cacheinfo "160000,1111111111111111111111111111111111111111,nested"
-assert_decision "pre-commit allows a staged submodule pointer" \
-  pre-commit-check.sh "git commit -m x" allow "$SCRATCH"
-git -C "$SCRATCH" reset -q
-
-ln -s nowhere "$SCRATCH/link"
-assert_decision "pre-commit allows a dangling symlink" \
-  pre-commit-check.sh "git add link && git commit -m x" allow "$SCRATCH"
-rm -f "$SCRATCH/link"
-
-echo hi > "$SCRATCH/café.md"
-git -C "$SCRATCH" add café.md
-assert_decision "pre-commit allows a staged non-ASCII file name" \
-  pre-commit-check.sh "git commit -m x" allow "$SCRATCH"
-git -C "$SCRATCH" reset -q
-rm -f "$SCRATCH/café.md"
-
-rm -rf "$SCRATCH"
-trap - EXIT
 
 # Every translatable Claude AWS allowance must auto-allow. Argument-dependent
 # S3 copies remain reviewable because prefixes cannot constrain destinations.

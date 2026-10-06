@@ -132,7 +132,9 @@ const finish = (args) => {
     let report;
     try {
       report = statSync(path.join(runDir, args.report));
-    } catch {}
+    } catch (error) {
+      if (error.code !== "ENOENT") fail(`cannot stat ${args.report}: ${error.message}`);
+    }
     if (!report?.isFile() || report.size === 0) fail(`${args.report} is missing or empty`);
   }
   const statePath = path.join(runDir, "run.json");

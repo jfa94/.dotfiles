@@ -12,14 +12,14 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 # in arbitrary positions or as --opt=value. Same patterns as the Claude
 # dangerous-patterns hook (parity-checked by tests/codex-parity.sh).
 JOINED=${CMD//$'\\\n'/}
-GIT='git( -C [^[:space:]]+)?'
+GIT='git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 ARGS='([^;&|]*[[:space:]])?'
 for PAT in \
-  "${GIT} rebase[[:space:]]${ARGS}--ex" \
-  "${GIT} rebase[[:space:]]${ARGS}-[a-zA-Z]*x" \
-  "${GIT} fetch[[:space:]]${ARGS}--upl" \
-  "${GIT} ls-remote[[:space:]]${ARGS}--(u|exe)" \
-  "${GIT} push[[:space:]]${ARGS}--(rece|e)"; do
+  "${GIT}rebase[[:space:]]${ARGS}--ex" \
+  "${GIT}rebase[[:space:]]${ARGS}-[a-zA-Z]*x" \
+  "${GIT}fetch[[:space:]]${ARGS}--upl" \
+  "${GIT}ls-remote[[:space:]]${ARGS}--(u|exe)" \
+  "${GIT}push[[:space:]]${ARGS}--(rece|e)"; do
   if grep -qE "$PAT" <<< "$JOINED"; then
     deny "git option executes an arbitrary command — run it manually"
     exit 0
