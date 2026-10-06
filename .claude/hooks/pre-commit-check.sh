@@ -3,7 +3,9 @@ set -uo pipefail
 CMD=$(cat | jq -r '.tool_input.command // empty')
 # Match git commit at start or after a chain operator (&&, ;, ||, &, |) — Claude
 # routinely writes `git add -A && git commit`, which a ^-anchored trigger skipped.
-printf '%s' "$CMD" | grep -qE '(^|;|&|\|)[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?commit' || exit 0
+# git invocation at a segment start, also inside ( ) / { } or behind a command wrapper.
+GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?'
+grep -qE "(^|;|&|\|)${GIT_RE}commit" <<< "$CMD" || exit 0
 
 deny() {
   jq -cn --arg r "$1" \
@@ -36,15 +38,15 @@ fi
 PENDING=""
 while IFS= read -r seg; do
   [[ -n "$seg" ]] || continue
-  # Fail closed rather than eval anything that can execute.
-  if printf '%s' "$seg" | grep -qE '[`$><]'; then
-    deny "Pre-commit gate cannot resolve 'git add' arguments statically: $seg"
+  rest=$(printf '%s' "$seg" | sed -E "s/^${GIT_RE}add[[:space:]]*//")
+  # Fail closed: never eval what can execute, and deny when the dry run fails
+  # (subshell parens, quotes split by the segmenter, ignored paths, xargs stdin).
+  if grep -qE '[`$><]|(^|[[:space:]({])xargs[[:space:]]' <<< "$seg" || ! ADD_OUT=$(eval "git add --dry-run --ignore-missing $rest" 2>/dev/null); then
+    deny "Pre-commit gate cannot resolve 'git add' arguments: $seg"
     exit 0
   fi
-  rest=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?add[[:space:]]*//')
-  ADD_OUT=$(eval "git add --dry-run --ignore-missing $rest" 2>/dev/null) || true
   PENDING+=$(printf '%s\n' "$ADD_OUT" | sed -nE "s/^add '(.*)'\$/\\1/p")$'\n'
-done < <(printf '%s' "$CMD" | tr ';&|' '\n' | grep -E '^[[:space:]]*git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?add([[:space:]]|$)')
+done < <(printf '%s' "$CMD" | tr ';&|' '\n' | grep -E "^${GIT_RE}add([[:space:]]|\$)")
 
 # Git reports repo-root-relative paths; resolve every one from the root.
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=""
@@ -55,7 +57,7 @@ fi
 
 # `commit -a/--all` also stages tracked modifications; a ` -…a…` token in any
 # message over-matches, which only scans more. Residual: `commit <pathspec>`.
-if printf '%s' "$CMD" | grep -qE '[[:space:]](--all|-[a-zA-Z]*a[a-zA-Z]*)([[:space:]]|$)'; then
+if grep -qE '[[:space:]](--all|-[a-zA-Z]*a[a-zA-Z]*)([[:space:]]|$)' <<< "$CMD"; then
   PENDING+=$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR 2>/dev/null)$'\n'
 fi
 PENDING=$(printf '%s\n' "$PENDING" | sed '/^$/d')
@@ -105,11 +107,11 @@ if [[ -n "$ALL_FILES" ]]; then
     [[ -n "$f" ]] || continue
     # Staged and re-added: scan both, either may be committed. Submodule
     # pointers and symlinks commit no scannable content.
-    if printf '%s\n' "$STAGED" | grep -qxF -- "$f" &&
+    if grep -qxF -- "$f" <<< "$STAGED" &&
       [[ "$(git --literal-pathspecs ls-files --stage -- "$f")" != 160000\ * ]]; then
       scan_version "$f" index
     fi
-    if printf '%s\n' "$PENDING" | grep -qxF -- "$f" && [[ ! -L "$f" && ! -d "$f" ]]; then
+    if grep -qxF -- "$f" <<< "$PENDING" && [[ ! -L "$f" && ! -d "$f" ]]; then
       scan_version "$f" worktree
     fi
   done <<< "$ALL_FILES"
@@ -139,7 +141,7 @@ while IFS= read -r f; do
     ADDED=$(git diff --no-index -U0 -- /dev/null "$f" 2>/dev/null | grep -E '^\+' || true)
   fi
   PENDING_ADDED+="$ADDED"$'\n'
-  printf '%s\n' "$f" | grep -qE "$TEST_FILE_RE" || PENDING_ADDED_NON_TEST+="$ADDED"$'\n'
+  grep -qE "$TEST_FILE_RE" <<< "$f" || PENDING_ADDED_NON_TEST+="$ADDED"$'\n'
 done <<< "$PENDING"
 
 SECRETS=$(printf '%s\n%s\n' "$STAGED_ADDED" "$PENDING_ADDED" \

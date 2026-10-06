@@ -144,6 +144,13 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["git", "push", "--mirror"],
+    decision = "prompt",
+    justification = "Mirror push force-updates and deletes remote refs; it requires explicit confirmation in the current turn.",
+    match = ["git push --mirror origin"],
+)
+
+prefix_rule(
     pattern = ["git", "push", "--no-verify"],
     decision = "prompt",
     justification = "Bypassing git hooks requires explicit confirmation in the current turn.",

@@ -13,6 +13,6 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 STRIPPED=$(printf '%s' "$CMD" | tr '\n' ';' | sed -E 's/"[^"]*"//g' | sed -E "s/'[^']*'//g")
 # Block cd/pushd + git/gh compound in either order, via any chaining operator (&&, ;, ||, &).
 # Word boundary before cd avoids false positives on argocd/etcd/--cd-style tokens.
-if printf '%s' "$STRIPPED" | grep -qE '((^|[^[:alnum:]_-])(cd|pushd)[[:space:]]+[^[:space:]]+.*(&&|;|\|\||&).*\b(git|gh)\b|\b(git|gh)\b.*(&&|;|\|\||&).*(^|[^[:alnum:]_-])(cd|pushd)[[:space:]]+[^[:space:]]+)'; then
+if grep -qE '((^|[^[:alnum:]_-])(cd|pushd)[[:space:]]+[^[:space:]]+.*(&&|;|\|\||&).*\b(git|gh)\b|\b(git|gh)\b.*(&&|;|\|\||&).*(^|[^[:alnum:]_-])(cd|pushd)[[:space:]]+[^[:space:]]+)' <<< "$STRIPPED"; then
   deny "cd plus git/gh compound command blocked. Set the exec tool workdir to the repository and run an ordinary git/gh command (for example, git status) so approval rules apply."
 fi

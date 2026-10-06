@@ -36,6 +36,7 @@ grep -q 'CODEX_USER_HOOKS=".codex/user-hooks.json"' "$ROOT/setup.sh"
 EXPECTED_BASH_HOOKS=$(cat <<'EOF'
 $HOME/.codex/hooks/compound-check.sh|
 bash $HOME/.codex/hooks/critical-rm-check.sh|
+$HOME/.codex/hooks/git-exec-check.sh|
 bash $HOME/.codex/hooks/aws-readonly-check.sh|
 $HOME/.codex/hooks/npm-to-pnpm.sh|
 $HOME/.codex/hooks/pre-commit-check.sh|60
@@ -45,7 +46,7 @@ EOF
 )
 ACTUAL_BASH_HOOKS=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | [.command, (.timeout // "")] | join("|")' "$CODEX_HOOKS")
 [[ "$ACTUAL_BASH_HOOKS" == "$EXPECTED_BASH_HOOKS" ]]
-[[ $(jq '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]] | length' "$CODEX_HOOKS") -eq 7 ]]
+[[ $(jq '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[]] | length' "$CODEX_HOOKS") -eq 8 ]]
 [[ $(jq -r '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].statusMessage] | unique | length' "$CODEX_HOOKS") -eq 1 ]]
 [[ $(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].statusMessage' "$CODEX_HOOKS") == "Checking shell command policy" ]]
 
@@ -153,6 +154,15 @@ rm -rf "$SCRATCH/sub"
 
 assert_decision "pre-commit fails closed on unresolvable git add args" \
   pre-commit-check.sh 'git add $(cat list) && git commit -m x' deny "$SCRATCH"
+mkdir -p "$SCRATCH/sub"
+echo 'X=1' > "$SCRATCH/sub/.env"
+assert_decision "pre-commit fails closed on a git add inside a cd subshell" \
+  pre-commit-check.sh "(cd sub && git add .env) && git commit -m x" deny "$SCRATCH"
+assert_decision "pre-commit fails closed on xargs git add" \
+  pre-commit-check.sh "printf sub/.env | xargs git add && git commit -m x" deny "$SCRATCH"
+assert_decision "pre-commit denies .env added behind env" \
+  pre-commit-check.sh "env A=1 git add sub/.env && (git commit -m x)" deny "$SCRATCH"
+rm -rf "$SCRATCH/sub"
 
 # --- pre-commit gate: SECRET_PATH_RE regression cases ---------------------
 # The bug this whole block exists for: id_rsa/id_ed25519 were anchored with a
@@ -209,6 +219,28 @@ assert_decision "pre-commit does not treat --amend as -a" \
   pre-commit-check.sh "git commit --amend -m x" allow "$SCRATCH"
 git -C "$SCRATCH" checkout -q -- README.md
 
+# --- git exec options: Codex hook decides exactly like Claude's dangerous-patterns ---
+while IFS='|' read -r name command expected; do
+  assert_decision "git-exec $name" git-exec-check.sh "$command" "$expected"
+  claude=$(jq -cn --arg c "$command" '{tool_input:{command:$c}}' | "$ROOT/.claude/hooks/dangerous-patterns-check.sh" |
+    jq -r '.hookSpecificOutput.permissionDecision // "allow"')
+  [[ "${claude:-allow}" == "$expected" ]] || { echo "FAIL git-exec parity $name: claude $claude" >&2; exit 1; }
+  PASS=$((PASS + 1))
+done <<'EXEC_CASES'
+rebase --exec|git rebase --exec=sh main|deny
+rebase -ix|git rebase -ix sh main|deny
+fetch --upload-pack|git fetch --upload-pack=sh origin|deny
+ls-remote --upload-pack|git ls-remote --upload-pack=sh origin|deny
+ls-remote --exec|git ls-remote --exec=sh origin|deny
+ls-remote --exe|git ls-remote --exe=sh origin|deny
+-C ls-remote --exec|git -C /x ls-remote --exec=sh origin|deny
+push --receive-pack|git push --receive-pack=sh origin|deny
+push --exec|git push origin --exec=sh|deny
+ls-remote --exit-code|git ls-remote --exit-code origin main|allow
+rebase -X strategy|git rebase -X theirs main|allow
+fetch|git fetch origin|allow
+EXEC_CASES
+
 # --- pre-commit gate: subdirectories, submodules, symlinks, quoted names ----
 mkdir -p "$SCRATCH/sub"
 echo "key = $FAKE_AWS_KEY" > "$SCRATCH/sub/k.txt"
@@ -257,6 +289,7 @@ if command -v codex >/dev/null 2>&1; then
   done <<'RULE_CASES'
 force push|git push --force origin main|prompt
 force with lease|git push --force-with-lease origin main|prompt
+mirror push|git push --mirror origin|prompt
 push bypass|git push --no-verify origin main|prompt
 commit bypass|git commit --no-verify -m test|prompt
 commit short bypass|git commit -n -m test|prompt

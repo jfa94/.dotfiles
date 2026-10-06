@@ -51,7 +51,7 @@ EOF
 # Allowlisted leads can still smuggle writes: WITH d AS (DELETE ...) SELECT,
 # EXPLAIN ANALYZE DELETE (executes!), SELECT ... FOR UPDATE. Word-bounded scan
 # is safe post-strip: last_update/deleted_at columns don't word-match.
-if printf '%s' "$SQL" | grep -qwE 'INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|MERGE|CALL|COPY|REFRESH|VACUUM|LOCK|DO|INTO'; then
+if grep -qwE 'INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|MERGE|CALL|COPY|REFRESH|VACUUM|LOCK|DO|INTO' <<< "$SQL"; then
   ask 'This statement has a write/DDL keyword inside a read-leading form (CTE write, EXPLAIN ANALYZE write, FOR UPDATE lock, or SELECT INTO) — run it anyway?'
 fi
 

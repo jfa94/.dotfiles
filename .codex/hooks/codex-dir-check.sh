@@ -9,7 +9,7 @@ CWD=$(project_dir "$INPUT")
 
 while IFS= read -r fp; do
   [[ -z "$fp" ]] && continue
-  printf '%s' "$fp" | grep -qE '(^|/)\.codex(/|$)' || continue
+  grep -qE '(^|/)\.codex(/|$)' <<< "$fp" || continue
 
   case "$fp" in
     /*) ABS="$fp" ;;
@@ -20,7 +20,7 @@ while IFS= read -r fp; do
     continue
   fi
 
-  printf '%s' "$fp" | grep -qE '(^|/)\.codex/(logs?|cache|shell_snapshots|\.tmp|skills/\.system)(/|$)' && continue
+  grep -qE '(^|/)\.codex/(logs?|cache|shell_snapshots|\.tmp|skills/\.system)(/|$)' <<< "$fp" && continue
   deny "Accessing .codex-managed config requires explicit user confirmation. Retry only after the user confirms this exact Codex config change."
   exit 0
 done < <(extract_paths "$INPUT")

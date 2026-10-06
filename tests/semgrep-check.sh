@@ -36,14 +36,14 @@ add_feature_commit() {
 
 # Prints "<decision>" and leaves the stub's argv in $STUB_DIR/args.
 run_hook() {
-  local runtime=$1 repo=$2 output
+  local runtime=$1 repo=$2 cmd=${3:-git push} output
   rm -f "$STUB_DIR/args" /tmp/semgrep-cache-*.json
   if [[ "$runtime" == claude ]]; then
     output=$(CLAUDE_PROJECT_DIR="$repo" PATH="$STUB_DIR:$PATH" bash "$ROOT/.claude/hooks/semgrep-check.sh" \
-      <<< '{"tool_input":{"command":"git push"}}' 2>/dev/null)
+      <<< "$(jq -cn --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
   else
     output=$(PATH="$STUB_DIR:$PATH" bash "$ROOT/.codex/hooks/semgrep-check.sh" \
-      <<< "$(jq -cn --arg cwd "$repo" '{cwd:$cwd,tool_input:{command:"git push"}}')" 2>/dev/null)
+      <<< "$(jq -cn --arg cwd "$repo" --arg c "$cmd" '{cwd:$cwd,tool_input:{command:$c}}')" 2>/dev/null)
   fi
   if [[ -n "$output" ]]; then
     jq -r '.hookSpecificOutput.permissionDecision' <<< "$output"
@@ -98,6 +98,8 @@ for rt in claude codex; do
 
   export FAKE_SEMGREP_RC=0 FAKE_SEMGREP_JSON="$FOUND"
   check "$rt findings deny" "$(run_hook $rt "$TMP/r1")" deny
+  check "$rt subshell push triggers" "$(run_hook $rt "$TMP/r1" "(git push)")" deny
+  check "$rt wrapped push triggers" "$(run_hook $rt "$TMP/r1" "env A=1 git push")" deny
 
   export FAKE_SEMGREP_RC=2 FAKE_SEMGREP_JSON="$CLEAN"
   if [[ "$rt" == claude ]]; then expected=allow; else expected=deny; fi

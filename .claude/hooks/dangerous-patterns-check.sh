@@ -53,7 +53,7 @@ for PAT in \
   "${GIT} push[[:space:]]${ARGS}--m" \
   "${RECURSIVE_RM}[[:space:]]+(~|\\\$HOME)" \
   '(pnpm|npm|yarn) publish'; do
-  if printf '%s' "$JOINED" | grep -qE "$PAT"; then
+  if grep -qE "$PAT" <<< "$JOINED"; then
     jq -cn --arg r "Blocked by policy: $PAT" \
       '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
     exit 0
@@ -68,7 +68,7 @@ for PAT in \
   "${GIT} fetch[[:space:]]${ARGS}--upl" \
   "${GIT} ls-remote[[:space:]]${ARGS}--(u|exe)" \
   "${GIT} push[[:space:]]${ARGS}--(rece|e)"; do
-  if printf '%s' "$JOINED" | grep -qE "$PAT"; then
+  if grep -qE "$PAT" <<< "$JOINED"; then
     jq -cn '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git option executes an arbitrary command — run it manually"}}'
     exit 0
   fi
@@ -84,7 +84,7 @@ for PAT in \
   'TRUNCATE[[:space:]]+TABLE' \
   'chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*777' \
   '(curl|wget)[^;&|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$)'; do
-  if printf '%s' "$CMD" | grep -qiE "$PAT"; then
+  if grep -qiE "$PAT" <<< "$CMD"; then
     jq -cn --arg r "Blocked dangerous command pattern: $PAT" \
       '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
     exit 0
@@ -181,8 +181,8 @@ classify_operand() {
   local operand=$1 root rel rc
   CLASS=unsafe
   physical_target "$operand" || { rc=$?; [ "$rc" -eq 2 ] && CLASS=outside; return; }
-  if printf '%s' "$PHYSICAL_TARGET" | grep -qiE "$SECRET_PATH_RE" \
-    && ! printf '%s' "$PHYSICAL_TARGET" | grep -qiE "$SECRET_EXEMPT_RE"; then
+  if grep -qiE "$SECRET_PATH_RE" <<< "$PHYSICAL_TARGET" \
+    && ! grep -qiE "$SECRET_EXEMPT_RE" <<< "$PHYSICAL_TARGET"; then
     return
   fi
   [ "$PHYSICAL_TARGET" = '/' ] && { CLASS=outside; return; }
@@ -262,7 +262,7 @@ while IFS= read -r RM_SEG; do
     rm[[:space:]]*|sudo[[:space:]]rm[[:space:]]*) ;;
     *) continue ;;
   esac
-  if printf '%s' "$RM_SEG" | grep -qE "^(sudo[[:space:]]+)?${RECURSIVE_RM}"; then
+  if grep -qE "^(sudo[[:space:]]+)?${RECURSIVE_RM}" <<< "$RM_SEG"; then
     IFS=' ' read -ra RM_TOKS <<< "$RM_SEG"
     END_OPTIONS=0
     for TOK in "${RM_TOKS[@]:1}"; do
@@ -291,17 +291,17 @@ ENVBASE='\.env[.[:alnum:]_-]*'
 PFX='[^[:space:]|;&<>]*'
 SECRET="(${ENVBASE}|${PFX}/${ENVBASE}|secrets?/|${PFX}/secrets?/|${PFX}credentials)"
 GAP='([^;&|<>]*[[:space:]])?'
-if printf '%s' "$CMD" | grep -qiE \
-    ">>?[[:space:]]*${SECRET}|(^|[[:space:]|;&])tee[[:space:]]+${GAP}${SECRET}|(^|[[:space:]|;&])sed[[:space:]]+[^;&|<>]*-i${GAP}${SECRET}|(^|[[:space:]|;&])(mv|cp|rm)[[:space:]]+${GAP}${SECRET}" \
-  && ! printf '%s' "$CMD" | grep -qiE '\.env[^[:space:]]*\.(example|sample|template)'; then
+if grep -qiE \
+    ">>?[[:space:]]*${SECRET}|(^|[[:space:]|;&])tee[[:space:]]+${GAP}${SECRET}|(^|[[:space:]|;&])sed[[:space:]]+[^;&|<>]*-i${GAP}${SECRET}|(^|[[:space:]|;&])(mv|cp|rm)[[:space:]]+${GAP}${SECRET}" <<< "$CMD" \
+  && ! grep -qiE '\.env[^[:space:]]*\.(example|sample|template)' <<< "$CMD"; then
   jq -cn --arg r 'shell write touching .env/credentials/secrets — confirm (protected-files backstop)' \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":$r}}'
   exit 0
 fi
 
 # Ask tier: any recursive+force rm (flag order/grouping tolerant).
-if printf '%s' "$CMD" | grep -qiE "$RECURSIVE_RM" \
-  && printf '%s' "$CMD" | grep -qiE 'rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*f'; then
+if grep -qiE "$RECURSIVE_RM" <<< "$CMD" \
+  && grep -qiE 'rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*-[a-zA-Z]*f' <<< "$CMD"; then
   jq -cn --arg r 'recursive force rm detected — confirm before running' \
     '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":$r}}'
 fi

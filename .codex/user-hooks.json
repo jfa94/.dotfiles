@@ -26,6 +26,11 @@
           },
           {
             "type": "command",
+            "command": "$HOME/.codex/hooks/git-exec-check.sh",
+            "statusMessage": "Checking shell command policy"
+          },
+          {
+            "type": "command",
             "command": "bash $HOME/.codex/hooks/aws-readonly-check.sh",
             "statusMessage": "Checking shell command policy"
           },

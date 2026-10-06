@@ -39,8 +39,8 @@ MATCHED=0
 while IFS= read -r seg; do
   seg=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
   [ -n "$seg" ] || continue
-  printf '%s' "$seg" | grep -qE "^git -C [^- ][^ ]* (($SUBS)|($TWO))( |\$)" || exit 0
-  printf '%s' "$seg" | grep -qE "$INJECT" && exit 0
+  grep -qE "^git -C [^- ][^ ]* (($SUBS)|($TWO))( |\$)" <<< "$seg" || exit 0
+  grep -qE "$INJECT" <<< "$seg" && exit 0
   MATCHED=1
 done < <(printf '%s\n' "$CMD" | tr ';|&\n' '\n\n\n\n')
 [ "$MATCHED" -eq 1 ] || exit 0

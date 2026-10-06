@@ -170,6 +170,9 @@ assert_claude "push --mirror" "git push --mirror origin" deny
 assert_claude "push --m" "git push --m origin" deny
 assert_claude "push trailing --mirror" "git push origin --mirror" deny
 assert_claude "-C push --mirror" "git -C /x push --mirror origin" deny
+# Longer than a pipe buffer: an early match must not be lost to SIGPIPE.
+assert_claude "push --mirror before many lines" "git push --mirror origin
+$(seq 1 30000)" deny
 assert_claude "push --rece" "git push --rece=sh origin" deny
 assert_claude "push --exec" "git -C . push --e=sh origin" deny
 assert_claude "rebase -X strategy" "git rebase -X theirs main" pass

@@ -15,13 +15,13 @@ SECRET_PATH_RE='(^|/)\.env[^/]*($|/)|(^|/)secrets(/|$)|\.(pem|key|p12|pfx)$|(^|/
 SECRET_EXEMPT_RE='\.env\.(example|sample|template)$'
 CREDENTIALS_RE='(^|/)(credentials|\.git-credentials|credentials\.json)$'
 
-if { printf '%s' "$FP" | grep -qiE "$SECRET_PATH_RE" || printf '%s' "$FP" | grep -qE "$CREDENTIALS_RE"; } \
-  && ! printf '%s' "$FP" | grep -qiE "$SECRET_EXEMPT_RE"; then
+if { grep -qiE "$SECRET_PATH_RE" <<< "$FP" || grep -qE "$CREDENTIALS_RE" <<< "$FP"; } \
+  && ! grep -qiE "$SECRET_EXEMPT_RE" <<< "$FP"; then
   emit deny 'Protected file: requires human review.'
   exit 0
 fi
 
-if printf '%s' "$FP" | grep -qE '/migrations/'; then
+if grep -qE '/migrations/' <<< "$FP"; then
   # Resolve the file's own repo from its nearest existing ancestor (Write may
   # target a directory that doesn't exist yet), not from the session project.
   REST=$(basename -- "$FP")

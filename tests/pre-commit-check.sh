@@ -44,6 +44,23 @@ assert_decision "allows a plain file added in the same command" "git add . && gi
 rm -f "$SCRATCH/notes.txt"
 
 assert_decision "fails closed on unresolvable git add args" 'git add $(cat l) && git commit -m x' deny
+echo 'X=1' > "$SCRATCH/.env"
+mkdir -p "$SCRATCH/sub"
+echo 'X=1' > "$SCRATCH/sub/.env"
+assert_decision "fails closed on a git add inside a cd subshell" "(cd sub && git add .env) && git commit -m x" deny
+assert_decision "fails closed on a subshell git add" "(git add .env) && git commit -m x" deny
+assert_decision "denies .env added in a brace group" "{ git add .env; } && git commit -m x" deny
+assert_decision "fails closed on a git add split inside quotes" "git add 'a;b.txt' && git commit -m x" deny
+assert_decision "denies .env added behind env" "env A=1 git add .env && git commit -m x" deny
+assert_decision "denies .env added behind command" "command git add .env && git commit -m x" deny
+assert_decision "fails closed on xargs git add" "printf .env | xargs git add && git commit -m x" deny
+git -C "$SCRATCH" add .env
+assert_decision "triggers on a subshell commit" "(git commit -m x)" deny
+assert_decision "triggers on a brace-group commit" "{ git commit -m x; }" deny
+assert_decision "triggers on a wrapped commit" "env A=1 git commit -m x" deny
+assert_decision "ignores a quoted mention of git commit" 'grep -n "git commit" notes.md' allow
+git -C "$SCRATCH" reset -q
+rm -rf "$SCRATCH/.env" "$SCRATCH/sub"
 
 mkdir -p "$SCRATCH/sub"
 echo secret > "$SCRATCH/sub/id_rsa"
@@ -109,6 +126,16 @@ assert_decision "scans the index version when -a over-matches the message" \
   'git commit -m "fix -a thing"' deny "$SCRATCH" "$SCRATCH/.bin-marker"
 git -C "$SCRATCH" reset -q
 rm -f "$SCRATCH/f.txt"
+
+# A staged list larger than a pipe buffer must not break the membership test.
+BIG="$SCRATCH/$(printf 'd%.0s' {1..200})/$(printf 'e%.0s' {1..200})/$(printf 'f%.0s' {1..200})"
+mkdir -p "$BIG"
+for i in $(seq -w 1 400); do echo clean > "$BIG/$i.txt"; done
+echo "$MARKER" > "$BIG/001.txt"
+git -C "$SCRATCH" add -- "$BIG"
+assert_decision "scans every file in a large staged list" "git commit -m x" deny "$SCRATCH" "$SCRATCH/.bin-marker"
+git -C "$SCRATCH" reset -q
+rm -rf "$SCRATCH/dd"*
 
 echo hi > "$SCRATCH/notes.txt"
 assert_decision "fails closed when the scanner errors" \
