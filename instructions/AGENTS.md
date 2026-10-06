@@ -36,7 +36,7 @@ Shared guidance for Claude Code and Codex. Each tool-specific section applies on
 - Never edit `.env*`, credentials, private keys, `secrets/`, or existing/applied migrations without explicit confirmation in the current turn. Keep secrets in environment files or an approved secret store, never source code.
 - Never force-push (including a leading `+` refspec), bypass commit safeguards, or publish packages without explicit confirmation in the current turn.
 - Never run recursive-force `rm`, `chmod 777`, or pipe downloaded content into a shell without explicit confirmation in the current turn. The confirmation requirement applies regardless of command spelling, wrapper, or tool; a native approval prompt may still appear afterward.
-- Treat external writes as authorization-sensitive. Outside the dotfiles repository, pushing branches and merging or closing pull requests require explicit confirmation. Read-only inspection is allowed when relevant.
+- Treat external writes as authorization-sensitive. Pushing to `main` or `develop` requires explicit confirmation, except `main` in the dotfiles repository; other branches may be pushed without asking. Outside the dotfiles repository, merging or closing pull requests requires explicit confirmation. Read-only inspection is allowed when relevant.
 - Authorization is scoped to the stated target and action; do not infer permission for adjacent repositories, accounts, deployments, messages, purchases, or other consequential operations.
 - Supabase remains list/read-only unless a mutation is explicitly confirmed in the current turn.
 

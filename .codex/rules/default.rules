@@ -157,6 +157,38 @@ prefix_rule(
     match = ["git push --no-verify origin main"],
 )
 
+# Pushes to main/develop need approval; other branches are allowed below.
+# Implicit pushes, other remote names and --delete forms cannot be expressed as
+# prefixes and rely on the conversational confirmation gate.
+PROTECTED_PUSH_DESTINATIONS = [
+    "main",
+    "develop",
+    "HEAD:main",
+    "HEAD:develop",
+    "refs/heads/main",
+    "refs/heads/develop",
+    "heads/main",
+    "heads/develop",
+    "HEAD:refs/heads/main",
+    "HEAD:refs/heads/develop",
+    ":main",
+    ":develop",
+]
+
+prefix_rule(
+    pattern = ["git", "push", "origin", PROTECTED_PUSH_DESTINATIONS],
+    decision = "prompt",
+    justification = "Pushing to main or develop requires explicit confirmation.",
+    match = ["git push origin main", "git push origin HEAD:develop", "git push origin :main"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["-u", "--set-upstream"], "origin", PROTECTED_PUSH_DESTINATIONS],
+    decision = "prompt",
+    justification = "Pushing to main or develop requires explicit confirmation.",
+    match = ["git push -u origin main", "git push --set-upstream origin develop"],
+)
+
 prefix_rule(
     pattern = ["git", "commit", "--no-verify"],
     decision = "prompt",
@@ -343,12 +375,12 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", GIT_COMMANDS],
     decision = "allow",
-    justification = "Git inspection and routine branch/stage/commit/push commands are allowed; dangerous forms have narrower prompt rules and a conversational confirmation gate.",
+    justification = "Git inspection and routine branch/stage/commit/push commands are allowed; main/develop pushes and dangerous forms have narrower prompt rules and a conversational confirmation gate.",
     match = [
         "git status",
         "git add file.ts",
         "git commit -m test",
-        "git push origin main",
+        "git push origin feature/x",
     ],
 )
 

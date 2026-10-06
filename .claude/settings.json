@@ -636,7 +636,8 @@
       "Never modify .env, .env.*, or credential files without explicit confirmation.",
       "Never use --no-verify, --no-gpg-sign, -n, or any flag that bypasses git hooks or signing.",
       "Never force-push in any form (--force, -f, --force-with-lease, --force-if-includes, --mirror); literal spellings are hard-denied by permissions.deny and bundled or abbreviated ones by the dangerous-patterns hook.",
-      "Never push, merge, or close PRs on repos other than dotfiles without explicit confirmation. (Dotfiles repo: direct commits to main are pre-approved.)",
+      "Never push to a main or develop branch without explicit confirmation. (Dotfiles repo: direct commits to main are pre-approved. Other branches may be pushed freely.)",
+      "Never merge or close PRs on repos other than dotfiles without explicit confirmation.",
       "Never run destructive AWS mutations (delete-*, terminate-*, or put-* on production resources) without confirmation.",
       "Never publish packages (pnpm/npm/yarn publish) under any circumstance.",
       "Never disable or rewrite the protected-files, dangerous-patterns, sql-readonly, or pre-commit/pre-push hooks."

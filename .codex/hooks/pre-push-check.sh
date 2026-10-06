@@ -11,37 +11,49 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 # git invocation at a segment start, also inside ( ) / { } or behind a command wrapper.
 GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 grep -qE "(^|;|&|\|)${GIT_RE}push" <<< "$CMD" || exit 0
+
+CWD=$(project_dir "$INPUT")
+# Only main/develop pushes are gated. Any other result, or a missing library, gates.
+# shellcheck source=push-target.sh
+if . "$(dirname "${BASH_SOURCE[0]}")/push-target.sh" 2>/dev/null; then
+  [[ "$(push_target_classify "$CWD" "$CMD")" == unprotected ]] && exit 0
+fi
+
 # Honor git -C <dir>: gate the repo being pushed, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
-CWD=$(project_dir "$INPUT")
-TARGET="${DIR:-$CWD}"
+case "$DIR" in
+  '') TARGET=$CWD;;
+  '~') TARGET=$HOME;;
+  '~/'*) TARGET=$HOME/${DIR#\~/};;
+  /*) TARGET=$DIR;;
+  *) TARGET=$CWD/$DIR;;
+esac
+# The cwd may be a subdirectory; gate from the repo root.
+TOP=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null) && TARGET=$TOP
 [[ -f "$TARGET/package.json" ]] || exit 0
 if ! cd "$TARGET"; then deny "Pre-push gate cannot enter target repository: $TARGET"; exit 0; fi
 command -v pnpm >/dev/null 2>&1 || { deny "Pre-push quality gate requires pnpm, but pnpm is unavailable."; exit 0; }
 
-QUAL=0
+# Tails go to stderr and, for failing steps, into the deny reason.
+FAILED=""
+step() {
+  local n=$1 out rc=0
+  shift
+  out=$("$@" 2>&1) || rc=$?
+  out=$(printf '%s\n' "$out" | tail -n "$n")
+  printf '%s\n' "$out" >&2
+  [[ "$rc" -eq 0 ]] || FAILED="${FAILED}"$'\n'"\$ $*"$'\n'"${out}"
+}
+
 if grep -q '"quality"' package.json; then
-  { pnpm quality 2>&1; } | tail -30 >&2 || QUAL=1
+  step 30 pnpm quality
 else
-  TC=0
-  if grep -q '"typecheck"' package.json; then
-    { pnpm typecheck 2>&1; } | tail -10 >&2 || TC=1
-  fi
-  LN=0
-  if grep -q '"lint"' package.json; then
-    { pnpm lint 2>&1; } | tail -10 >&2 || LN=1
-  fi
-  TS=0
-  if grep -q '"test"' package.json; then
-    { pnpm test 2>&1; } | tail -20 >&2 || TS=1
-  fi
-  DV=0
-  if grep -q '"deps:validate"' package.json; then
-    { pnpm deps:validate 2>&1; } | tail -10 >&2 || DV=1
-  fi
-  QUAL=$((TC + LN + TS + DV))
+  ! grep -q '"typecheck"' package.json || step 10 pnpm typecheck
+  ! grep -q '"lint"' package.json || step 10 pnpm lint
+  ! grep -q '"test"' package.json || step 20 pnpm test
+  ! grep -q '"deps:validate"' package.json || step 10 pnpm deps:validate
 fi
 
-if [[ "$QUAL" -ne 0 ]]; then
-  deny "Pre-push quality gate failed. Fix issues before pushing."
+if [[ -n "$FAILED" ]]; then
+  deny "Pre-push quality gate failed. Fix issues before pushing.${FAILED}"
 fi

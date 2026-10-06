@@ -59,7 +59,8 @@ Safety is enforced in layers rather than by instruction alone:
   bypass and force-push denies, pnpm enforcement, critical recursive-delete denies, and AWS
   secret protection.
 - **Commit and push gates**: secret scanning before commits, plus project quality checks and
-  Semgrep SAST before pushes.
+  Semgrep SAST before pushes to `main`/`develop`. A shared classifier (`push-target.sh`) decides
+  whether a push can reach those branches; feature-branch pushes skip both gates.
 - **Credential isolation**: 1Password references are injected per process and never sourced into
   the interactive shell.
 

@@ -12,6 +12,13 @@ CMD=$(json_get "$INPUT" '.tool_input.command // empty')
 GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 grep -qE "(^|;|&|\|)${GIT_RE}push" <<< "$CMD" || exit 0
 
+CWD=$(project_dir "$INPUT")
+# Only main/develop pushes are scanned. Any other result, or a missing library, scans.
+# shellcheck source=push-target.sh
+if . "$(dirname "${BASH_SOURCE[0]}")/push-target.sh" 2>/dev/null; then
+  [[ "$(push_target_classify "$CWD" "$CMD")" == unprotected ]] && exit 0
+fi
+
 if ! command -v semgrep >/dev/null 2>&1; then
   deny "Semgrep gate requires semgrep, but semgrep is unavailable."
   exit 0
@@ -19,8 +26,16 @@ fi
 
 # Honor git -C <dir>: scan the repo being pushed, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
-CWD=$(project_dir "$INPUT")
-if ! cd "${DIR:-$CWD}"; then deny "Semgrep gate cannot enter target repository."; exit 0; fi
+case "$DIR" in
+  '') TARGET=$CWD;;
+  '~') TARGET=$HOME;;
+  '~/'*) TARGET=$HOME/${DIR#\~/};;
+  /*) TARGET=$DIR;;
+  *) TARGET=$CWD/$DIR;;
+esac
+# The cwd may be a subdirectory; scan from the repo root.
+TOP=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null) && TARGET=$TOP
+if ! cd "$TARGET"; then deny "Semgrep gate cannot enter target repository."; exit 0; fi
 
 # Base: origin/HEAD target, then origin/main, then origin/master. With no base
 # the whole tree is new, so scan every tracked file.

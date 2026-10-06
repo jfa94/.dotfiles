@@ -1,11 +1,19 @@
 #!/bin/bash
 set -uo pipefail
-CMD=$(cat | jq -r '.tool_input.command // empty')
+PAYLOAD=$(cat)
+CMD=$(jq -r '.tool_input.command // empty' <<< "$PAYLOAD")
 # Match git push at start or after a chain operator — `git commit && git push`
 # skipped a ^-anchored trigger entirely.
 # git invocation at a segment start, also inside ( ) / { } or behind a command wrapper.
 GIT_RE='[[:space:]({]*((env|command|exec|nice|nohup|sudo|time|xargs)([[:space:]]+[^;&|]*)?[[:space:]]+)?git([[:space:]]+-[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
 grep -qE "(^|;|&|\|)${GIT_RE}push" <<< "$CMD" || exit 0
+
+BASE_DIR=$(jq -r '.cwd // empty' <<< "$PAYLOAD")
+BASE_DIR=${BASE_DIR:-${CLAUDE_PROJECT_DIR:-.}}
+# Only main/develop pushes are scanned. Any other result, or a missing library, scans.
+if . "$(dirname "${BASH_SOURCE[0]}")/push-target.sh" 2>/dev/null; then
+  [ "$(push_target_classify "$BASE_DIR" "$CMD")" = unprotected ] && exit 0
+fi
 
 # --- Graceful degradation: skip if semgrep not installed ---
 # NOTE: --config auto requires network access on first use to fetch rules.
@@ -16,7 +24,16 @@ fi
 
 # Honor git -C <dir>: scan the repo being pushed, not just the session project.
 DIR=$(printf '%s' "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}')
-cd "${DIR:-${CLAUDE_PROJECT_DIR:-.}}" || exit 0
+case "$DIR" in
+  '') TARGET=$BASE_DIR;;
+  '~') TARGET=$HOME;;
+  '~/'*) TARGET=$HOME/${DIR#\~/};;
+  /*) TARGET=$DIR;;
+  *) TARGET=$BASE_DIR/$DIR;;
+esac
+# The payload cwd may be a subdirectory; scan from the repo root.
+TOP=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null) && TARGET=$TOP
+cd "$TARGET" || exit 0
 
 # Base: origin/HEAD target, then origin/main, then origin/master. With no base
 # the whole tree is new, so scan every tracked file.

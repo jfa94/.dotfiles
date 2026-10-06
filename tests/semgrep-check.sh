@@ -40,7 +40,7 @@ run_hook() {
   rm -f "$STUB_DIR/args" /tmp/semgrep-cache-*.json
   if [[ "$runtime" == claude ]]; then
     output=$(CLAUDE_PROJECT_DIR="$repo" PATH="$STUB_DIR:$PATH" bash "$ROOT/.claude/hooks/semgrep-check.sh" \
-      <<< "$(jq -cn --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+      <<< "$(jq -cn --arg cwd "$repo" --arg c "$cmd" '{cwd:$cwd,tool_input:{command:$c}}')" 2>/dev/null)
   else
     output=$(PATH="$STUB_DIR:$PATH" bash "$ROOT/.codex/hooks/semgrep-check.sh" \
       <<< "$(jq -cn --arg cwd "$repo" --arg c "$cmd" '{cwd:$cwd,tool_input:{command:$c}}')" 2>/dev/null)
@@ -77,6 +77,11 @@ git -C "$TMP/r2" remote add origin "$TMP/origin-master.git"
 git -C "$TMP/r2" push -q origin master
 add_feature_commit "$TMP/r2"
 
+# Feature branch with unscanned changes: pushing it is not gated.
+new_repo "$TMP/r4" feat
+add_feature_commit "$TMP/r4"
+mkdir -p "$TMP/r1/sub"
+
 # No remote at all.
 new_repo "$TMP/r3" main
 add_feature_commit "$TMP/r3"
@@ -108,10 +113,19 @@ for rt in claude codex; do
   PASS=$((PASS + 1))
 
   export FAKE_SEMGREP_RC=0 FAKE_SEMGREP_JSON="$CLEAN"
-  run_hook $rt "$TMP/r2" >/dev/null
+  # r2 is on master, so name a protected destination explicitly.
+  run_hook $rt "$TMP/r2" "git push origin HEAD:main" >/dev/null
   grep -qx 'a.ts' "$STUB_DIR/args" || { echo "FAIL $rt: changed file not scanned" >&2; exit 1; }
   ! grep -qx 'keep.ts' "$STUB_DIR/args" || { echo "FAIL $rt: origin/master base not used" >&2; exit 1; }
   PASS=$((PASS + 1))
+
+  export FAKE_SEMGREP_RC=0 FAKE_SEMGREP_JSON="$FOUND"
+  check "$rt feature-branch push skips the gate" "$(run_hook $rt "$TMP/r4" "git push -u origin feat")" allow
+  [[ ! -e "$STUB_DIR/args" ]] || { echo "FAIL $rt: semgrep ran for a feature-branch push" >&2; exit 1; }
+  check "$rt implicit feature push skips the gate" "$(run_hook $rt "$TMP/r4" "git push")" allow
+  check "$rt subdirectory cwd still gated" "$(run_hook $rt "$TMP/r1/sub" "git push origin main")" deny
+  PASS=$((PASS + 1))
+  export FAKE_SEMGREP_RC=0 FAKE_SEMGREP_JSON="$CLEAN"
 
   run_hook $rt "$TMP/r3" >/dev/null
   for f in a.ts b.ts; do

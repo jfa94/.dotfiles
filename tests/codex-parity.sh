@@ -180,7 +180,15 @@ root recursive force rm|rm -rf /|forbidden
 chmod world writable|chmod 777 file|prompt
 database client|psql app_test|prompt
 ordinary commit|git commit -m test|allow
-ordinary push|git push origin main|allow
+feature push|git push origin feature/x|allow
+feature push upstream|git push -u origin feature/main-menu|allow
+protected push main|git push origin main|prompt
+protected push develop|git push origin develop|prompt
+protected push HEAD:main|git push origin HEAD:main|prompt
+protected push refs|git push origin HEAD:refs/heads/develop|prompt
+protected push delete|git push origin :main|prompt
+protected push upstream|git push -u origin develop|prompt
+protected push set-upstream|git push --set-upstream origin main|prompt
 ordinary status|git status --short|allow
 ordinary test|pnpm test|allow
 playwright|pnpm exec playwright test|allow
