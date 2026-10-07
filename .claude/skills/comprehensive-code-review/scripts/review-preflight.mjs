@@ -70,6 +70,9 @@ const PROTECTED_CONTEXT_RE = /(^|[\\/])\.env|secret|credential|id_rsa|\.pem$|\.k
 const CHANGE_CONTEXT_MAX_BYTES = 8192;
 const SEED_OUTPUT_MAX_LINES = 200;
 const REF_RE = /^[A-Za-z0-9._/@{}~^-]+$/;
+const SPEC_URL_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+const SPEC_SLUG_RE = /^[A-Za-z0-9._-]+$/;
+const SPEC_FETCH_TIMEOUT_MS = 60000;
 
 class PreflightError extends Error {}
 
@@ -136,6 +139,95 @@ function git(repoRoot, args, { allowFailure = false } = {}) {
 
 const gitLines = (repoRoot, args) =>
   (git(repoRoot, args) || "").split("\n").map((l) => l.trim()).filter(Boolean);
+
+// A --spec value with a scheme is a URL; anything else stays a file path.
+const isSpecUrl = (value) => SPEC_URL_RE.test(value);
+
+// Validate a GitHub issue/PR URL and rebuild it canonically (query/fragment dropped).
+function parseSpecUrl(value) {
+  const reject = () =>
+    new PreflightError(
+      `--spec URL not supported: ${value} (expected https://github.com/<owner>/<repo>/issues/<n> or https://github.com/<owner>/<repo>/pull/<n>)`,
+    );
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw reject();
+  }
+  if (url.protocol !== "https:" || url.hostname !== "github.com") throw reject();
+  const [owner, repo, kind, number, ...rest] = url.pathname.split("/").filter(Boolean);
+  if (
+    rest.length > 0 ||
+    !SPEC_SLUG_RE.test(owner || "") ||
+    !SPEC_SLUG_RE.test(repo || "") ||
+    !["issues", "pull"].includes(kind) ||
+    !/^[1-9][0-9]*$/.test(number || "")
+  ) {
+    throw reject();
+  }
+  return {
+    subcommand: kind === "pull" ? "pr" : "issue",
+    url: `https://github.com/${owner}/${repo}/${kind}/${number}`,
+  };
+}
+
+// Fetch the issue/PR via gh and render it as the spec snapshot text.
+function fetchSpecSnapshot({ subcommand, url }) {
+  let stdout;
+  try {
+    stdout = execFileSync("gh", [subcommand, "view", url, "--json", "title,body,comments"], {
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+      timeout: SPEC_FETCH_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new PreflightError(`--spec ${url}: gh CLI not found on PATH (required for --spec URLs)`);
+    }
+    if (error.code === "ETIMEDOUT") {
+      throw new PreflightError(
+        `--spec ${url}: gh timed out after ${SPEC_FETCH_TIMEOUT_MS / 1000}s`,
+      );
+    }
+    throw new PreflightError(
+      `--spec ${url}: gh ${subcommand} view failed: ${String(error.stderr || error.message).trim()}`,
+    );
+  }
+  const unexpected = (why) =>
+    new PreflightError(`--spec ${url}: unexpected gh output (${why})`);
+  let data;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    throw unexpected("not JSON");
+  }
+  if (typeof data?.title !== "string" || !data.title.trim()) throw unexpected("missing title");
+  if (typeof data.body !== "string") throw unexpected("missing body");
+  if (!Array.isArray(data.comments)) throw unexpected("missing comments");
+  for (const comment of data.comments) {
+    if (
+      typeof comment?.body !== "string" ||
+      typeof comment.createdAt !== "string" ||
+      typeof comment.authorAssociation !== "string" ||
+      (comment.author != null && typeof comment.author !== "object")
+    ) {
+      throw unexpected("malformed comment");
+    }
+  }
+  const parts = [`# ${data.title.trim()}`, "", `Source: ${url}`];
+  if (data.body.trim()) parts.push("", data.body.trim());
+  if (data.comments.length > 0) {
+    parts.push("", "## GitHub comments");
+    for (const comment of data.comments) {
+      const login = comment.author?.login || "ghost";
+      parts.push("", `### ${login} (${comment.authorAssociation}, ${comment.createdAt})`, "");
+      parts.push(comment.body.trim());
+    }
+  }
+  return `${parts.join("\n").replace(/\r\n/g, "\n")}\n`;
+}
 
 function readStdin() {
   try {
@@ -485,6 +577,7 @@ async function main() {
     warnings.push("--spec is not supported by the focused profile — ignored.");
     specFlag = null;
   }
+  const specUrl = specFlag && isSpecUrl(specFlag) ? parseSpecUrl(specFlag) : null;
 
   const baseRef = flags.base || null;
   if (baseRef) {
@@ -555,6 +648,9 @@ async function main() {
     emit({ status: "empty", message, warnings });
     return;
   }
+
+  // Fetch before the run exists so a failure leaves no run dir.
+  const specText = specUrl ? fetchSpecSnapshot(specUrl) : null;
 
   if (runtime === "codex") {
     const probeIgnored =
@@ -708,18 +804,22 @@ async function main() {
     }
     const names = [...profiles[profile]];
     let specPath = null;
-    if (specFlag) {
+    let specContent = specText;
+    if (specFlag && specContent === null) {
       const resolvedSpec = path.resolve(repoRoot, specFlag);
-      if (!readableFile(resolvedSpec)) {
-        skipped.push(`implementation-reviewer: spec file not found: ${specFlag}`);
+      if (readableFile(resolvedSpec)) {
+        specContent = readFileSync(resolvedSpec);
       } else {
-        specPath = path.join(inputsDir, "spec");
-        writeFileSync(specPath, readFileSync(resolvedSpec));
-        if (profiles.conditional?.["implementation-reviewer"] !== "spec") {
-          throw new PreflightError("conditional implementation reviewer manifest is invalid");
-        }
-        names.push("implementation-reviewer");
+        skipped.push(`implementation-reviewer: spec file not found: ${specFlag}`);
       }
+    }
+    if (specContent !== null) {
+      specPath = path.join(inputsDir, "spec");
+      writeFileSync(specPath, specContent);
+      if (profiles.conditional?.["implementation-reviewer"] !== "spec") {
+        throw new PreflightError("conditional implementation reviewer manifest is invalid");
+      }
+      names.push("implementation-reviewer");
     }
     const reviewers = names.map((name) => {
       const charterPath = path.join(agentsDir, `${name}.md`);

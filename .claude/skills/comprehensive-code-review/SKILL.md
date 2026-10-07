@@ -7,8 +7,8 @@ description: >
   Every critical and important finding (including Codex's) is adversarially verified by a fresh
   refuter agent before it can ship. Consolidates all findings into a single deduplicated report
   with verified file:line citations.
-  Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]
-argument-hint: "[--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]"
+  Usage: /comprehensive-code-review [--base <ref>] [--full] [--spec <path|github-url>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]
+argument-hint: "[--base <ref>] [--full] [--spec <path|github-url>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>]"
 hooks:
   PreToolUse:
     - matcher: Workflow
@@ -83,11 +83,14 @@ Scope). Then run the preflight, mapping the skill arguments (`$ARGUMENTS`) strai
 ```bash
 node "<this skill's base directory>/scripts/review-preflight.mjs" \
   --repo-root "<absolute repo root>" --profile comprehensive \
-  [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>] \
+  [--base <ref>] [--full] [--spec <path|github-url>] [--context <path>] [--pass <n>] [--reviewer-model <sonnet|opus|haiku>] \
   --request-stdin <<'REQ_EOF_x7'
 <the synthesized request text>
 REQ_EOF_x7
 ```
+
+Pass a `--spec` URL single-quoted: `?`, `&` and `#` are shell-special, and zsh aborts on an
+unmatched `?` glob.
 
 Pick a unique heredoc delimiter (`REQ_EOF_` plus a random suffix) and confirm no line of the
 request text equals it — a fixed `EOF` delimiter lets a pasted line reading `EOF` break out of the
@@ -96,7 +99,8 @@ heredoc into shell execution.
 It performs ALL deterministic gathering: mode detection, EXCLUDES-filtered changed files, empty
 guard, `review-run.mjs init`, diff/manifest artifacts, docs manifest, dispositions rendering,
 change-context build, parallel static-analysis seeds, Codex companion + target resolution
-(Gate B `expectedTarget`), roster + spec eligibility, and the assembled Workflow args (recorded
+(Gate B `expectedTarget`), roster + spec eligibility (the spec snapshot covers a file or a GitHub
+issue/PR fetched with `gh`), and the assembled Workflow args (recorded
 to `<runDir>/raw/inputs/launch-args.json` for the launch hook). It prints one JSON line; branch
 on `status`:
 

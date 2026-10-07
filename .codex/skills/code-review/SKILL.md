@@ -33,7 +33,7 @@ Comprehensive selects:
 - `~/.claude/skills/comprehensive-code-review/agents/silent-failure-hunter.md`
 - `~/.claude/skills/comprehensive-code-review/agents/simplification-reviewer.md`
 - `~/.claude/skills/comprehensive-code-review/agents/systemic-failure-reviewer.md`
-- `~/.claude/skills/comprehensive-code-review/agents/implementation-reviewer.md` only when `--spec` resolves to a readable file.
+- `~/.claude/skills/comprehensive-code-review/agents/implementation-reviewer.md` only when `--spec` resolves to a readable file or a supported GitHub issue/PR URL.
 
 Also resolve and reuse these canonical resources:
 
@@ -49,7 +49,7 @@ Fail loudly if any selected charter or required resource is missing or unreadabl
 
 - No profile and no `--full`/`--spec`: focused.
 - `focused [--base <ref>] [--context <path>]`: focused diff review.
-- `comprehensive [--base <ref>] [--full] [--spec <path>] [--context <path>]`: comprehensive review.
+- `comprehensive [--base <ref>] [--full] [--spec <path|github-url>] [--context <path>]`: comprehensive review.
 - `--full` or `--spec` without a profile: comprehensive.
 - Reject `--full` or `--spec` with an explicit focused profile; do not silently ignore it.
 - Reject unknown flags, unsafe or unresolved base refs, and context files outside the repository or matching protected/secret paths before launching reviewers.

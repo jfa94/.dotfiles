@@ -36,11 +36,11 @@ function repo(t) {
   return root;
 }
 
-function run(root, extra = [], { input = "", expectFail = false } = {}) {
+function run(root, extra = [], { input = "", expectFail = false, env } = {}) {
   const res = spawnSync(
     process.execPath,
     [script, "--repo-root", root, ...extra],
-    { input, encoding: "utf8" },
+    { input, encoding: "utf8", ...(env ? { env: { ...process.env, ...env } } : {}) },
   );
   if (expectFail) assert.notEqual(res.status, 0, res.stdout + res.stderr);
   else assert.equal(res.status, 0, res.stdout + res.stderr);
@@ -60,6 +60,31 @@ function fakeCodexCache(t, versions = ["1.2.3", "1.10.0"]) {
   }
   return { cacheRoot, cmds };
 }
+
+// Fake `gh` on PATH: logs argv, prints canned stdout/stderr, exits with exitCode.
+function fakeGh(t, { stdout = "", stderr = "", exitCode = 0 } = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), "preflight-gh-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = path.join(dir, "argv.log");
+  const out = path.join(dir, "stdout.txt");
+  const err = path.join(dir, "stderr.txt");
+  writeFileSync(out, typeof stdout === "string" ? stdout : JSON.stringify(stdout));
+  writeFileSync(err, stderr);
+  const bin = path.join(dir, "bin");
+  mkdirSync(bin);
+  const gh = path.join(bin, "gh");
+  writeFileSync(
+    gh,
+    `#!/bin/sh\necho "$*" >> "${log}"\ncat "${out}"\ncat "${err}" >&2\nexit ${exitCode}\n`,
+  );
+  chmodSync(gh, 0o755);
+  return {
+    env: { PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+    calls: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []),
+  };
+}
+
+const ISSUE_URL = "https://github.com/o/r/issues/12";
 
 test("working-tree mode gathers tracked+untracked, applies EXCLUDES, and welds to the hook", (t) => {
   const root = repo(t);
@@ -300,6 +325,172 @@ test("comprehensive --spec snapshots the spec and appends implementation-reviewe
   assert.equal(missing.workflowArgs.inputs.specPath, null);
   assert.ok(missing.workflowArgs.reviewers.every((r) => r.name !== "implementation-reviewer"));
   assert.ok(missing.skipped.some((s) => /spec file not found/.test(s)));
+});
+
+const comment = (author, authorAssociation, body) => ({
+  author,
+  authorAssociation,
+  body,
+  createdAt: "2026-01-02T03:04:05Z",
+});
+
+test("--spec issue URL snapshots title, body and comments via gh", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 5;\n");
+  const gh = fakeGh(t, {
+    stdout: {
+      title: "Add widget",
+      body: "Line one\r\nLine two\r\n",
+      comments: [
+        comment({ login: "owner1" }, "OWNER", "ship it"),
+        comment(null, "NONE", "from a deleted user"),
+        comment({ login: "" }, "NONE", "also deleted"),
+      ],
+    },
+  });
+  const out = run(root, ["--profile", "comprehensive", "--spec", ISSUE_URL], { env: gh.env });
+  assert.equal(out.status, "ok");
+  assert.deepEqual(gh.calls(), [`issue view ${ISSUE_URL} --json title,body,comments`]);
+  const snapshot = readFileSync(out.workflowArgs.inputs.specPath, "utf8");
+  assert.equal(
+    snapshot,
+    [
+      "# Add widget",
+      "",
+      `Source: ${ISSUE_URL}`,
+      "",
+      "Line one",
+      "Line two",
+      "",
+      "## GitHub comments",
+      "",
+      "### owner1 (OWNER, 2026-01-02T03:04:05Z)",
+      "",
+      "ship it",
+      "",
+      "### ghost (NONE, 2026-01-02T03:04:05Z)",
+      "",
+      "from a deleted user",
+      "",
+      "### ghost (NONE, 2026-01-02T03:04:05Z)",
+      "",
+      "also deleted",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(out.workflowArgs.reviewers.at(-1).name, "implementation-reviewer");
+});
+
+test("--spec PR URL is canonicalised and fetched with gh pr view", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 5;\n");
+  const gh = fakeGh(t, { stdout: { title: "PR title", body: "", comments: [] } });
+  const out = run(
+    root,
+    ["--profile", "comprehensive", "--spec", "https://github.com/o/r/pull/7/?x=1#issuecomment-5"],
+    { env: gh.env },
+  );
+  assert.equal(out.status, "ok");
+  assert.deepEqual(gh.calls(), ["pr view https://github.com/o/r/pull/7 --json title,body,comments"]);
+  assert.equal(
+    readFileSync(out.workflowArgs.inputs.specPath, "utf8"),
+    "# PR title\n\nSource: https://github.com/o/r/pull/7\n",
+  );
+});
+
+test("--spec rejects unsupported URLs before any run or gh call", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 5;\n");
+  const gh = fakeGh(t);
+  for (const url of [
+    "http://github.com/o/r/issues/1",
+    "https://www.github.com/o/r/issues/1",
+    "https://gitlab.com/o/r/issues/1",
+    "https://github.com/o/r/issues/abc",
+    "https://github.com/o/r/issues/0",
+    "https://github.com/o/r/pull/1/files",
+    "https://github.com/o/r",
+    "https://github.com/o/r/discussions/1",
+  ]) {
+    const out = run(root, ["--profile", "comprehensive", "--spec", url], {
+      env: gh.env,
+      expectFail: true,
+    });
+    assert.equal(out.status, "error", url);
+    assert.match(out.message, /--spec/, url);
+  }
+  assert.deepEqual(gh.calls(), []);
+  assert.equal(existsSync(path.join(root, ".code-review")), false);
+});
+
+test("--spec URL aborts without a run dir when gh fails or returns bad output", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 5;\n");
+  const cases = [
+    [{ stderr: "HTTP 404: Not Found", exitCode: 1 }, /HTTP 404/],
+    [{ stdout: "not json" }, /unexpected gh output/],
+    [{ stdout: { title: " ", body: "", comments: [] } }, /unexpected gh output/],
+    [
+      { stdout: { title: "T", body: "", comments: [{ author: null, body: "x", createdAt: "d" }] } },
+      /unexpected gh output/,
+    ],
+  ];
+  for (const [fake, pattern] of cases) {
+    const gh = fakeGh(t, fake);
+    const out = run(root, ["--profile", "comprehensive", "--spec", ISSUE_URL], {
+      env: gh.env,
+      expectFail: true,
+    });
+    assert.equal(out.status, "error");
+    assert.match(out.message, pattern);
+    assert.match(out.message, /--spec/);
+  }
+  assert.equal(existsSync(path.join(root, ".code-review")), false);
+});
+
+test("--spec URL errors clearly when gh is not on PATH", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 5;\n");
+  const bin = mkdtempSync(path.join(tmpdir(), "preflight-nogh-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  writeFileSync(path.join(bin, "git"), `#!/bin/sh\nexec "${realGit}" "$@"\n`);
+  chmodSync(path.join(bin, "git"), 0o755);
+  const out = run(root, ["--profile", "comprehensive", "--spec", ISSUE_URL], {
+    env: { PATH: bin },
+    expectFail: true,
+  });
+  assert.equal(out.status, "error");
+  assert.match(out.message, /gh CLI not found/);
+});
+
+test("--spec URL is ignored (claude) or rejected (codex) under focused without calling gh", (t) => {
+  const root = repo(t);
+  writeFileSync(path.join(root, "src.js"), "const a = 5;\n");
+  const gh = fakeGh(t);
+  const ignored = run(root, ["--profile", "focused", "--spec", ISSUE_URL], { env: gh.env });
+  assert.equal(ignored.status, "ok");
+  assert.equal(ignored.workflowArgs.inputs.specPath, null);
+  assert.ok(ignored.warnings.some((w) => /--spec/.test(w)));
+  const rejected = run(root, ["--profile", "focused", "--runtime", "codex", "--spec", ISSUE_URL], {
+    env: gh.env,
+    expectFail: true,
+  });
+  assert.equal(rejected.status, "error");
+  assert.deepEqual(gh.calls(), []);
+});
+
+test("--spec URL on a clean tree: valid URL reports empty without gh, malformed URL errors", (t) => {
+  const root = repo(t);
+  const gh = fakeGh(t);
+  const empty = run(root, ["--profile", "comprehensive", "--spec", ISSUE_URL], { env: gh.env });
+  assert.equal(empty.status, "empty");
+  assert.deepEqual(gh.calls(), []);
+  const bad = run(root, ["--profile", "comprehensive", "--spec", "https://gitlab.com/o/r/issues/1"], {
+    env: gh.env,
+    expectFail: true,
+  });
+  assert.equal(bad.status, "error");
 });
 
 test("docs manifest orders instruction files first and caps at 50 paths", (t) => {

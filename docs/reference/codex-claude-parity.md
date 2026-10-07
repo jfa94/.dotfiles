@@ -108,6 +108,15 @@ the literal path and its realpath, so `settings.json` carries `Read(~/.claude/sk
 every mode except bypass. Neither runtime reads charter bodies into the main agent: spawned reviewers read their own
 charter from disk first, and charter bodies are never duplicated in spawned task text.
 
+`--spec` accepts a file path or a GitHub issue/PR URL (`https://github.com/<owner>/<repo>/issues/<n>`
+or `/pull/<n>`). For a URL the preflight validates it, fetches title, body and conversation comments
+with `gh issue|pr view --json`, and writes the same `raw/inputs/` spec snapshot as for a file. A
+missing spec file only skips `implementation-reviewer`; an invalid URL or failed fetch aborts the
+review. `implementation-reviewer` lets only `OWNER`/`MEMBER`/`COLLABORATOR` comments that explicitly
+amend requirements change the criteria; other comments are context. Under Codex the
+preflight must run with `sandbox_permissions="require_escalated"` for a URL spec, because sandbox
+network mode allows only GET/HEAD/OPTIONS and `gh`'s token lives in the keychain.
+
 The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and `.focused-code-review/` ignore entries remain for historical artifacts; new runs must not use them.
 
 ## Intentional gaps

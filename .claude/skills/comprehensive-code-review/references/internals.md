@@ -156,6 +156,10 @@ These behaviors live inside the workflow, not the skill:
   dilution.
 - **Spec scoping**: `args.inputs.specPath` (when provided) is read ONLY by implementation-reviewer
   — broadcasting its content would cost spec × N tokens and duplicate the acceptance-criteria pass.
+- **Spec URL**: `--spec` may be a GitHub issue/PR URL. The preflight validates it early, fetches the
+  title, body and conversation comments (with author role) via `gh`, and writes the same
+  `raw/inputs/spec` snapshot. Any URL or fetch failure aborts the run; a missing spec file still
+  only skips implementation-reviewer. Codex runs the preflight escalated for URLs.
 - **Dispositions splicing**: `args.inputs.dispositionsPath` points to the output from
   `review-run.mjs render-dispositions`. Suppressed claims require new evidence plus
   `challenges_disposition`; `intent-confirmed` claims live in a separate user-confirmed-requirements

@@ -17,7 +17,7 @@ straight through:
 ```bash
 node ~/.claude/skills/comprehensive-code-review/scripts/review-preflight.mjs \
   --repo-root "$REPO_ROOT" --runtime codex --profile "$PROFILE" \
-  [--base <ref>] [--full] [--spec <path>] [--context <path>] [--pass <n>] \
+  [--base <ref>] [--full] [--spec <path|github-url>] [--context <path>] [--pass <n>] \
   --request-stdin <<'REQ_EOF_x7'
 <the synthesized request text>
 REQ_EOF_x7
@@ -27,6 +27,10 @@ Pick a unique heredoc delimiter (`REQ_EOF_` plus a random suffix) and confirm no
 request text equals it — a fixed `EOF` delimiter lets a pasted line reading `EOF` break out of the
 heredoc into shell execution. The preflight rejects unknown flags and rejects `--full`/`--spec`
 with an explicit focused profile under `--runtime codex`, matching the Profile rules.
+
+Pass a `--spec` URL single-quoted (`?`, `&` and `#` are shell-special). When `--spec` is a URL, run
+the preflight with `sandbox_permissions="require_escalated"`: the sandbox blocks `gh`'s API call
+and keychain token.
 
 It performs ALL deterministic gathering: flag validation, mode detection, generated/minified
 exclusions, empty guard (no run directory created), `review-run.mjs init`, diff or risk-ordered
