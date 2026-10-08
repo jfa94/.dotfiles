@@ -547,6 +547,9 @@
     "type": "command",
     "command": "~/.claude/statusline.sh"
   },
+  "syncClaudeAiPlugins": false,
+  "syncClaudeAiSkills": false,
+  "disableClaudeAiConnectors": true,
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
