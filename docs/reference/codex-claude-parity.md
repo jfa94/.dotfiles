@@ -86,6 +86,22 @@ dedup and verdict math, and emits the same report section and disposition comman
 the external Codex adversarial track and verifies all structured severities; native Codex omits
 recursive self-review but otherwise uses the same vote thresholds and verifier.
 
+In manifest mode, both orchestrators and diff-reading reviewers follow the canonical
+`internals.md` section 5 coverage policy. Complete reading in risk order is the default;
+context exhaustion after meaningful role-specific review permits DONE with a nonempty optional
+`coverage_note` describing the limitation, inspected material, and remaining coverage. Tool
+truncation must first be recovered by paging or rereading. Genuine BLOCKED results still skip
+refutation and cannot contribute findings. Documentation reviewers remain diffless, direct-diff
+behavior and `--full` sampling are unchanged, and manifest mode alone does not imply partial review.
+
+Coverage notes survive workflow persistence, journal recovery, and citation verification, and
+appear by reviewer in report Scope and returned warnings, including for reviewers with no
+findings. Inventory counts say "Files in scope". Any fallback note forces DONE_WITH_CONCERNS;
+verdict precedence stays INCOMPLETE for blocked tracks, then NEEDS-CHANGES for actionable blockers,
+then NEEDS-DECISION for gating intent questions, otherwise SHIP. A partial SHIP applies to
+inspected material and does not certify exhaustive review. Older results without the optional
+field remain valid; absence of a note does not assert exhaustive coverage.
+
 Both runtimes write each review to a unique directory:
 
 ```text

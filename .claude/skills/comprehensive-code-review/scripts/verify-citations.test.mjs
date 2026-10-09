@@ -1126,6 +1126,37 @@ test("BLOCKED reviewer findings are dropped as never refuted", (t) => {
   assert.equal(out.stats.perReviewer.quality.droppedOther, 1);
 });
 
+for (const hasFindings of [true, false]) {
+  test(`partial DONE preserves coverage with findings=${hasFindings}`, (t) => {
+    const coverage_note =
+      "Context capacity exhausted after inspecting src/a.js; remaining UI changes unreviewed.";
+    const out = run(t, {
+      files: { "src/a.js": SRC },
+      reviewers: [
+        reviewer(
+          "quality-reviewer",
+          hasFindings
+            ? [
+                finding({ title: "valid", reachability: "direct" }),
+                finding({ title: "refuted", refuted: true }),
+                finding({ title: "invalid", verbatim: "not present in source" }),
+              ]
+            : [],
+          { coverage_note },
+        ),
+      ],
+    });
+    assert.equal(out.reviewers[0].status, "DONE");
+    assert.equal(out.reviewers[0].coverage_note, coverage_note);
+    assert.equal(out.findings.length, hasFindings ? 1 : 0);
+    assert.equal(out.dropped.length, hasFindings ? 2 : 0);
+    if (hasFindings) {
+      assert.equal(out.findings[0].title, "valid");
+      assert.equal(out.stats.blocking, 1);
+    }
+  });
+}
+
 test("a ledger entry with an unknown status never suppresses a finding", (t) => {
   const out = run(t, {
     files: { "src/a.js": SRC },

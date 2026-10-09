@@ -15,6 +15,11 @@ runtime/profile values) by taking each reviewer's result record and applying ref
 `refuted`/`refute_reason` (criticals are dropped-as-refuted only when BOTH of their two verdicts
 refute; importants on one).
 
+Preserve each reviewer's optional nonempty `coverage_note` verbatim, including results with no
+findings. Apply internals.md section 5 to completion interpretation: a compliant partial DONE
+stays DONE, but never promote an existing BLOCKED result merely because partial review is allowed.
+BLOCKED candidates remain ineligible and must not receive refutation during recovery.
+
 Apply the same vote thresholds to mutually exclusive intent annotations: for criticals, two
 `intent_question` votes create a question and two verified `doc_basis` objects clear a reviewer
 question; for importants, one vote is enough. Existing documentation evidence is never demoted by

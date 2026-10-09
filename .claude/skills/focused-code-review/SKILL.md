@@ -123,6 +123,13 @@ one JSON line; branch on `status`:
 
 ## Phase 2 — Launch the Workflow (single call)
 
+When `manifestMode` is true, read section 5 of
+`<sibling comprehensive-code-review directory>/references/internals.md` before dispatching or interpreting
+reviewer results. The workflow's diff-reading reviewers honor the policy in the review-input
+artifact; documentation-reviewer remains exempt from reading that artifact. A compliant fallback
+review stays DONE with its normal verdict and findings plus a nonempty `coverage_note`; do not
+downgrade it solely for unread patch content or blindly promote an existing BLOCKED result.
+
 Launch ONE Workflow with the preflight's `workflowArgs` passed **verbatim** — do not add, drop, or
 rewrite any field (the PreToolUse hook deep-equals the args against the preflight's provenance
 record and denies drift):
@@ -204,7 +211,8 @@ scopeLabel, manifestMode, warnings, plus "focused review (5 reviewers + Codex), 
 comprehensive one" for the Scope section), the Phase 3 `codex` state, and the exact finish
 command:
 `node "<sibling dir>/scripts/review-run.mjs" finish --repo-root "$REPO_ROOT" --run-dir "$RUN_DIR" --status <DONE|DONE_WITH_CONCERNS> --report review.md`
-(status DONE_WITH_CONCERNS when any track is BLOCKED or the verdict is NEEDS-DECISION). With this
+(status DONE_WITH_CONCERNS when any track is BLOCKED, the verdict is NEEDS-DECISION, or any
+reviewer has a fallback `coverage_note`). With this
 skill's five reviewers + Codex, only these categories populate: Security, Quality,
 Simplification, Silent Failures, Systemic, Adversarial-Codex, Other.
 
@@ -215,9 +223,15 @@ after it returns (check with one existence test), read the sibling's
 `references/report-format.md` yourself, write `<runDir>/review.md`, run the finish command, and
 print the summary block per that reference.
 
+Both report paths must reproduce each affected reviewer's coverage note in Scope and warn in
+the returned summary, even with no findings. Use "Files in scope" for the inventory count.
+Partial SHIP applies only to inspected material and does not certify exhaustive review;
+coverage notes do not change verdict precedence.
+
 ## Phase 6 — STATUS line
 
-All reviewers DONE/SKIPPED, Codex DONE/SKIPPED, verdict SHIP or NEEDS-CHANGES → `STATUS: DONE`.
-Any track BLOCKED, or verdict NEEDS-DECISION →
-`STATUS: DONE_WITH_CONCERNS — <reason: blocked tracks or user decision required>`.
+All reviewers DONE/SKIPPED, Codex DONE/SKIPPED, verdict SHIP or NEEDS-CHANGES, and no fallback
+coverage notes → `STATUS: DONE`.
+Any track BLOCKED, verdict NEEDS-DECISION, or any fallback `coverage_note` →
+`STATUS: DONE_WITH_CONCERNS — <reason: blocked tracks, user decision required, or partial coverage>`.
 The STATUS line must be the absolute last line of your response.

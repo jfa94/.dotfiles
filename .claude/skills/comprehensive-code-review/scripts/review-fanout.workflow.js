@@ -43,6 +43,7 @@ const FINDINGS_SCHEMA = {
     // self-attributing if the persisted file is lost; the script's name
     // assignment stays authoritative (see Object.assign order below).
     name: { type: "string" },
+    coverage_note: { type: "string", minLength: 1, pattern: "\\S" },
     blocked_reason: { type: "string" },
     verdict: { type: "string" },
     // Count of candidate findings the reviewer discarded to respect its findings
@@ -182,7 +183,8 @@ function buildPrompt(reviewer, ctx) {
   const inputs = ctx.inputs;
   const reviewInputStep = DIFFLESS_REVIEWERS.has(reviewer.name)
     ? "Do not read the review-input artifact for this role; audit current documentation state against the changed-files inventory and repository files."
-    : "Read the complete review input at " + inputs.reviewInputPath + ".";
+    : "Read the complete review input at " + inputs.reviewInputPath +
+      ". Follow its coverage policy, including the canonical section 5 reference when manifest mode is used.";
   const docsBlock = inputs.docsManifestPath
     ? [
         "Read the path-only documentation manifest at " +
@@ -251,6 +253,7 @@ function buildPrompt(reviewer, ctx) {
       '" in your output (attributes your results if they must be recovered from the run journal).',
     "Every finding MUST include file + line + a verbatim quote (>=10 characters copied exactly from the code at that line). Drop any finding you cannot quote.",
     'If you genuinely cannot perform the review, return status "BLOCKED" with a one-line blocked_reason and an empty findings array. Otherwise return status "DONE".',
+    "When using the review-input policy’s context-capacity fallback after meaningful role-specific review, return DONE with your normal role verdict and a nonempty coverage_note stating why coverage was limited, what you inspected, and what remains unreviewed. Otherwise omit coverage_note. DONE does not certify exhaustive coverage; recover tool-output truncation by paging or rereading before claiming a limitation.",
     "Respect your role's findings cap; drop the low-signal tail by likelihood x impact. If the cap forced you to discard candidate findings, set dropped_by_cap to the count discarded; omit it (or set 0) otherwise.",
     'Systemic findings (systemic-failure-reviewer only) additionally set kind="systemic", failure_mode, scenario, and anchors[] (≥2 entries, each with file+line+verbatim); all other reviewers leave these fields unset.',
     "Every critical/important finding MUST set reachability: direct = fails under normal operation; conditional = requires a specific but plausible state; theoretical = requires an improbable operational sequence. Set the honest value — theoretical importants are downgraded downstream, and inflating reachability wastes a verification pass.",

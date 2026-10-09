@@ -455,6 +455,8 @@ function computeChurn(repoRoot) {
 }
 
 function buildManifestReviewInput({ repoRoot, runDir, diffText, diffArgs, repoRelRunDir }) {
+  const policyPath = path.join(skillDir, "references", "internals.md");
+  accessSync(policyPath, constants.R_OK);
   const patchPath = path.join(runDir, "raw", "full-diff.patch");
   writeFileSync(patchPath, diffText);
   const patchLines = diffText.split("\n");
@@ -489,8 +491,10 @@ function buildManifestReviewInput({ repoRoot, runDir, diffText, diffArgs, repoRe
   const totalLines = patchLines.length;
   return [
     `The complete diff is at ${patchPath} (${totalLines} lines).`,
-    "Read ALL of it before reviewing — page through it with Read offset/limit using the per-file",
-    "line index below. The manifest is a reading order, not a substitute for the diff.",
+    `Read the canonical coverage policy in section 5 of ${policyPath} before reviewing.`,
+    "Inspect the complete patch in risk order, subject to that policy’s context-capacity fallback.",
+    "Page through it with Read offset/limit using the per-file line index below; reread truncated tool output.",
+    "The manifest is a reading order, not a substitute for the diff.",
     "",
     "| risk | file | +/− | patch line |",
     "| ---- | ---- | --- | ---------- |",

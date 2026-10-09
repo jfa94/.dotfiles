@@ -643,6 +643,7 @@ function main() {
       status: r.status,
       verdict: r.verdict,
       blocked_reason: r.blocked_reason,
+      coverage_note: r.coverage_note,
       dropped_by_cap: r.dropped_by_cap,
     })),
     findings: deduped,

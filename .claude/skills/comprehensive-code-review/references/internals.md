@@ -105,7 +105,7 @@ The workflow's final stage writes
 
 ```json
 { "runtime": "claude", "profile": "...", "runId": "...", "scopeLabel": "...", "mode": "...",
-  "reviewers": [ { "name", "status", "verdict?", "blocked_reason?", "dropped_by_cap?", "findings": [] } ],
+  "reviewers": [ { "name", "status", "verdict?", "blocked_reason?", "coverage_note?", "dropped_by_cap?", "findings": [] } ],
   "codex": { "status": "DONE|BLOCKED|SKIPPED", "outcome": "structured|degraded|null",
              "blocked_reason?": "...", "verdict?": "...", "summary?": "...",
              "degraded_refs": [ { "file": "...", "line": 1 } ], "verifyRan": true } }
@@ -195,6 +195,7 @@ These behaviors live inside the workflow, not the skill:
   "status": "DONE | BLOCKED",
   "name": "<reviewer name echo, optional — attributes journal.jsonl records; the script's own name assignment stays authoritative>",
   "blocked_reason": "<string, only when BLOCKED>",
+  "coverage_note": "<nonempty string, required for section 5 fallback; otherwise omitted>",
   "verdict": "<reviewer-specific verdict string, optional>",
   "dropped_by_cap": "<integer ≥0, optional — candidates the reviewer discarded to respect its findings cap; surfaces silent cap truncation in the report>",
   "findings": [
@@ -361,7 +362,9 @@ that absolute path; reviewers read the file before reviewing.
 ### Manifest mode — diff > 2000 lines
 
 Reviewers mirror what Codex already does (§3, self-collect): they get a pointer to the
-**complete** diff plus a risk-ordered map, and Read all of it. Nothing is dropped.
+**complete** diff plus a risk-ordered map, and normally Read all of it, subject to the fallback
+below. Nothing is dropped from the patch. Both runtime orchestrators read this section before
+dispatching or interpreting manifest-mode results.
 
 1. **Write the full diff to disk, once:**
 
@@ -388,12 +391,15 @@ Reviewers mirror what Codex already does (§3, self-collect): they get a pointer
    - **Change size** — `+adds`/`−dels` per file (`git diff --numstat <range> -- . "${EXCLUDES[@]}"`).
 
 4. **Write `raw/inputs/review-input.txt`** as an instruction block + the risk-ranked manifest
-   table (NOT diff text):
+   table (NOT diff text). Resolve the absolute canonical policy path from the installed skill
+   directory and check readability through preflight's existing error handling:
 
    ```
    The complete diff is at <repoRoot>/<runDir>/raw/full-diff.patch (<N> lines).
-   Read ALL of it before reviewing — page through it with Read offset/limit using the per-file line
-   index below. The manifest is a reading order, not a substitute for the diff.
+   Read section 5 of <absolute installed skill directory>/references/internals.md for the
+   coverage and completion policy. Inspect the complete patch in risk order, subject to that
+   policy's fallback; page with Read offset/limit using the per-file line index below.
+   The manifest is a reading order, not a substitute for the diff.
 
    | risk | file | +/− | patch line |
    | ---- | ---- | --- | ---------- |
@@ -402,16 +408,31 @@ Reviewers mirror what Codex already does (§3, self-collect): they get a pointer
    | ...  | ...                 | ...     | ... |
    ```
 
-**Pathological fallback (disclose-and-proceed):** if a diff is so large a single reviewer cannot
-read it all within its context, the risk ordering guarantees the highest-risk content is read
-first. This is the ONLY place sampling survives, and it is risk-ranked, not filename-ordered. The
-report surfaces the partial-coverage caveat explicitly in its Scope section. (Auto-chunking the
-panel is a future v2.)
+**Pathological fallback (disclose-and-proceed):** complete patch reading in risk order remains
+the normal expectation. If context capacity prevents complete reading, a reviewer that has
+performed meaningful role-specific review of prioritized material may complete under this
+fallback. Return `status: "DONE"`, the normal role verdict and findings, and a nonempty
+reviewer-level `coverage_note` stating why coverage was limited, what was inspected, and what
+remains unreviewed. Do not invent percentages or exhaustive file inventories. Otherwise omit
+the optional field; its absence does not assert exhaustive coverage. Keep it separate from
+`blocked_reason`, verdicts, findings, and finding caps. This is the only diff-mode sampling
+exception; `--full` sampling is unchanged.
+
+`DONE` means completion under normal review or this permitted fallback, not certification of
+exhaustive coverage. Reserve `BLOCKED` for failures preventing review, such as inaccessible
+essential inputs or unusable reviewer output. Recoverable tool-output truncation is not context
+exhaustion: page or reread the truncated material first. Orchestrators must not downgrade a
+compliant fallback result solely for unread patch content, nor blindly promote an existing
+BLOCKED result. Genuine BLOCKED findings still bypass refutation and remain ineligible.
 
 **Report disclosure (Scope section):** note that manifest mode was used, the `full-diff.patch`
-path, that reviewers were instructed to read all of it in risk order, and any pathological
-partial-coverage caveat. The old "split into chunked `--base` runs" line is optional advice, not a
-required remediation.
+path, and the instruction to inspect it in risk order subject to this policy. Identify every
+affected reviewer and reproduce its `coverage_note` in Scope, including when it has no findings;
+also warn in the returned summary. Any fallback coverage note forces final/lifecycle status
+`DONE_WITH_CONCERNS`, without changing verdict precedence. A SHIP verdict with partial coverage
+applies only to inspected material and does not certify exhaustive review. Manifest mode alone
+does not mean partial coverage. The old "split into chunked `--base` runs" line is optional
+advice, not a required remediation.
 
 The workflow script forwards only the artifact path into each reviewer prompt;
 `DIFFLESS_REVIEWERS` (documentation-reviewer) get the changed-files path and do not read the

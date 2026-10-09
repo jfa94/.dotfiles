@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -36,10 +37,14 @@ function repo(t) {
   return root;
 }
 
-function run(root, extra = [], { input = "", expectFail = false, env } = {}) {
+function run(
+  root,
+  extra = [],
+  { input = "", expectFail = false, env, scriptPath = script } = {},
+) {
   const res = spawnSync(
     process.execPath,
-    [script, "--repo-root", root, ...extra],
+    [scriptPath, "--repo-root", root, ...extra],
     { input, encoding: "utf8", ...(env ? { env: { ...process.env, ...env } } : {}) },
   );
   if (expectFail) assert.notEqual(res.status, 0, res.stdout + res.stderr);
@@ -196,41 +201,101 @@ test("clean base range stops empty; unknown or unsafe base ref errors before ini
   assert.equal(existsSync(path.join(root, ".code-review")), false);
 });
 
-test("diff over 2000 lines switches to a never-truncated risk-ranked manifest", (t) => {
+for (const runtime of ["claude", "codex"]) {
+  for (const mode of ["working-tree", "base"]) {
+    test(`${runtime} ${mode}: large diff preserves patch and routes coverage policy`, (t) => {
+      const root = repo(t);
+      mkdirSync(path.join(root, "api"));
+      writeFileSync(path.join(root, "api", "auth.js"), "let s = 0;\n");
+      writeFileSync(path.join(root, "big.js"), "// base\n");
+      git(root, "add", ".");
+      git(root, "commit", "-qm", "seed files");
+      const base = git(root, "rev-parse", "HEAD").trim();
+      writeFileSync(path.join(root, "api", "auth.js"), "let s = 1;\nlet t = 2;\n");
+      writeFileSync(
+        path.join(root, "big.js"),
+        Array.from({ length: 2500 }, (_, i) => `const line${i} = ${i};`).join("\n") + "\n",
+      );
+
+      if (mode === "base") {
+        git(root, "add", ".");
+        git(root, "commit", "-qm", "large change");
+      }
+      const out = run(root, [
+        "--profile", "focused", "--runtime", runtime,
+        ...(mode === "base" ? ["--base", base] : []),
+      ]);
+      assert.equal(out.status, "ok");
+      assert.equal(out.manifestMode, true);
+      const patchPath = path.join(out.runDir, "raw", "full-diff.patch");
+      const expected = git(
+        root,
+        "diff",
+        mode === "base" ? `${base}...HEAD` : "HEAD",
+        "--",
+        ".",
+        ":(top,exclude,glob).code-review/**",
+      );
+      assert.equal(readFileSync(patchPath, "utf8"), expected);
+
+      const reviewInput = readFileSync(out.workflowArgs.inputs.reviewInputPath, "utf8");
+      assert.match(reviewInput, /full-diff\.patch/);
+      const policyPath = reviewInput.match(/section 5 of (.+) before reviewing\./)[1];
+      assert.ok(path.isAbsolute(policyPath));
+      assert.equal(policyPath, path.join(scriptDir, "..", "references", "internals.md"));
+      assert.ok(readFileSync(policyPath, "utf8").length > 0);
+      assert.match(reviewInput, /context-capacity fallback/);
+      for (const row of reviewInput.matchAll(
+        /^\| (?:sec|churn|size) \| (.+?) \| .+? \| (\d+) \|$/gm,
+      )) {
+        assert.equal(
+          expected.split("\n")[Number(row[2]) - 1],
+          `diff --git a/${row[1]} b/${row[1]}`,
+        );
+      }
+      assert.doesNotMatch(reviewInput, /const line42 = 42;/);
+      // security-sensitive path ranks above the merely-large change
+      const authRow = reviewInput.indexOf("api/auth.js");
+      const bigRow = reviewInput.indexOf("big.js");
+      assert.ok(authRow !== -1 && bigRow !== -1 && authRow < bigRow);
+    });
+  }
+}
+
+for (const lineCount of [2000, 2001]) {
+  test(`manifest boundary at ${lineCount} patch lines`, (t) => {
+    const root = repo(t);
+    writeFileSync(
+      path.join(root, "src.js"),
+      Array.from({ length: lineCount - 6 }, (_, i) => `const v${i} = ${i};`).join("\n") + "\n",
+    );
+    const patch = git(root, "diff", "HEAD");
+    assert.equal(patch.split("\n").length - 1, lineCount);
+    const out = run(root, ["--runtime", "codex", "--profile", "focused"]);
+    assert.equal(out.manifestMode, lineCount > 2000);
+    if (lineCount === 2000) {
+      assert.equal(readFileSync(out.workflowArgs.inputs.reviewInputPath, "utf8"), patch);
+    }
+  });
+}
+
+test("missing canonical manifest policy aborts through preflight error handling", (t) => {
   const root = repo(t);
-  mkdirSync(path.join(root, "api"));
-  writeFileSync(path.join(root, "api", "auth.js"), "let s = 0;\n");
-  writeFileSync(path.join(root, "big.js"), "// base\n");
-  git(root, "add", ".");
-  git(root, "commit", "-qm", "seed files");
-  writeFileSync(path.join(root, "api", "auth.js"), "let s = 1;\nlet t = 2;\n");
-  writeFileSync(
-    path.join(root, "big.js"),
-    Array.from({ length: 2500 }, (_, i) => `const line${i} = ${i};`).join("\n") + "\n",
+  const installed = mkdtempSync(path.join(tmpdir(), "review-skill-policy-"));
+  t.after(() => rmSync(installed, { recursive: true, force: true }));
+  cpSync(path.dirname(scriptDir), installed, { recursive: true });
+  rmSync(path.join(installed, "references", "internals.md"));
+  writeFileSync(path.join(root, "src.js"), "const large = true;\n".repeat(2100));
+  const out = run(root, ["--runtime", "codex", "--profile", "focused"], {
+    expectFail: true,
+    scriptPath: path.join(installed, "scripts", "review-preflight.mjs"),
+  });
+  assert.equal(out.status, "error");
+  assert.match(out.message, /internals\.md/);
+  assert.equal(
+    JSON.parse(readFileSync(path.join(out.runDir, "run.json"), "utf8")).status,
+    "ABORTED",
   );
-
-  const out = run(root, ["--profile", "focused"]);
-  assert.equal(out.status, "ok");
-  assert.equal(out.manifestMode, true);
-  const patchPath = path.join(out.runDir, "raw", "full-diff.patch");
-  const expected = git(
-    root,
-    "diff",
-    "HEAD",
-    "--",
-    ".",
-    ":(top,exclude,glob).code-review/**",
-  );
-  assert.equal(readFileSync(patchPath, "utf8"), expected);
-
-  const reviewInput = readFileSync(out.workflowArgs.inputs.reviewInputPath, "utf8");
-  assert.match(reviewInput, /full-diff\.patch/);
-  assert.match(reviewInput, /Read ALL of it/);
-  assert.doesNotMatch(reviewInput, /const line42 = 42;/);
-  // security-sensitive path ranks above the merely-large change
-  const authRow = reviewInput.indexOf("api/auth.js");
-  const bigRow = reviewInput.indexOf("big.js");
-  assert.ok(authRow !== -1 && bigRow !== -1 && authRow < bigRow);
 });
 
 test("focused ignores --full and --spec with a warning", (t) => {

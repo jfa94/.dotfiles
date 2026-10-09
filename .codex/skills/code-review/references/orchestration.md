@@ -51,6 +51,11 @@ Relay `warnings` now. If the preflight warned that `.code-review/probe` is not g
 continue with the run but record the warning and finish `DONE_WITH_CONCERNS` even when all review
 tracks succeed. Do not edit tracked ignore files during a review.
 
+When `manifestMode` is true, read section 5 of the canonical
+`~/.claude/skills/comprehensive-code-review/references/internals.md` before dispatching or
+interpreting reviewer results. Honor its completion policy: a compliant partial review stays
+DONE with disclosure; never blindly promote an existing BLOCKED result.
+
 The run lives at `.code-review/runs/<UTC-basic>-<profile>-<random>/`. Never hand-compose a
 timestamp, nonce, run directory, or initial state; never reuse, clear, or overwrite another run.
 Generated files below this ignored run directory are machine artifacts, not source edits. Do not
@@ -80,6 +85,12 @@ collaboration slots. Each task receives only:
   `rg --files`, and Bash means non-mutating shell diagnostics;
 - the canonical JSON contract below.
 
+Instruct diff-reading reviewers to honor the coverage policy linked by the review-input
+artifact. A permitted section 5 fallback requires meaningful role-specific review, status DONE,
+the normal role verdict/findings, and a nonempty `coverage_note` describing the limitation,
+inspected areas, and remaining coverage. Omit the note otherwise; absence does not assert
+exhaustive coverage. Page or reread tool-truncated output before treating it as a limitation.
+
 Treat the supplied scope as authoritative. Reviewers may read callers, callees, tests, types, and
 docs needed to prove a scoped finding, but findings must attach to reviewed code.
 Documentation-reviewer audits current state against changed files and does not read the
@@ -94,6 +105,7 @@ Require one JSON object and no markdown fence:
   "status": "DONE",
   "verdict": "optional role verdict",
   "blocked_reason": "required only when BLOCKED",
+  "coverage_note": "optional nonempty string; required for section 5 fallback",
   "dropped_by_cap": 0,
   "findings": [
     {
@@ -119,9 +131,13 @@ Systemic findings additionally require `kind: "systemic"`, `failure_mode`, a con
 
 Validate reviewer name, status, required fields, enums, positive lines, quote length, findings cap, and systemic shape. On malformed output, send one correction request to the same reviewer. If still malformed or absent, synthesize a BLOCKED reviewer entry with no findings. Never invent or repair a finding's evidence.
 
+Validate `coverage_note`, when present, as a nonempty string; require it when the reviewer uses
+the large-diff fallback. Keep it separate from blocked_reason and findings. Do not downgrade a
+compliant fallback DONE merely because some patch content remains unread.
+
 ## 3. Refute eligible findings
 
-After reviewer collection, refute every important finding with one fresh agent and every critical finding with two fresh independent agents. Run at most the available collaboration slots concurrently.
+After reviewer collection, refute every important finding from DONE reviewers with one fresh agent and every critical finding from DONE reviewers with two fresh independent agents. Genuine BLOCKED reviewers skip refutation; their candidates remain ineligible. Partial DONE reviewers follow the normal refutation rules. Run at most the available collaboration slots concurrently.
 
 Each refuter sees the claim, severity, location, quote, and systemic anchors/scenario when applicable, but not the reviewer's reasoning chain. Require JSON:
 
@@ -142,6 +158,9 @@ with a refuter's differently worded question. Reviewer minor findings get no ref
 
 Assemble `raw/workflow-result.json` with `runtime`, `profile`, `runId`, `scopeLabel`, `mode`, and normalized reviewer entries. Before trusting it, confirm these identifiers match `run.json`.
 
+Preserve optional reviewer `coverage_note` values verbatim through persistence and reporting,
+even when a reviewer has no findings.
+
 After every artifact write, read it back. JSON artifacts must parse, match the current run identity,
 and contain the expected reviewer/finding counts; rewrite once on mismatch, then mark the run
 `ABORTED` rather than silently degrading.
@@ -160,6 +179,12 @@ native differences:
 - state `Runtime: Codex native` and that recursive self-review was intentionally omitted;
 - point Raw Outputs to this run's `raw/` directory.
 
+Use "Files in scope" for the inventory count and reproduce each affected reviewer's coverage
+note in Scope. Manifest mode alone does not imply partial coverage. Verdict precedence remains
+BLOCKED track → INCOMPLETE; actionable blockers → NEEDS-CHANGES; gating intent questions →
+NEEDS-DECISION; otherwise SHIP. With partial coverage, SHIP applies only to inspected material
+and does not certify exhaustive review. Apply the same rules to any fallback report rendering.
+
 Also harvest `openQuestions` and `previouslyAdjudicated`. Questions are independent, never deduped,
 non-fixable, and excluded from totals, categories, Themes, fix scope, and convergence. Important or
 critical questions set the overall result to NEEDS-DECISION when no actionable blocker exists; minor
@@ -174,7 +199,7 @@ node ~/.claude/skills/comprehensive-code-review/scripts/review-run.mjs finish \
   --run-dir "$RUN_DIR" --status "$STATUS" --report review.md
 ```
 
-Use `DONE_WITH_CONCERNS` for NEEDS-DECISION; otherwise use `DONE` or `DONE_WITH_CONCERNS` as the
+Use `DONE_WITH_CONCERNS` for NEEDS-DECISION or any fallback `coverage_note`; otherwise use `DONE` or `DONE_WITH_CONCERNS` as the
 canonical report contract requires. If orchestration must stop early, call `finish` with `ABORTED`
 and `--reason`; retain the run for diagnosis rather than deleting it. Include finding/drop/reviewer
 counts in the report and workflow result.
@@ -182,5 +207,9 @@ counts in the report and workflow result.
 ## 5. Respond
 
 Return the run directory, report path, reviewer counts, verified severity counts, dropped/refuted counts, capped counts when nonzero, and verification warnings. A blocked reviewer makes the overall result incomplete but does not erase completed tracks.
+
+Include a partial-coverage warning naming each affected reviewer and its coverage note in the
+returned summary; users must not need to open the report to discover the limitation. Any such
+fallback note forces final status DONE_WITH_CONCERNS, regardless of findings or verdict.
 
 The status line must be the absolute final line.

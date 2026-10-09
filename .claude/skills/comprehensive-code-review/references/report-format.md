@@ -29,13 +29,15 @@
 - Mode: <full | base | working-tree>
 - Agent scope: <e.g., "ENTIRE CODEBASE (current state)" | "abc123...HEAD" | "working tree vs HEAD">
 - Codex scope: <mirrors the agents in base/working-tree modes; under --full it is the bounded recent window (HEAD~30...HEAD), narrower than the agents on purpose to stay within Codex's context limit>
-- Files reviewed: <N>
+- Files in scope: <N>
 - Excluded local/generated outputs: .code-review, dist, build, out, .next, .nuxt, .svelte-kit, .output, coverage, _.min.js, _.min.css, \*.map
 - Lines changed: +<M> -<K> (omit for --full)
 - Coverage note: <only when applicable — `--full`: "hotspot-prioritized sampling, not exhaustive";
   diff modes with >2000-line diff: "manifest mode: full diff at <runDir>/raw/full-diff.patch,
-  reviewers instructed to read all of it in risk order"; add "partial coverage — diff exceeds a single
-  reviewer's context, highest-risk files prioritized" only if the pathological fallback triggered>
+  reviewers instructed to inspect it in risk order subject to internals.md section 5"; manifest
+  mode alone does not imply partial coverage>
+- Partial coverage — <reviewer>: <reproduce its coverage_note verbatim; one entry per affected
+  reviewer, even with no findings; omit when no fallback coverage notes exist>
 
 ## Reviewers
 
@@ -72,6 +74,12 @@ downgraded to minor upstream). NEEDS-DECISION: no actionable blockers and
 `stats.decisionRequired > 0` — at least one unresolved critical/important intent question. SHIP:
 none of the above. Reviewer prose verdicts
 (REQUEST_CHANGES, VIOLATION, BLOCKED-as-verdict, …) are informational only and never gate.)_
+
+_(Any fallback `coverage_note` forces lifecycle/final status DONE_WITH_CONCERNS without changing
+this verdict precedence. With partial coverage, SHIP applies to inspected material and does not
+certify exhaustive review; state that limitation explicitly. Absence of the optional note does
+not assert exhaustive coverage. Apply these rules even when the orchestrator renders the report
+after report-writer failure.)_
 
 **Total findings: <N>** _(post-dedup; <n> duplicates merged across reviewers)_
 
@@ -410,8 +418,9 @@ Report-level (not a reviewer's):
 
 - **Hotspot/churn risk**: high-churn files with diffuse ownership (flag if CODEOWNERS absent)
 - **Diff reviewability**: detection degrades past ~400 lines; at 2000 lines the preflight switches
-  from a direct diff artifact to manifest mode (full diff on disk + risk-ordered read-all, never
-  truncated) — note the switch in Scope, and disclose any pathological partial coverage
+  from a direct diff artifact to manifest mode (full diff on disk + risk-ordered reading subject
+  to internals.md section 5, never truncated) — note the switch in Scope and disclose each
+  reviewer's fallback coverage note
 
 ## Summary block (returned to the orchestrator, printed to the user)
 
@@ -434,6 +443,7 @@ Recommendation: STOP-LOOPING                                        # only when 
 
 ### WARNING lines (append when applicable; one line each, only when the condition applies)
 
+- For each reviewer with `coverage_note`: `⚠ Partial coverage — <reviewer>: <coverage_note>`. When the verdict is SHIP, also state: `SHIP applies only to inspected material; this is not certification of exhaustive review.` These notes force DONE_WITH_CONCERNS, including when there are no findings.
 - When `mode === "full"` AND Codex ran: `⚠ Codex reviewed only HEAD~30…HEAD; whole-codebase design review relied on the systemic reviewer [present | ABSENT — systemic failure modes NOT covered].`
 - When `stats.unmatchedCodexRefutations > 0`: `⚠ <n> Codex refutation(s) matched no finding (stats.unmatchedCodexRefutations) — a finding the verify pass flagged for drop may have shipped as verified; reconcile codex-adversarial.json against the verify output.`
 - When `stats.unmatchedCodexAnnotations > 0`: `⚠ <n> Codex intent/doc annotation(s) matched no finding; reconcile codex-adversarial.json against the verify output.`

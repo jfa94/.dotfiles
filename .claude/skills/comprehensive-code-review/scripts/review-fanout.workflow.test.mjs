@@ -67,6 +67,8 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
     ...over,
   });
   const prompts = [];
+  const coverage_note =
+    "Context capacity reached after reviewing src/a.js; remaining modules unreviewed.";
   globalThis.args = {
     runtime: "claude",
     profile: "focused",
@@ -124,6 +126,7 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
     if (label === "review:quality-reviewer") {
       return {
         status: "DONE",
+        coverage_note,
         findings: [
           finding(2, "two intent votes"),
           finding(4, "mixed votes"),
@@ -139,7 +142,11 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
       };
     }
     if (label === "review:systemic-failure-reviewer") {
-      return { status: "DONE", findings: [] };
+      return {
+        status: "BLOCKED",
+        blocked_reason: "Essential input unreadable",
+        findings: [finding(99, "unverified blocked candidate")],
+      };
     }
     if (label === "review:documentation-reviewer") {
       return { status: "DONE", findings: [] };
@@ -195,13 +202,33 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
       return { written: true, path: "x", entry_count: 1 };
     }
     if (label.startsWith("persist:workflow-result.json")) {
-      return { written: true, path: "x", entry_count: 3, findings_count: 5 };
+      return { written: true, path: "x", entry_count: 3, findings_count: 6 };
     }
     throw new Error(`unexpected label ${label}`);
   };
 
   await import(pathToFileURL(runnable).href + `?${Date.now()}`);
   const findings = globalThis.__workflowResult.reviewers[0].findings;
+  assert.equal(globalThis.__workflowResult.reviewers[0].coverage_note, coverage_note);
+  assert.equal(globalThis.__workflowResult.reviewers[1].status, "BLOCKED");
+  assert.equal("coverage_note" in globalThis.__workflowResult.reviewers[2], false);
+  assert.equal(
+    prompts.filter((p) => p.options.label.startsWith("verify:quality-reviewer:src/a.js:2:")).length,
+    2,
+  );
+  assert.equal(
+    prompts.filter((p) => p.options.label.startsWith("verify:quality-reviewer:src/a.js:8")).length,
+    1,
+  );
+  assert.equal(
+    prompts.some((p) => p.options.label.startsWith("verify:systemic-failure-reviewer:")),
+    false,
+  );
+  assert.ok(
+    prompts
+      .find((p) => p.options.label.startsWith("persist:workflow-result.json"))
+      .prompt.includes(coverage_note),
+  );
   const byLine = (line) => findings.find((f) => f.line === line);
   assert.match(byLine(2).intent_question, /partial completion/);
   assert.equal(byLine(4).refuted, undefined); // mixed/null critical votes preserve original
@@ -239,6 +266,14 @@ test("stubbed workflow preserves intent/refutation vote semantics and sends docs
   ).prompt;
   assert.ok(docsPrompt.includes(changedFilesPath));
   assert.equal(docsPrompt.includes(reviewInputPath), false);
+  const outputSchema = prompts.find(
+    (p) => p.options.label === "review:quality-reviewer",
+  ).options.schema;
+  assert.equal(outputSchema.properties.coverage_note.type, "string");
+  assert.equal(outputSchema.properties.coverage_note.minLength, 1);
+  assert.equal(outputSchema.required.includes("coverage_note"), false);
+  assert.ok(new RegExp(outputSchema.properties.coverage_note.pattern).test(coverage_note));
+  assert.equal(new RegExp(outputSchema.properties.coverage_note.pattern).test("   "), false);
   const reviewerSchema = prompts.find((p) => p.options.label === "review:quality-reviewer").options
     .schema.properties.findings.items;
   assert.deepEqual(reviewerSchema.allOf, [

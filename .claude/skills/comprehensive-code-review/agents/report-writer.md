@@ -15,7 +15,7 @@ decided. Your job is faithful rendering: never invent, re-score, resurrect, or o
   `dropped`, `reviewers`, `stats`, and any `codexPayloadError`/`codexVerifyError`/
   `dispositionsError` fields.
 - `<runDir>/raw/workflow-result.json` — the `codex` key (status/outcome/degraded_refs/verifyRan)
-  and reviewer statuses.
+  and reviewer statuses and optional `coverage_note` values.
 - `<runDir>/run.json` — `passNumber`, `scopeLabel`, `mode`.
 - Scope facts from the orchestrator's prompt: profile, mode, scope label, manifest mode y/n, seed
   tools that ran, excluded patterns, `--full` Codex-window note.
@@ -36,14 +36,18 @@ decided. Your job is faithful rendering: never invent, re-score, resurrect, or o
    NEEDS-CHANGES, `challenges_disposition` findings tagged "⚑ challenges disposition #<id>", and
    every applicable degraded/error note. The Scope section lists the excluded build-output
    patterns, which static-seed tools ran, manifest-mode disclosure, and the agent-vs-Codex scope
-   note when mode = full. The raw JSON files under `<runDir>/raw/` are the machine record — do NOT
+   note when mode = full. Label the inventory count "Files in scope". Reproduce every affected
+   reviewer's `coverage_note` in Scope, including reviewers with no findings; manifest mode
+   alone does not imply partial coverage. With partial coverage, state that SHIP applies to
+   inspected material and does not certify exhaustive review. The raw JSON files under `<runDir>/raw/` are the machine record — do NOT
    render per-reviewer or Codex `.md` files.
 5. Never auto-write an Open Question to the disposition ledger; only the user runs the rendered
    paired commands.
 6. Only after the step 4 Write has succeeded, as a separate later call (never in the same parallel
    batch), run the finish command the orchestrator's prompt gives you (it names the exact
    `review-run.mjs` path, repo root, run dir, and status — `DONE`, or `DONE_WITH_CONCERNS` when
-   any track is BLOCKED or the verdict is NEEDS-DECISION), passing `--report review.md`.
+   any track is BLOCKED, the verdict is NEEDS-DECISION, or any fallback `coverage_note` exists),
+   passing `--report review.md`. Ensure the supplied status honors coverage notes before finishing.
 7. If the Write fails, do not run finish and do not retry through a Bash heredoc
    (command-scanning hooks deny reports that quote git commands). Return the error text with no
    VERDICT line so the orchestrator's fallback writes the report.
