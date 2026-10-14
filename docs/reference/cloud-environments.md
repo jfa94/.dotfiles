@@ -64,8 +64,8 @@ Spike-verified 2026-08:
   `/root/.dotfiles`; the dotfiles clone is config-delivery only.
 - Fresh VM per session: nothing persists mid-session → Codex auth repeats per
   session; env vars are the only durable per-environment state.
-- Preinstalled: node, npm, pnpm, uvx, git, jq, claude
-  (`/opt/node22/bin/claude`). No `gh` — GitHub access goes through the
+- Preinstalled: Node 20/21/22 (22 on PATH), npm, pnpm, uvx, git, jq, nvm
+  (`/opt/nvm`), claude (`/opt/node22/bin/claude`). No `gh` — GitHub access goes through the
   session-injected github MCP server instead.
 - Sessions reuse the cached env snapshot — a dotfiles push does NOT reach
   cloud sessions until the env rebuilds. Force a rebuild by editing the
@@ -119,6 +119,23 @@ override a refresh.
   [Bump the 1Password SDK](../guides/maintain-cloud-setup.md#bump-the-1password-sdk).
 - **Build time.** The SDK install uses no credentials. Failures appear in the
   setup summary as "1Password SDK install failed" or "1Password SDK skipped (no pnpm)".
+
+## Node version from `.nvmrc`
+
+`.claude/hooks/sessionstart-node-version.sh` (cloud only; matcher
+`startup|resume|clear|fork`) runs `nvm install` in `$CLAUDE_PROJECT_DIR` when it
+has an `.nvmrc`, then adds one `export PATH=<version bin>:"$PATH"` line to the
+session's `CLAUDE_ENV_FILE`, so Bash commands (including `pnpm`) use that Node.
+nvm reads `.nvmrc` each session, so version bumps need no rebuild.
+
+- **Failure.** nvm missing, a failed or timed-out install (90 s; hook timeout
+  120 s), or an unwritable env file leaves the image default Node and adds a
+  warning naming the cause to the session context.
+- **Scope.** No `.nvmrc` at the project root (including multi-repo sessions,
+  whose project directory sits above the clones) is a silent no-op. Like the
+  1Password variables, the PATH change reaches Bash commands and their
+  children only; hooks and MCP servers keep Node 22.
+- **Network.** Downloads come from `nodejs.org`.
 
 ## Deliberately not replicated
 

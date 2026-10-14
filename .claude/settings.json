@@ -509,6 +509,12 @@
             "command": "~/.claude/hooks/sessionstart-op-env.sh",
             "timeout": 60,
             "statusMessage": "Loading cloud project variables"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionstart-node-version.sh",
+            "timeout": 120,
+            "statusMessage": "Activating the project's .nvmrc Node"
           }
         ]
       },

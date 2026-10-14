@@ -26,3 +26,6 @@ editing the environment's setup script (any whitespace change). Then run the
   tools: hook registration, gating, dependencies, value round trips, refresh,
   failures, secrecy; it also runs the fetcher's `node --test` suite
   (`cloud/op-env/fetch-variables.test.mjs`).
+- `tests/cloud-node-version.sh` covers the `.nvmrc` Node hook with a fake nvm:
+  registration, gating, PATH delivery, idempotency, and the install-failure,
+  timeout and missing-nvm warnings.
