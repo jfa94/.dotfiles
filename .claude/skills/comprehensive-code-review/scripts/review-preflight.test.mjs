@@ -178,7 +178,7 @@ test("base mode diffs against the ref and includes commit messages in changeCont
   const out = run(root, ["--profile", "focused", "--base", base]);
   assert.equal(out.status, "ok");
   assert.equal(out.workflowArgs.mode, "base");
-  assert.match(out.scopeLabel, new RegExp(base.slice(0, 7)));
+  assert.ok(out.scopeLabel.includes(base.slice(0, 7)), out.scopeLabel);
   const changed = readFileSync(out.workflowArgs.inputs.changedFilesPath, "utf8");
   assert.match(changed, /^feature\.js$/m);
   assert.doesNotMatch(changed, /^src\.js$/m);
