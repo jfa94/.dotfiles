@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests for sessionstart-op-env.sh and the fetcher: gating, dependencies, value
-# round trips, refresh semantics, failures, secrecy and hygiene. Fake node and
+# Tests for sessionstart-op-env.sh and the fetcher: gating, dependencies, the
+# written .env.local, guards, refresh semantics, failures, secrecy and hygiene. Fake node and
 # timeout stand in for the SDK; no 1Password access is needed.
 set -euo pipefail
 
@@ -39,10 +39,12 @@ jq -e '[.hooks.SessionStart[]
 
 # --- fixtures: fake tools, restricted PATH ----------------------------------
 
+MARKER="# Managed by sessionstart-op-env.sh from 1Password; rewritten at session start."
+
 bin="$tmp/bin"
 realbin="$tmp/realbin"
 mkdir -p "$bin" "$realbin"
-for c in jq readlink mkdir mktemp grep mv rm cat; do
+for c in jq readlink mkdir mktemp grep mv rm cat git; do
   p="$(command -v "$c")"
   [[ "$p" == /* ]] && ln -s "$p" "$realbin/$c"
 done
@@ -81,32 +83,36 @@ new_case() {
   cdir="$tmp/c$n"
   home="$cdir/home"
   repo="$cdir/repo"
+  proj="$cdir/proj"
+  target="$proj/.env.local"
   state="$home/.local/state/claude-op-env"
-  exports="$state/exports.sh"
   envf="$cdir/session-env/s1/hook-0.sh"
   hook="$repo/.claude/hooks/sessionstart-op-env.sh"
   mkdir -p "$home" "$repo/.claude/hooks" "$repo/cloud/op-env/node_modules/@1password/sdk" "${envf%/*}"
   cp "$HOOK_SRC" "$hook"
   chmod +x "$hook"
   echo '// placeholder' > "$repo/cloud/op-env/fetch-variables.mjs"
-  unset ENVFILE
-  REMOTE=true TOKEN="$M_TOKEN" ENVID=env-id HOOK_PATH="$bin:$realbin"
+  git init -q "$proj"
+  echo '.env.local' > "$proj/.gitignore"
+  REMOTE=true TOKEN="$M_TOKEN" ENVID=env-id HOOK_PATH="$bin:$realbin" PROJ="$proj"
   FAKE_OUT_FILE="$cdir/out.json" FAKE_ERR="" FAKE_STATUS=0 FAKE_TIMEOUT_EXPIRE=0
   : > "$FAKE_OUT_FILE"
 }
 
 # Runs the hook; asserts the invariants that hold for every run.
 run_hook() {
-  local -a e=(HOME="$home" PATH="$HOOK_PATH" FAKE_OUT_FILE="$FAKE_OUT_FILE" FAKE_ERR="$FAKE_ERR"
-    FAKE_STATUS="$FAKE_STATUS" FAKE_TIMEOUT_EXPIRE="$FAKE_TIMEOUT_EXPIRE" FAKE_TIMEOUT_LOG="$cdir/timeout.log")
+  local -a e=(HOME="$home" PATH="$HOOK_PATH" CLAUDE_ENV_FILE="$envf" FAKE_OUT_FILE="$FAKE_OUT_FILE"
+    FAKE_ERR="$FAKE_ERR" FAKE_STATUS="$FAKE_STATUS" FAKE_TIMEOUT_EXPIRE="$FAKE_TIMEOUT_EXPIRE"
+    FAKE_TIMEOUT_LOG="$cdir/timeout.log")
   [[ -z "$REMOTE" ]] || e+=(CLAUDE_CODE_REMOTE="$REMOTE")
   [[ -z "$TOKEN" ]] || e+=(OP_SERVICE_ACCOUNT_TOKEN="$TOKEN")
   [[ -z "$ENVID" ]] || e+=(OP_ENVIRONMENT_ID="$ENVID")
-  [[ -z "${ENVFILE-$envf}" ]] || e+=(CLAUDE_ENV_FILE="${ENVFILE-$envf}")
+  [[ -z "$PROJ" ]] || e+=(CLAUDE_PROJECT_DIR="$PROJ")
   rc=0
   env -i "${e[@]}" "$hook" >"$cdir/stdout" 2>"$cdir/stderr" || rc=$?
   [[ $rc -eq 0 ]] || fail "hook exited $rc"
   [[ ! -s "$cdir/stderr" ]] || fail "hook wrote to stderr"
+  [[ ! -e "$envf" ]] || fail "hook wrote to CLAUDE_ENV_FILE"
   if [[ -s "$cdir/stdout" ]]; then
     jq -e '.hookSpecificOutput.hookEventName == "SessionStart"
            and (.hookSpecificOutput.additionalContext | type == "string")' "$cdir/stdout" >/dev/null \
@@ -121,40 +127,29 @@ msg() { jq -r '.hookSpecificOutput.additionalContext' "$cdir/stdout"; }
 assert_msg() { [[ "$(msg)" == *"$1"* ]] || fail "$2: expected '$1', got '$(msg)'"; }
 assert_silent() { [[ ! -s "$cdir/stdout" ]] || fail "$1: expected no output, got '$(cat "$cdir/stdout")'"; }
 
-source_line_count() { grep -cxF -- "$(grep -F "$exports" "$1" | head -1)" "$1" || true; }
-has_source_line() { [[ -f "$1" ]] && grep -qF -- ". $exports" "$1"; }
-
-# Source env file $1 in a clean shell; variable $2 must equal $3 byte for byte.
-# shellcheck disable=SC2016  # the bash -c program must expand in the child shell
-check_var() {
-  printf '%s' "$3" > "$cdir/want"
-  env -i PATH="$realbin" /bin/bash -c '. "$1"; printf "%s" "${!2}"' _ "$1" "$2" > "$cdir/got"
-  cmp -s "$cdir/want" "$cdir/got" || fail "value mismatch for $2"
-}
-# shellcheck disable=SC2016  # the bash -c program must expand in the child shell
-check_unset() {
-  [[ -z "$(env -i PATH="$realbin" /bin/bash -c '. "$1"; printf "%s" "${!2+set}"' _ "$1" "$2")" ]] \
-    || fail "$2 should be unset"
+# The target must be exactly the marker followed by lines $2...
+assert_target() {
+  local label="$1"; shift
+  printf '%s\n' "$MARKER" "$@" > "$cdir/want"
+  cmp -s "$cdir/want" "$target" || fail "$label: .env.local content mismatch"
 }
 
 mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
-no_temp_files() { [[ -z "$(find "$state" -type f ! -name exports.sh)" ]] || fail "$1: temp files left behind"; }
+no_temp_files() { [[ ! -d "$state" || -z "$(find "$state" -type f)" ]] || fail "$1: temp files left behind"; }
 
-seed_exports() {
-  mkdir -p "$state"
-  printf "export OLD_VAR='old'\n" > "$exports"
-  cp "$exports" "$cdir/exports.before"
+seed_managed() {
+  printf '%s\n' "$MARKER" "OLD_VAR='old'" > "$target"
+  cp "$target" "$cdir/target.before"
 }
 
 # --- gating ------------------------------------------------------------------
 
 for remote in "" false; do
   new_case; REMOTE="$remote"
-  echo 'export KEEP=1' > "$envf"; cp "$envf" "$cdir/env.before"
   run_hook
   assert_silent "remote='$remote'"
   [[ ! -e "$home/.local" ]] || fail "remote='$remote': state created outside cloud"
-  cmp -s "$envf" "$cdir/env.before" || fail "remote='$remote': env file touched"
+  [[ ! -e "$target" ]] || fail "remote='$remote': .env.local written outside cloud"
 done
 
 new_case; TOKEN=""; ENVID=""
@@ -168,124 +163,121 @@ for only in token envid; do
   run_hook
   assert_msg "configuration incomplete" "only $only"
   assert_msg "no project variables are loaded" "only $only, no earlier values"
-  ! has_source_line "$envf" || fail "only $only: source line added without exports"
-  seed_exports
+  [[ ! -e "$target" ]] || fail "only $only: .env.local created"
+  seed_managed
   run_hook
   assert_msg "may be stale" "only $only, earlier values"
-  has_source_line "$envf" || fail "only $only: earlier values not delivered"
-  cmp -s "$exports" "$cdir/exports.before" || fail "only $only: exports changed"
+  cmp -s "$target" "$cdir/target.before" || fail "only $only: .env.local changed"
 done
 
 # --- dependencies ------------------------------------------------------------
 
-for tool in jq timeout node; do
-  new_case; seed_exports; HOOK_PATH="$(path_without "$tool")"
+for tool in jq timeout node git; do
+  new_case; seed_managed; HOOK_PATH="$(path_without "$tool")"
   run_hook
   assert_msg "dependency missing ($tool)" "missing $tool"
   assert_msg "may be stale" "missing $tool"
-  cmp -s "$exports" "$cdir/exports.before" || fail "missing $tool: exports changed"
+  cmp -s "$target" "$cdir/target.before" || fail "missing $tool: .env.local changed"
 done
 
-new_case; seed_exports; rm "$repo/cloud/op-env/fetch-variables.mjs"
+new_case; seed_managed; rm "$repo/cloud/op-env/fetch-variables.mjs"
 run_hook
 assert_msg "dependency missing (fetcher)" "missing fetcher"
-cmp -s "$exports" "$cdir/exports.before" || fail "missing fetcher: exports changed"
+cmp -s "$target" "$cdir/target.before" || fail "missing fetcher: .env.local changed"
 
-new_case; seed_exports; rmdir "$repo/cloud/op-env/node_modules/@1password/sdk"
+new_case; seed_managed; rmdir "$repo/cloud/op-env/node_modules/@1password/sdk"
 run_hook
 assert_msg "dependency missing (SDK install)" "missing SDK"
-cmp -s "$exports" "$cdir/exports.before" || fail "missing SDK: exports changed"
+cmp -s "$target" "$cdir/target.before" || fail "missing SDK: .env.local changed"
 
-new_case; seed_exports; echo file > "$cdir/blocker"; ENVFILE="$cdir/blocker/env.sh"
-run_hook
-assert_msg "dependency missing (session env file)" "unusable env file"
-assert_msg "no project variables are loaded" "unusable env file"
-cmp -s "$exports" "$cdir/exports.before" || fail "unusable env file: exports changed"
+# --- target guards -----------------------------------------------------------
 
-new_case; seed_exports; ENVFILE=""
+new_case; printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"; PROJ=""
 run_hook
-assert_msg "dependency missing (session env file)" "unset env file"
+assert_msg "no project directory" "no project dir"
+assert_msg "no project variables are loaded" "no project dir"
+
+new_case; printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"; rm "$proj/.gitignore"
+run_hook
+assert_msg ".env.local is not git-ignored; not written" "not ignored"
+assert_msg "no project variables are loaded" "not ignored"
+[[ ! -e "$target" ]] || fail "not ignored: .env.local created"
+no_temp_files "not ignored"
+
+new_case; printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"
+PROJ="$cdir/plain"; mkdir -p "$PROJ"; echo '.env.local' > "$PROJ/.gitignore"
+run_hook
+assert_msg ".env.local is not git-ignored; not written" "not a git repo"
+[[ ! -e "$PROJ/.env.local" ]] || fail "not a git repo: .env.local created"
+
+new_case; printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"
+echo 'MINE=1' > "$target"; cp "$target" "$cdir/target.before"
+run_hook
+assert_msg "existing .env.local is not managed by this hook; left unchanged" "unmanaged file"
+assert_msg "no project variables are loaded" "unmanaged file"
+cmp -s "$target" "$cdir/target.before" || fail "unmanaged file: changed"
+no_temp_files "unmanaged file"
+
+# A symlink is unmanaged even when the file it points at starts with the marker.
+new_case; printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"
+printf '%s\n' "$MARKER" "MINE=1" > "$cdir/elsewhere"; cp "$cdir/elsewhere" "$cdir/elsewhere.before"
+ln -s "$cdir/elsewhere" "$target"
+run_hook
+assert_msg "not managed by this hook" "symlink"
+assert_msg "no project variables are loaded" "symlink"
+[[ -L "$target" ]] || fail "symlink: replaced"
+cmp -s "$cdir/elsewhere" "$cdir/elsewhere.before" || fail "symlink: target file changed"
 
 # --- values ------------------------------------------------------------------
 
 new_case
-jq -n --arg a '' --arg b 'masked-1' --arg c $'line1\nline2' --arg d $'trail\n' \
-  --arg e "it's" --arg f 'say "hi"' --arg g 'a\b' --arg h '$(echo hi) and `uname`' \
+# shellcheck disable=SC2016  # literal backticks are the fixture
+jq -n --arg a '' --arg b 'masked-1' --arg f 'say "hi"' --arg g 'a\b' --arg h 'run `uname` # not a comment' \
   --arg i 'a=b=c' --arg j 'héllo ✓' --arg k '  padded  ' \
-  '[{name:"G2_EMPTY",value:$a},{name:"G2_MASKED",value:$b},{name:"G2_NEWLINE",value:$c},
-    {name:"G2_TRAILING",value:$d},{name:"G2_SQUOTE",value:$e},{name:"G2_DQUOTE",value:$f},
-    {name:"G2_BACKSLASH",value:$g},{name:"G2_SUBST",value:$h},{name:"G2_EQUALS",value:$i},
+  '[{name:"G2_EMPTY",value:$a},{name:"G2_MASKED",value:$b},{name:"G2_DQUOTE",value:$f},
+    {name:"G2_BACKSLASH",value:$g},{name:"G2_TICKS",value:$h},{name:"G2_EQUALS",value:$i},
     {name:"G2_UNICODE",value:$j},{name:"G2_SPACES",value:$k}]' > "$FAKE_OUT_FILE"
 run_hook
-assert_msg "Loaded 11 project variables from 1Password." "edge values"
-check_var "$envf" G2_EMPTY ''
-check_var "$envf" G2_MASKED 'masked-1'
-check_var "$envf" G2_NEWLINE $'line1\nline2'
-check_var "$envf" G2_TRAILING $'trail\n'
-check_var "$envf" G2_SQUOTE "it's"
-check_var "$envf" G2_DQUOTE 'say "hi"'
-check_var "$envf" G2_BACKSLASH 'a\b'
-# shellcheck disable=SC2016  # literal $( and backticks are the fixture
-check_var "$envf" G2_SUBST '$(echo hi) and `uname`'
-check_var "$envf" G2_EQUALS 'a=b=c'
-check_var "$envf" G2_UNICODE 'héllo ✓'
-check_var "$envf" G2_SPACES '  padded  '
+assert_msg "Wrote 8 project variables from 1Password to .env.local" "edge values"
+assert_msg "not exported to the shell" "edge values"
+# shellcheck disable=SC2016  # literal backticks are the fixture
+assert_target "edge values" "G2_EMPTY=''" "G2_MASKED='masked-1'" "G2_DQUOTE='say \"hi\"'" \
+  "G2_BACKSLASH='a\\b'" 'G2_TICKS='"'"'run `uname` # not a comment'"'" "G2_EQUALS='a=b=c'" \
+  "G2_UNICODE='héllo ✓'" "G2_SPACES='  padded  '"
 [[ "$(cat "$cdir/timeout.log")" == 45 ]] || fail "read timeout is not 45 s"
 
 # --- refresh -----------------------------------------------------------------
 
 new_case
-echo 'export KEEP=1' > "$envf"
 printf '[{"name":"A","value":"1"},{"name":"B","value":"2"}]' > "$FAKE_OUT_FILE"
 run_hook
-assert_msg "Loaded 2 project variables" "first refresh"
-check_var "$envf" A 1
-check_var "$envf" B 2
-check_var "$envf" KEEP 1
+assert_msg "Wrote 2 project variables" "first refresh"
+assert_target "first refresh" "A='1'" "B='2'"
 printf '[{"name":"A","value":"9"}]' > "$FAKE_OUT_FILE"
 run_hook
-assert_msg "Loaded 1 project variables" "second refresh"
-check_var "$envf" A 9
-check_unset "$envf" B
-check_var "$envf" KEEP 1
-[[ "$(source_line_count "$envf")" == 1 ]] || fail "source line not exactly once after repeated runs"
-# A second session's env file resolves to the same latest values.
-envf2="$cdir/session-env/s2/hook-0.sh"
-mkdir -p "${envf2%/*}"
-ENVFILE="$envf2"
-run_hook
-check_var "$envf2" A 9
-check_unset "$envf2" B
-check_var "$envf" A 9
-[[ "$(source_line_count "$envf2")" == 1 ]] || fail "second env file source line count"
-
-new_case
-printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"
-run_hook
+assert_msg "Wrote 1 project variables" "second refresh"
+assert_target "second refresh" "A='9'"
 printf '[]' > "$FAKE_OUT_FILE"
 run_hook
-assert_msg "Loaded 0 project variables" "empty environment"
-[[ ! -s "$exports" ]] || fail "empty environment: exports not emptied"
-check_unset "$envf" A
+assert_msg "Wrote 0 project variables" "empty environment"
+assert_target "empty environment"
 
 # --- failures ----------------------------------------------------------------
 
-# expect_failure LABEL EXPECTED_TEXT: stale when earlier values exist, none otherwise.
+# expect_failure LABEL EXPECTED_TEXT: stale when a managed file exists, none otherwise.
 expect_failure() {
-  local label="$1" text="$2" before
-  seed_exports; before="$cdir/exports.before"
+  local label="$1" text="$2"
+  seed_managed
   run_hook
   assert_msg "$text" "$label"
   assert_msg "may be stale" "$label"
-  cmp -s "$exports" "$before" || fail "$label: exports changed"
-  has_source_line "$envf" || fail "$label: earlier values not delivered"
+  cmp -s "$target" "$cdir/target.before" || fail "$label: .env.local changed"
   no_temp_files "$label"
-  rm -r "$state"; rm -f "$envf"
+  rm -f "$target"; rm -rf "$state"
   run_hook
   assert_msg "$text" "$label (fresh VM)"
   assert_msg "no project variables are loaded" "$label (fresh VM)"
-  [[ ! -e "$exports" ]] || fail "$label: exports created despite failure"
-  ! has_source_line "$envf" || fail "$label: source line added without values"
+  [[ ! -e "$target" ]] || fail "$label: .env.local created despite failure"
   no_temp_files "$label (fresh VM)"
 }
 
@@ -326,23 +318,31 @@ done
 new_case; printf '[{"name":"A","value":"a\\u0000b"}]' > "$FAKE_OUT_FILE"
 expect_failure "NUL in value" "1Password data invalid (1 entries rejected)"
 
-# An unusable state directory fails to publish and leaves the session untouched.
+# Values neither Next's loader nor ads-gaql.py can read back; the whole load fails.
+for v in "it's" 'a$b' $'a\nb' $'a\rb'; do
+  new_case; jq -n --arg v "$M_VALUE$v" '[{name:"A",value:"ok"},{name:"B",value:$v}]' > "$FAKE_OUT_FILE"
+  expect_failure "unrepresentable value $(printf '%q' "$v")" "1Password data invalid (1 entries rejected)"
+done
+
+# An unusable state directory fails to publish and writes nothing.
 new_case; printf '[{"name":"A","value":"1"}]' > "$FAKE_OUT_FILE"
 mkdir -p "$home/.local/state"; echo file > "$state"
 run_hook
 assert_msg "1Password variables could not be published" "unusable state dir"
 assert_msg "no project variables are loaded" "unusable state dir"
-! has_source_line "$envf" || fail "unusable state dir: source line added"
+[[ ! -e "$target" ]] || fail "unusable state dir: .env.local created"
 
 # --- secrecy and hygiene -----------------------------------------------------
 
 new_case; FAKE_ERR="$M_ERR"
+mkdir -p "$state"; chmod 700 "$state"; echo "export OLD='1'" > "$state/exports.sh"
 jq -n --arg v "$M_VALUE" '[{name:"S",value:$v}]' > "$FAKE_OUT_FILE"
 run_hook
-assert_msg "Loaded 1 project variables" "secrecy"
+assert_msg "Wrote 1 project variables" "secrecy"
 [[ "$(mode "$state")" == 700 ]] || fail "state dir mode is $(mode "$state"), want 700"
-[[ "$(mode "$exports")" == 600 ]] || fail "exports mode is $(mode "$exports"), want 600"
+[[ "$(mode "$target")" == 600 ]] || fail ".env.local mode is $(mode "$target"), want 600"
+[[ ! -e "$state/exports.sh" ]] || fail "leftover exports.sh not removed"
 no_temp_files "success"
-check_var "$envf" S "$M_VALUE"
+assert_target "secrecy" "S='$M_VALUE'"
 
 echo 'PASS: cloud-op-env tests'

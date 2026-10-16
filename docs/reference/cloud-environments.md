@@ -25,6 +25,10 @@ replaces legacy instruction links and removes only dangling stack-guidance links
 owned by the old setup. Missing sources, destination directories, and failed
 instruction links are reported in the failure summary; cloud setup still exits 0.
 
+Of `.config`, only `.config/git/ignore` is linked (to `~/.config/git/ignore`,
+git's default global excludes file); it ignores `.superpowers/` in every repo.
+The rest of `.config` (agent-env) is local-only.
+
 Claude skills are an exception to the path-for-path file linking. Section 3 of
 `cloud-setup.sh` skips every tracked path under `.claude/skills/*/*`, then links
 each skill directory containing a `SKILL.md` as one symlink into
@@ -52,9 +56,11 @@ Spike-verified 2026-08:
   tees everything to `/tmp/cloud-setup.log`; read that in-session to diagnose
   build failures.
 - Anonymous `api.github.com` is rate-limited (403) from shared cloud egress
-  IPs — installers that resolve "latest" via the API fail. Direct
-  `github.com/.../releases/download/...` URLs work fine, hence the pinned
-  supabase version in `cloud-setup.sh`.
+  IPs — installers that resolve "latest" via the API fail. `github.com`
+  release URLs, including the `releases/latest/download/...` redirect, work
+  fine, so `cloud-setup.sh` downloads the latest Supabase CLI that way. The
+  version is fixed at build time and kept for the ~7-day cache; a project that
+  needs an exact CLI version (outsidey's `db dump`) may refuse it.
 - Under Trusted network access, `chatgpt.com` is blocked at the gateway
   (CONNECT 403) → **Codex CLI cannot install** unless the environment uses a
   Custom allowlist including `chatgpt.com` (and `auth.openai.com` for login).
@@ -64,8 +70,8 @@ Spike-verified 2026-08:
   `/root/.dotfiles`; the dotfiles clone is config-delivery only.
 - Fresh VM per session: nothing persists mid-session → Codex auth repeats per
   session; env vars are the only durable per-environment state.
-- Preinstalled: node, npm, pnpm, uvx, git, jq, claude
-  (`/opt/node22/bin/claude`). No `gh` — GitHub access goes through the
+- Preinstalled: Node 20/21/22 (22 on PATH), npm, pnpm, uvx, git, jq, nvm
+  (`/opt/nvm`), claude (`/opt/node22/bin/claude`). No `gh` — GitHub access goes through the
   session-injected github MCP server instead.
 - Sessions reuse the cached env snapshot — a dotfiles push does NOT reach
   cloud sessions until the env rebuilds. Force a rebuild by editing the
@@ -88,12 +94,19 @@ claude.ai/code settings) needs two inputs, set as its environment variables:
 `.claude/hooks/sessionstart-op-env.sh` (cloud only; matcher
 `startup|resume|clear|fork`) runs `cloud/op-env/fetch-variables.mjs`, which reads
 the Environment with the pinned `@1password/sdk` that `cloud-setup.sh` installs
-from `cloud/op-env/pnpm-lock.yaml`. The hook atomically replaces one per-VM file,
-`~/.local/state/claude-op-env/exports.sh` (mode 0600), and adds a single line to
-the session's `CLAUDE_ENV_FILE` that sources it. Values reach every Bash command.
-The file is referenced rather than appended because Claude Code writes one env
-file per hook and concatenates them by index, so an older appended block could
-override a refresh.
+from `cloud/op-env/pnpm-lock.yaml`. The hook atomically replaces
+`$CLAUDE_PROJECT_DIR/.env.local` (mode 0600), the file the 1Password desktop
+"Local .env file" destination provides locally. Nothing is exported to the
+shell: earlier versions sourced the values into every Bash command, which leaked
+them into test runs and every child process. A leftover
+`~/.local/state/claude-op-env/exports.sh` from those versions is deleted on success.
+
+- **Guards.** The hook writes only when `.env.local` is git-ignored in the
+  project (`git check-ignore`; a project directory that is not a git repository
+  is refused) and is absent or carries the hook's marker first line. A
+  user-created file or a symlink is left unchanged and reported.
+- **Format.** The marker line, then one `NAME='value'` line per variable, which
+  Next.js (`@next/env`) and outsidey's `scripts/ads-gaql.py` both read back exactly.
 
 - **Refresh.** On startup, resume, `/clear` and fork; not on compaction, where
   the session's env files persist. One read costs 2 of the token's 1000 hourly reads.
@@ -105,20 +118,52 @@ override a refresh.
   in 1Password, so a same-named variable in the cloud UI reappears: remove duplicates.
 - **Validation is all-or-nothing.** Names must match `[A-Za-z_][A-Za-z0-9_]*`
   and be unique; `OP_*`, `CLAUDE_*`, `HOME`, `PATH`, `BASH_ENV`, `ENV`,
-  `SHELLOPTS` and `BASHOPTS` are reserved; values may not contain NUL. The
-  warning reports only a count, never names or values. Values round-trip exactly
-  (newlines, quotes, `$(…)`, backticks, non-ASCII, empty).
+  `SHELLOPTS` and `BASHOPTS` are reserved; values may not contain NUL, CR, LF,
+  `'` or `$`. Neither reader handles multi-line values or an embedded quote, and
+  `@next/env` expands `$` even inside single quotes, while `\$` would reach
+  `ads-gaql.py` with the backslash. The warning reports only a count, never
+  names or values. Other values round-trip exactly (`"`, `\`, `#`, backticks,
+  spaces, non-ASCII, empty).
 - **Opting out.** Removing both inputs stops loading in sessions created afterwards.
-- **Scope.** Values reach Bash commands and their children, not MCP servers. The
-  token itself is visible to Bash, like every cloud UI variable. Codex still drops
-  `*KEY*`/`*SECRET*`/`*TOKEN*` names from its tool subprocesses. `printenv` and
-  `env` are allow-listed, so values can be printed without a prompt.
+- **Scope.** Values reach only tools that read `.env.local`, as locally. Scripts
+  that read secrets only from the process environment (for example outsidey's
+  `pnpm e2e:cleanup` and backfill scripts) need them passed explicitly. The
+  token itself is visible to Bash, like every cloud UI variable.
 - **SDK status.** `@1password/sdk` is 0.x, its README labels Environments reading
   beta, and it publishes no support policy, so the version is pinned exactly in
   `cloud/op-env/package.json`. To bump it, see
   [Bump the 1Password SDK](../guides/maintain-cloud-setup.md#bump-the-1password-sdk).
 - **Build time.** The SDK install uses no credentials. Failures appear in the
   setup summary as "1Password SDK install failed" or "1Password SDK skipped (no pnpm)".
+
+## Project Node and dependencies
+
+`.claude/hooks/sessionstart-node-project.sh` (cloud only; matcher
+`startup|resume|clear|fork`) prepares `$CLAUDE_PROJECT_DIR` in one script,
+because Claude Code runs matching hooks in parallel and the install must follow
+the Node switch.
+
+1. **Node.** With an `.nvmrc`, it runs `nvm install`, then adds one
+   `export PATH=<version bin>:"$PATH"` line to the session's `CLAUDE_ENV_FILE`,
+   so Bash commands (including `pnpm`) use that Node. nvm reads `.nvmrc` each
+   session, so version bumps need no rebuild.
+2. **Dependencies.** With a `pnpm-lock.yaml`, it runs
+   `pnpm install --frozen-lockfile` under that Node (output discarded). Other
+   package managers are not handled.
+
+- **Failure.** nvm missing, a failed or timed-out Node install (90 s), or an
+  unwritable env file leaves the image default Node and adds a warning naming
+  the cause; the dependency install is then skipped rather than run on the
+  wrong Node. A failed, timed-out (240 s) or pnpm-less install adds
+  "Dependencies not installed: <cause>". Hook timeout is 360 s; the session
+  always continues.
+- **Scope.** Neither file at the project root (including multi-repo sessions,
+  whose project directory sits above the clones) is a silent no-op. Like the
+  1Password variables, the PATH change reaches Bash commands and their
+  children only; hooks and MCP servers keep Node 22. The install runs in the
+  hook's environment, without the 1Password variables.
+- **Network.** Node downloads come from `nodejs.org`, packages from
+  `registry.npmjs.org`.
 
 ## Deliberately not replicated
 

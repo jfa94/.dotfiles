@@ -150,7 +150,8 @@ The shared directory is ignored by Git. Legacy `.comprehensive-code-review/` and
 - Supabase MCP URLs remain project-scoped with `read_only=true`. Approved mutations use `agent-env-run` and the Supabase CLI after explicit current-turn confirmation; Codex has no writable Supabase MCP path.
 - Codex config sets the default model, with `medium` reasoning and `xhigh` in Plan mode. There is no startup model-lock mutation; the configured default is not an enforced session lock.
 - No Claude mobile-push semantics, automatic remote-control startup, away summaries, workflow-warning suppression, or five-minute compaction window.
-- Claude cloud sessions load project variables from a 1Password Environment through `sessionstart-op-env.sh`; Codex has no equivalent hook and still drops `*KEY*`/`*SECRET*`/`*TOKEN*` names from its tool subprocesses.
+- Claude cloud sessions write project variables from a 1Password Environment to the project's git-ignored `.env.local` through `sessionstart-op-env.sh`; Codex has no equivalent hook and still drops `*KEY*`/`*SECRET*`/`*TOKEN*` names from its tool subprocesses.
+- Claude cloud sessions put the project's `.nvmrc` Node first on PATH and run a frozen `pnpm install` through `sessionstart-node-project.sh`; Codex has no equivalent hook and installs no dependencies at start.
 - Dynamic Claude `ask` hooks use native sandbox/exec-policy prompts where expressible; unsupported Codex shapes use the conversational confirmation gate.
 - Model-availability NUX and all Superpowers state remain untouched.
 - Newline-containing filenames are an acknowledged limitation in changed-file scanner lists.

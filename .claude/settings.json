@@ -525,6 +525,12 @@
             "command": "~/.claude/hooks/sessionstart-op-env.sh",
             "timeout": 60,
             "statusMessage": "Loading cloud project variables"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sessionstart-node-project.sh",
+            "timeout": 360,
+            "statusMessage": "Preparing the project's Node and dependencies"
           }
         ]
       },

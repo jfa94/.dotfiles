@@ -1,16 +1,15 @@
 #!/bin/bash
-# SessionStart(startup|resume|clear|fork), cloud only. Loads the project's
-# 1Password Environment into Bash through one per-VM exports file; CLAUDE_ENV_FILE
-# only gets a fixed line that sources it, so hook ordering cannot matter.
+# SessionStart(startup|resume|clear|fork), cloud only. Writes the project's
+# 1Password Environment to a git-ignored, hook-owned $CLAUDE_PROJECT_DIR/.env.local
+# (as the local desktop destination does); nothing is exported to the shell.
 set -uo pipefail
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0
 [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] || [ -n "${OP_ENVIRONMENT_ID:-}" ] || exit 0
 umask 077
 
 STATE_DIR="$HOME/.local/state/claude-op-env"
-EXPORTS="$STATE_DIR/exports.sh"
-EXPORTS_Q=$(printf '%q' "$EXPORTS")
-SOURCE_LINE="[ -r $EXPORTS_Q ] && . $EXPORTS_Q || true"
+TARGET="${CLAUDE_PROJECT_DIR:-}/.env.local"
+MARKER="# Managed by sessionstart-op-env.sh from 1Password; rewritten at session start."
 
 # Prints the number of rejected entries, or "all" when the output is not an array.
 # shellcheck disable=SC2016  # jq variables, not shell expansions
@@ -19,7 +18,8 @@ VALIDATE='
     and (.name | test("^[A-Za-z_][A-Za-z0-9_]*$"))
     and (.name | test("^(OP_|CLAUDE_)") | not)
     and (.name | IN("HOME", "PATH", "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS") | not)
-    and (.value | explode | any(. == 0) | not);
+    # NUL, LF, CR, $ and quote: Next expands $ even in single quotes, so none round-trip.
+    and (.value | explode | any(IN(0, 10, 13, 36, 39)) | not);
   if type != "array" then "all"
   else length - ([.[] | select(ok) | .name] | unique | length)
   end
@@ -37,14 +37,20 @@ refresh() {
     fail="1Password configuration incomplete: set both OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID"
     return 1
   fi
-  for tool in jq timeout node; do
+  for tool in jq timeout node git; do
     command -v "$tool" >/dev/null 2>&1 || { fail="1Password dependency missing ($tool)"; return 1; }
   done
   self=$(readlink -f "$0" 2>/dev/null) || self=""
   fetcher="${self%/.claude/hooks/*}/cloud/op-env/fetch-variables.mjs"
   [ -f "$fetcher" ] || { fail="1Password dependency missing (fetcher)"; return 1; }
   [ -d "${fetcher%/*}/node_modules/@1password/sdk" ] || { fail="1Password dependency missing (SDK install)"; return 1; }
-  { : >> "${CLAUDE_ENV_FILE:-}"; } 2>/dev/null || { fail="1Password dependency missing (session env file)"; return 1; }
+  [ -n "${CLAUDE_PROJECT_DIR:-}" ] || { fail="1Password: no project directory"; return 1; }
+  git -C "$CLAUDE_PROJECT_DIR" check-ignore -q .env.local 2>/dev/null \
+    || { fail="1Password: .env.local is not git-ignored; not written"; return 1; }
+  if { [ -e "$TARGET" ] || [ -L "$TARGET" ]; } && ! managed; then
+    fail="1Password: existing .env.local is not managed by this hook; left unchanged"
+    return 1
+  fi
 
   if ! { mkdir -p "$STATE_DIR" \
     && out=$(mktemp "$STATE_DIR/fetch.XXXXXX") \
@@ -68,33 +74,26 @@ refresh() {
   esac
 
   if count=$(jq length "$out") \
-    && jq -r '.[] | "export \(.name)=\(.value | @sh)"' "$out" >"$stage" \
-    && mv -f "$stage" "$EXPORTS"; then
+    && { printf '%s\n' "$MARKER" && jq -r '.[] | "\(.name)=\u0027\(.value)\u0027"' "$out"; } >"$stage" \
+    && mv -f "$stage" "$TARGET"; then
+    rm -f "$STATE_DIR/exports.sh"
     return 0
   fi
   fail="1Password variables could not be published"
   return 1
 }
 
-# True once CLAUDE_ENV_FILE holds the source line and exports.sh exists.
-deliver() {
-  [ -f "$EXPORTS" ] && [ -n "${CLAUDE_ENV_FILE:-}" ] || return 1
-  grep -qxF -- "$SOURCE_LINE" "$CLAUDE_ENV_FILE" 2>/dev/null && return 0
-  { printf '%s\n' "$SOURCE_LINE" >> "$CLAUDE_ENV_FILE"; } 2>/dev/null
+# A regular file (not a symlink) whose first line is the marker.
+managed() {
+  [ -f "$TARGET" ] && [ ! -L "$TARGET" ] && IFS= read -r first <"$TARGET" && [ "$first" = "$MARKER" ]
 }
 
 refresh
-if deliver; then
-  delivered=1
-else
-  delivered=0
-  [ -n "$fail" ] || fail="1Password variables could not be added to the session"
-fi
 
 if [ -z "$fail" ]; then
-  msg="Loaded $count project variables from 1Password."
-elif [ "$delivered" = 1 ]; then
-  msg="$fail - using values loaded earlier on this VM; they may be stale."
+  msg="Wrote $count project variables from 1Password to .env.local (git-ignored). They are not exported to the shell: only tools that read .env.local see them. Never print or commit this file."
+elif [ -n "${CLAUDE_PROJECT_DIR:-}" ] && managed; then
+  msg="$fail - using .env.local written earlier on this VM; it may be stale."
 else
   msg="$fail - no project variables are loaded."
 fi

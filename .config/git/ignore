@@ -1,0 +1,3 @@
+# Global git excludes (git reads ~/.config/git/ignore by default).
+# Superpowers plugin working files, written into each repo it runs in.
+.superpowers/
