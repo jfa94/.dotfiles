@@ -24,8 +24,8 @@ editing the environment's setup script (any whitespace change). Then run the
   (including the global git ignore), and the SDK install (arguments, failure,
   no pnpm).
 - `tests/cloud-op-env.sh` covers the 1Password hook and fetcher with fake
-  tools: hook registration, gating, dependencies, value round trips, refresh,
-  failures, secrecy; it also runs the fetcher's `node --test` suite
+  tools: hook registration, gating, dependencies, the exact `.env.local`
+  content, target guards, refresh, failures, secrecy; it also runs the fetcher's `node --test` suite
   (`cloud/op-env/fetch-variables.test.mjs`).
 - `tests/cloud-node-project.sh` covers the project Node and dependency hook
   with fake nvm, node and pnpm: registration, gating, PATH delivery,

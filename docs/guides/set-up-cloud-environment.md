@@ -73,9 +73,10 @@ To stop loading project variables, remove both inputs; sessions created afterwar
 4. Tool sweep (`gh` intentionally absent — GitHub via MCP):
    `for t in jq perl pnpm trufflehog semgrep supabase uvx shellcheck node codex; do command -v $t || echo MISSING $t; done`
 5. `codex login --device-auth` end-to-end, then a codex-backed review skill.
-6. With the 1Password inputs set: the session opens with "Loaded N project
-   variables from 1Password." in its context, and each expected variable is
-   present: `[ -n "${NAME:-}" ] && echo "NAME set"`. Check presence only; never print values.
+6. With the 1Password inputs set: the session opens with "Wrote N project
+   variables from 1Password to .env.local" in its context, and each expected
+   variable is present: `grep -c '^NAME=' .env.local` prints 1. Check presence
+   only; never print values or the file.
 7. In a repo with an `.nvmrc`: the context shows "Using Node vX from .nvmrc."
    and `node -v` matches it. With a `pnpm-lock.yaml`, it also shows
    "Dependencies installed (pnpm install --frozen-lockfile)." and

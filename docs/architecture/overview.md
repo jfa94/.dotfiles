@@ -26,7 +26,7 @@ graph TD
   instr -->|linked as CLAUDE.md| claude
   instr -->|linked as AGENTS.md| codex
   op -->|"local: agent-env-run, per process"| home
-  op -->|"cloud: sessionstart-op-env.sh, per session"| claude
+  op -->|"cloud: sessionstart-op-env.sh, project .env.local"| claude
 ```
 
 ## Delivery

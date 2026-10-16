@@ -94,12 +94,19 @@ claude.ai/code settings) needs two inputs, set as its environment variables:
 `.claude/hooks/sessionstart-op-env.sh` (cloud only; matcher
 `startup|resume|clear|fork`) runs `cloud/op-env/fetch-variables.mjs`, which reads
 the Environment with the pinned `@1password/sdk` that `cloud-setup.sh` installs
-from `cloud/op-env/pnpm-lock.yaml`. The hook atomically replaces one per-VM file,
-`~/.local/state/claude-op-env/exports.sh` (mode 0600), and adds a single line to
-the session's `CLAUDE_ENV_FILE` that sources it. Values reach every Bash command.
-The file is referenced rather than appended because Claude Code writes one env
-file per hook and concatenates them by index, so an older appended block could
-override a refresh.
+from `cloud/op-env/pnpm-lock.yaml`. The hook atomically replaces
+`$CLAUDE_PROJECT_DIR/.env.local` (mode 0600), the file the 1Password desktop
+"Local .env file" destination provides locally. Nothing is exported to the
+shell: earlier versions sourced the values into every Bash command, which leaked
+them into test runs and every child process. A leftover
+`~/.local/state/claude-op-env/exports.sh` from those versions is deleted on success.
+
+- **Guards.** The hook writes only when `.env.local` is git-ignored in the
+  project (`git check-ignore`; a project directory that is not a git repository
+  is refused) and is absent or carries the hook's marker first line. A
+  user-created file or a symlink is left unchanged and reported.
+- **Format.** The marker line, then one `NAME='value'` line per variable, which
+  Next.js (`@next/env`) and outsidey's `scripts/ads-gaql.py` both read back exactly.
 
 - **Refresh.** On startup, resume, `/clear` and fork; not on compaction, where
   the session's env files persist. One read costs 2 of the token's 1000 hourly reads.
@@ -111,14 +118,17 @@ override a refresh.
   in 1Password, so a same-named variable in the cloud UI reappears: remove duplicates.
 - **Validation is all-or-nothing.** Names must match `[A-Za-z_][A-Za-z0-9_]*`
   and be unique; `OP_*`, `CLAUDE_*`, `HOME`, `PATH`, `BASH_ENV`, `ENV`,
-  `SHELLOPTS` and `BASHOPTS` are reserved; values may not contain NUL. The
-  warning reports only a count, never names or values. Values round-trip exactly
-  (newlines, quotes, `$(…)`, backticks, non-ASCII, empty).
+  `SHELLOPTS` and `BASHOPTS` are reserved; values may not contain NUL, CR, LF,
+  `'` or `$`. Neither reader handles multi-line values or an embedded quote, and
+  `@next/env` expands `$` even inside single quotes, while `\$` would reach
+  `ads-gaql.py` with the backslash. The warning reports only a count, never
+  names or values. Other values round-trip exactly (`"`, `\`, `#`, backticks,
+  spaces, non-ASCII, empty).
 - **Opting out.** Removing both inputs stops loading in sessions created afterwards.
-- **Scope.** Values reach Bash commands and their children, not MCP servers. The
-  token itself is visible to Bash, like every cloud UI variable. Codex still drops
-  `*KEY*`/`*SECRET*`/`*TOKEN*` names from its tool subprocesses. `printenv` and
-  `env` are allow-listed, so values can be printed without a prompt.
+- **Scope.** Values reach only tools that read `.env.local`, as locally. Scripts
+  that read secrets only from the process environment (for example outsidey's
+  `pnpm e2e:cleanup` and backfill scripts) need them passed explicitly. The
+  token itself is visible to Bash, like every cloud UI variable.
 - **SDK status.** `@1password/sdk` is 0.x, its README labels Environments reading
   beta, and it publishes no support policy, so the version is pinned exactly in
   `cloud/op-env/package.json`. To bump it, see
