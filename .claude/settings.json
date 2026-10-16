@@ -466,6 +466,14 @@
             "statusMessage": "Running semgrep SAST scan before push"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -477,6 +485,14 @@
             "command": "~/.claude/hooks/prettier-format.sh",
             "timeout": 15,
             "statusMessage": "Auto-formatting with prettier"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
           }
         ]
       }
@@ -528,6 +544,14 @@
             "statusMessage": "Re-arming superpowers after compaction"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -537,6 +561,74 @@
             "type": "command",
             "command": "~/.claude/hooks/sessionend-keep-awake.sh",
             "statusMessage": "Releasing Windows sleep-prevention"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$ITERM_SESSION_ID\" ] && [ -x \"$HOME/.config/iterm2/cc-status\" ] || exit 0; exec \"$HOME/.config/iterm2/cc-status\""
           }
         ]
       }
