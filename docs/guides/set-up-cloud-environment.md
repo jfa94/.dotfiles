@@ -46,7 +46,8 @@ On claude.ai → Code → your repo → environment settings:
    `registry.npmjs.org` at build time (the 1Password SDK install; without it each
    build reports one setup issue) and the account's 1Password host
    (`my.1password.com` for this account) for the session read, plus
-   `nodejs.org` for repos whose `.nvmrc` differs from the image's Node 22.
+   `nodejs.org` for repos whose `.nvmrc` differs from the image's Node 22
+   (`registry.npmjs.org` also serves the session-start dependency install).
 
 To stop loading project variables, remove both inputs; sessions created afterwards no longer load them.
 
@@ -76,4 +77,7 @@ To stop loading project variables, remove both inputs; sessions created afterwar
    variables from 1Password." in its context, and each expected variable is
    present: `[ -n "${NAME:-}" ] && echo "NAME set"`. Check presence only; never print values.
 7. In a repo with an `.nvmrc`: the context shows "Using Node vX from .nvmrc."
-   and `node -v` matches it.
+   and `node -v` matches it. With a `pnpm-lock.yaml`, it also shows
+   "Dependencies installed (pnpm install --frozen-lockfile)." and
+   `node_modules` exists. `git check-ignore -v .superpowers/x` names
+   `~/.config/git/ignore`.

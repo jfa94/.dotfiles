@@ -512,9 +512,9 @@
           },
           {
             "type": "command",
-            "command": "~/.claude/hooks/sessionstart-node-version.sh",
-            "timeout": 120,
-            "statusMessage": "Activating the project's .nvmrc Node"
+            "command": "~/.claude/hooks/sessionstart-node-project.sh",
+            "timeout": 360,
+            "statusMessage": "Preparing the project's Node and dependencies"
           }
         ]
       },

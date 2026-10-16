@@ -78,6 +78,11 @@ while IFS= read -r -d '' path; do
   ln -sfn "$DOTFILES_DIR/$path" "$HOME/$path" && ((link_count++))
 done < <(git -C "$DOTFILES_DIR" ls-files -z -- .claude .codex)
 
+# keep in sync with setup.sh section 4 (.config links). Only the global git
+# excludes: the rest of .config (agent-env) is local-only.
+mkdir -p "$HOME/.config/git"
+ln -sfn "$DOTFILES_DIR/.config/git/ignore" "$HOME/.config/git/ignore" && ((link_count++))
+
 # keep in sync with setup.sh link_claude_skills (per-skill directory links)
 mkdir -p "$HOME/.claude/skills"
 while IFS= read -r skill_src; do
@@ -142,16 +147,15 @@ else
   note_fail "1Password SDK skipped (no pnpm)"
 fi
 
-# Pinned direct download, NOT the official installer (setup.sh install_supabase):
-# the installer resolves the latest tag via anonymous api.github.com, which is
-# rate-limited (403) from shared cloud egress IPs.
-SUPABASE_VERSION=2.109.1
+# Direct download, NOT the official installer (setup.sh install_supabase): the
+# installer resolves the latest tag via anonymous api.github.com, rate-limited
+# (403) from shared cloud egress; github.com's releases/latest redirect is not.
 if ! command -v supabase &>/dev/null; then
   case "$(uname -m)" in
     aarch64 | arm64) sb_arch=arm64 ;;
     *) sb_arch=amd64 ;;
   esac
-  curl -fsSL "https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}/supabase_linux_${sb_arch}.tar.gz" \
+  curl -fsSL "https://github.com/supabase/cli/releases/latest/download/supabase_linux_${sb_arch}.tar.gz" \
     | tar -xz -C "$HOME/.local/bin" supabase 2>>"$LOG"
   command -v supabase &>/dev/null || note_fail "supabase CLI install failed"
 fi

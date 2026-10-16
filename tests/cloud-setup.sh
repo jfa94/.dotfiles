@@ -38,6 +38,8 @@ echo '# shared rules' > "$dot/instructions/AGENTS.md"
 echo 'echo hook' > "$dot/.claude/hooks/sample.sh"
 echo 'model = "gpt-5"' > "$dot/.codex/user-config.toml"
 echo '{"hooks": {}}' > "$dot/.codex/user-hooks.json"
+mkdir -p "$dot/.config/git"
+echo '.superpowers/' > "$dot/.config/git/ignore"
 echo 'skill' > "$dot/.codex/skills/demo/SKILL.md"
 git -C "$dot" init -q
 git -C "$dot" -c user.email=t@t -c user.name=t add -A
@@ -83,6 +85,11 @@ out="$(run_setup 2>&1)" \
 [[ ! -e "$home/.codex/user-config.toml" ]] || fail "user-config.toml should only exist as config.toml"
 [[ ! -e "$home/.codex/user-hooks.json" ]] || fail "user-hooks.json should only exist as hooks.json"
 [[ -x "$home/.claude/hooks/sample.sh" ]] || fail "hook not chmod +x"
+[[ "$(readlink "$home/.config/git/ignore")" == "$dot/.config/git/ignore" ]] \
+  || fail "global git ignore not linked"
+git init -q "$tmp/ignore-repo"
+HOME="$home" XDG_CONFIG_HOME="" git -C "$tmp/ignore-repo" check-ignore -q .superpowers/x \
+  || fail ".superpowers/ not globally ignored"
 
 [[ ! -e "$home/.claude.json" ]] || fail "setup wrote an unscoped user MCP config"
 

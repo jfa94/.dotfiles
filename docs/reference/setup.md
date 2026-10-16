@@ -6,7 +6,7 @@ Behavior of `setup.sh` (local) and its relationship to `cloud-setup.sh`. For fir
 ## What `setup.sh` does
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
-- Symlinks Claude Code config into `~/.claude/` (settings, hooks, agents, statusline per file; each `.claude/skills/<name>` as one directory link, so new skill files need no re-run), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/`, then marks hook scripts executable.
+- Symlinks Claude Code config into `~/.claude/` (settings, hooks, agents, statusline per file; each `.claude/skills/<name>` as one directory link, so new skill files need no re-run), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/` (including `~/.config/git/ignore`, git's default global excludes, which ignores `.superpowers/`), then marks hook scripts executable.
 - Links the single global `instructions/AGENTS.md` to `~/.claude/CLAUDE.md`
   and `~/.codex/AGENTS.md`. Tool-specific policies stay in their named sections;
   frontend/backend guidance lives alongside the canonical file and loads on demand.

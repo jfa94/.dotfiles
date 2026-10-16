@@ -25,6 +25,10 @@ replaces legacy instruction links and removes only dangling stack-guidance links
 owned by the old setup. Missing sources, destination directories, and failed
 instruction links are reported in the failure summary; cloud setup still exits 0.
 
+Of `.config`, only `.config/git/ignore` is linked (to `~/.config/git/ignore`,
+git's default global excludes file); it ignores `.superpowers/` in every repo.
+The rest of `.config` (agent-env) is local-only.
+
 Claude skills are an exception to the path-for-path file linking. Section 3 of
 `cloud-setup.sh` skips every tracked path under `.claude/skills/*/*`, then links
 each skill directory containing a `SKILL.md` as one symlink into
@@ -52,9 +56,11 @@ Spike-verified 2026-08:
   tees everything to `/tmp/cloud-setup.log`; read that in-session to diagnose
   build failures.
 - Anonymous `api.github.com` is rate-limited (403) from shared cloud egress
-  IPs — installers that resolve "latest" via the API fail. Direct
-  `github.com/.../releases/download/...` URLs work fine, hence the pinned
-  supabase version in `cloud-setup.sh`.
+  IPs — installers that resolve "latest" via the API fail. `github.com`
+  release URLs, including the `releases/latest/download/...` redirect, work
+  fine, so `cloud-setup.sh` downloads the latest Supabase CLI that way. The
+  version is fixed at build time and kept for the ~7-day cache; a project that
+  needs an exact CLI version (outsidey's `db dump`) may refuse it.
 - Under Trusted network access, `chatgpt.com` is blocked at the gateway
   (CONNECT 403) → **Codex CLI cannot install** unless the environment uses a
   Custom allowlist including `chatgpt.com` (and `auth.openai.com` for login).
@@ -120,22 +126,34 @@ override a refresh.
 - **Build time.** The SDK install uses no credentials. Failures appear in the
   setup summary as "1Password SDK install failed" or "1Password SDK skipped (no pnpm)".
 
-## Node version from `.nvmrc`
+## Project Node and dependencies
 
-`.claude/hooks/sessionstart-node-version.sh` (cloud only; matcher
-`startup|resume|clear|fork`) runs `nvm install` in `$CLAUDE_PROJECT_DIR` when it
-has an `.nvmrc`, then adds one `export PATH=<version bin>:"$PATH"` line to the
-session's `CLAUDE_ENV_FILE`, so Bash commands (including `pnpm`) use that Node.
-nvm reads `.nvmrc` each session, so version bumps need no rebuild.
+`.claude/hooks/sessionstart-node-project.sh` (cloud only; matcher
+`startup|resume|clear|fork`) prepares `$CLAUDE_PROJECT_DIR` in one script,
+because Claude Code runs matching hooks in parallel and the install must follow
+the Node switch.
 
-- **Failure.** nvm missing, a failed or timed-out install (90 s; hook timeout
-  120 s), or an unwritable env file leaves the image default Node and adds a
-  warning naming the cause to the session context.
-- **Scope.** No `.nvmrc` at the project root (including multi-repo sessions,
+1. **Node.** With an `.nvmrc`, it runs `nvm install`, then adds one
+   `export PATH=<version bin>:"$PATH"` line to the session's `CLAUDE_ENV_FILE`,
+   so Bash commands (including `pnpm`) use that Node. nvm reads `.nvmrc` each
+   session, so version bumps need no rebuild.
+2. **Dependencies.** With a `pnpm-lock.yaml`, it runs
+   `pnpm install --frozen-lockfile` under that Node (output discarded). Other
+   package managers are not handled.
+
+- **Failure.** nvm missing, a failed or timed-out Node install (90 s), or an
+  unwritable env file leaves the image default Node and adds a warning naming
+  the cause; the dependency install is then skipped rather than run on the
+  wrong Node. A failed, timed-out (240 s) or pnpm-less install adds
+  "Dependencies not installed: <cause>". Hook timeout is 360 s; the session
+  always continues.
+- **Scope.** Neither file at the project root (including multi-repo sessions,
   whose project directory sits above the clones) is a silent no-op. Like the
   1Password variables, the PATH change reaches Bash commands and their
-  children only; hooks and MCP servers keep Node 22.
-- **Network.** Downloads come from `nodejs.org`.
+  children only; hooks and MCP servers keep Node 22. The install runs in the
+  hook's environment, without the 1Password variables.
+- **Network.** Node downloads come from `nodejs.org`, packages from
+  `registry.npmjs.org`.
 
 ## Deliberately not replicated
 
