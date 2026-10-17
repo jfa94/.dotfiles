@@ -85,6 +85,10 @@ out="$(run_setup 2>&1)" \
 [[ ! -e "$home/.codex/user-config.toml" ]] || fail "user-config.toml should only exist as config.toml"
 [[ ! -e "$home/.codex/user-hooks.json" ]] || fail "user-hooks.json should only exist as hooks.json"
 [[ -x "$home/.claude/hooks/sample.sh" ]] || fail "hook not chmod +x"
+[[ -L "$home/.claude/hooks" && "$(readlink "$home/.claude/hooks")" == "$dot/.claude/hooks" ]] \
+  || fail "hooks directory not linked to the repo"
+[[ -f "$dot/.claude/hooks/sample.sh" && ! -L "$dot/.claude/hooks/sample.sh" ]] \
+  || fail "repo hook replaced by a self-referential link"
 [[ "$(readlink "$home/.config/git/ignore")" == "$dot/.config/git/ignore" ]] \
   || fail "global git ignore not linked"
 git init -q "$tmp/ignore-repo"

@@ -6,7 +6,7 @@ Behavior of `setup.sh` (local) and its relationship to `cloud-setup.sh`. For fir
 ## What `setup.sh` does
 
 - Symlinks the dotfiles (`.zshrc`, `.vimrc`, `.tmux.conf`, etc.) into `$HOME`.
-- Symlinks Claude Code config into `~/.claude/` (settings, hooks, agents, statusline per file; each `.claude/skills/<name>` as one directory link, so new skill files need no re-run), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/` (including `~/.config/git/ignore`, git's default global excludes, which ignores `.superpowers/`), then marks hook scripts executable.
+- Symlinks Claude Code config into `~/.claude/` (settings, agents, statusline per file; `~/.claude/hooks` as one directory link to `.claude/hooks` and each `.claude/skills/<name>` as one directory link, so new hook and skill files need no re-run), exposes compatible skills to Codex at `~/.agents/skills`, and symlinks XDG config into `~/.config/` (including `~/.config/git/ignore`, git's default global excludes, which ignores `.superpowers/`), then marks hook scripts executable.
 - Links the single global `instructions/AGENTS.md` to `~/.claude/CLAUDE.md`
   and `~/.codex/AGENTS.md`. Tool-specific policies stay in their named sections;
   frontend/backend guidance lives alongside the canonical file and loads on demand.
@@ -30,7 +30,11 @@ It is idempotent — re-running skips anything already linked and runs
 `brew bundle install --no-upgrade`, so it installs missing Brewfile entries
 without upgrading existing ones. If conflicts are detected, you'll be prompted
 to replace, skip, or decide file-by-file. New files added to the repo are only
-deployed on a re-run. Replaced regular files or directories retain one backup at
+deployed on a re-run, except Claude hooks and skill contents, which ride their
+directory links. A previous per-file `~/.claude/hooks` directory holding only
+links into this repo's hooks is migrated silently to the directory link without
+a backup; any other existing `~/.claude/hooks` follows the conflict policy.
+Codex hooks (`~/.codex/hooks`) are still linked per file. Replaced regular files or directories retain one backup at
 `<path>.bak`; setup warns before replacing an existing backup. Replaced symlinks
 are removed without a backup. The TypeScript scaffold uses the same policy for
 copied config files; package.json script merging does not create a backup.

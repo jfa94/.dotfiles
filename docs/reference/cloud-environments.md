@@ -36,6 +36,11 @@ each skill directory containing a `SKILL.md` as one symlink into
 added to a skill after the last setup run therefore appear at runtime without
 re-running setup.
 
+Claude hooks are likewise an exception. Section 3 skips every tracked path
+under `.claude/hooks/*` and links `~/.claude/hooks` as one directory symlink to
+`.claude/hooks` (`ln -sfn`, mirroring `link_claude_hooks` in `setup.sh`), so
+hooks added later need no setup re-run.
+
 ## Platform facts
 
 Spike-verified 2026-08:

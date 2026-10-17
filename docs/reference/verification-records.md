@@ -24,7 +24,9 @@ Codex Doctor 0.153.4 loaded strict configuration with zero failures; macOS secur
 ## Coverage locations
 
 Instruction migration checks are in `tests/agent-instructions.sh`, cloud link
-checks in `tests/cloud-setup.sh`, and startup link checks in
-`tests/codex-startup.sh`. They cover migrations, custom conflicts, prompt choices,
+checks in `tests/cloud-setup.sh`, startup link checks in
+`tests/codex-startup.sh`, and `~/.claude/hooks` directory-link checks (fresh
+install, new-hook visibility, idempotency, per-file migration, conflict policy)
+in `tests/claude-hooks-link.sh`. They cover migrations, custom conflicts, prompt choices,
 missing sources, repeat setup, and owned-link cleanup. Run every shell test
 separately and preserve its exit status; any failed script fails the suite.

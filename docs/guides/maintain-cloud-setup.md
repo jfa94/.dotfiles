@@ -21,7 +21,7 @@ editing the environment's setup script (any whitespace change). Then run the
 ## Test coverage
 
 - `tests/cloud-setup.sh` covers syntax, degraded-install behavior, symlinks
-  (including the global git ignore), and the SDK install (arguments, failure,
+  (including the global git ignore and the `~/.claude/hooks` directory link), and the SDK install (arguments, failure,
   no pnpm).
 - `tests/cloud-op-env.sh` covers the 1Password hook and fetcher with fake
   tools: hook registration, gating, dependencies, the exact `.env.local`

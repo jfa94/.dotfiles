@@ -72,6 +72,8 @@ while IFS= read -r -d '' path; do
   [[ "$path" == .codex/skills/* ]] && continue
   # Claude skill contents ride the per-skill directory links below.
   [[ "$path" == .claude/skills/*/* ]] && continue
+  # Claude hooks ride the single ~/.claude/hooks directory link below.
+  [[ "$path" == .claude/hooks/* ]] && continue
   [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
   [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
   mkdir -p "$HOME/$(dirname "$path")"
@@ -88,6 +90,10 @@ mkdir -p "$HOME/.claude/skills"
 while IFS= read -r skill_src; do
   ln -sfn "$skill_src" "$HOME/.claude/skills/$(basename "$skill_src")" && ((link_count++))
 done < <(find "$DOTFILES_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print 2>/dev/null)
+
+# keep in sync with setup.sh link_claude_hooks (one directory link)
+mkdir -p "$HOME/.claude"
+ln -sfn "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks" && ((link_count++))
 
 if [[ -f "$DOTFILES_DIR/$CODEX_USER_CONFIG" ]]; then
   mkdir -p "$HOME/.codex"
@@ -126,7 +132,7 @@ fi
 if ((link_count == 0)); then
   note_fail "no config symlinks created"
 else
-  find "$HOME/.claude/hooks" -name '*.sh' -exec chmod +x {} \; 2>/dev/null
+  find "$HOME/.claude/hooks/" -name '*.sh' -exec chmod +x {} \; 2>/dev/null
   success "Linked $link_count config files into ~/.claude and ~/.codex"
 fi
 

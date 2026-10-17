@@ -220,6 +220,33 @@ link_claude_skills() {
   done < <(find "$DOTFILES_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | sort)
 }
 
+# Hooks are linked as one directory so a newly registered hook never lacks its
+# file on a machine that has not re-run setup. The Section 4 loop excludes
+# .claude/hooks/* for this.
+# True when ~/.claude/hooks is the previous per-file layout: a real directory
+# holding only links into this repo's hooks.
+claude_hooks_dir_is_legacy() {
+  local dir="$HOME/.claude/hooks" entry
+  [[ -d "$dir" && ! -L "$dir" ]] || return 1
+  for entry in "$dir"/* "$dir"/.[!.]*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    [[ -L "$entry" && "$(readlink "$entry")" == "$DOTFILES_DIR/.claude/hooks/"* ]] || return 1
+  done
+  return 0
+}
+
+link_claude_hooks() {
+  local entry
+  if claude_hooks_dir_is_legacy; then
+    for entry in "$HOME/.claude/hooks"/* "$HOME/.claude/hooks"/.[!.]*; do
+      if [[ -L "$entry" ]]; then rm "$entry"; fi
+    done
+    rmdir "$HOME/.claude/hooks"
+    replaced+=("~/.claude/hooks (migrated to directory link)")
+  fi
+  link_file "$DOTFILES_DIR/.claude/hooks" "$HOME/.claude/hooks" "~/.claude/hooks"
+}
+
 # --- Linux package lists (native, in-repo packages only) ---
 # Name deltas: python3<->python, golang-go<->go, default-jdk<->jdk-openjdk.
 # gh and nodejs need apt-repo bootstraps on Ubuntu (stale/absent by default),
@@ -708,6 +735,8 @@ for prefix in .claude .codex .config; do
     [[ "$path" == .codex/skills/* ]] && continue
     # Claude skill contents ride the per-skill directory links (see below).
     [[ "$path" == .claude/skills/*/* ]] && continue
+    # Claude hooks ride the single ~/.claude/hooks directory link (see below).
+    [[ "$path" == .claude/hooks/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
     rel="${path#"$prefix"/}"
@@ -731,6 +760,17 @@ while IFS= read -r skill_src; do
     conflicts+=("~/.claude/skills/$(basename "$skill_src")")
   fi
 done < <(find "$DOTFILES_DIR/.claude/skills" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' \; -print 2>/dev/null)
+
+# Hooks directory link (link_claude_hooks). The previous per-file layout
+# migrates silently, so it is not a conflict.
+hooks_dest="$HOME/.claude/hooks"
+if [[ -L "$hooks_dest" && "$(readlink "$hooks_dest")" == "$DOTFILES_DIR/.claude/hooks" ]]; then
+  :
+elif claude_hooks_dir_is_legacy; then
+  :
+elif [[ -e "$hooks_dest" || -L "$hooks_dest" ]]; then
+  conflicts+=("~/.claude/hooks")
+fi
 
 codex_config_src="$DOTFILES_DIR/$CODEX_USER_CONFIG"
 codex_config_dest="$HOME/.codex/config.toml"
@@ -830,6 +870,7 @@ for prefix in .claude .codex .config; do
   while IFS= read -r -d '' path; do
     [[ "$path" == .codex/skills/* ]] && continue
     [[ "$path" == .claude/skills/*/* ]] && continue
+    [[ "$path" == .claude/hooks/* ]] && continue
     [[ "$path" == "$CODEX_USER_CONFIG" || "$path" == "$CODEX_LEGACY_CONFIG" ]] && continue
     [[ "$path" == "$CODEX_USER_HOOKS" || "$path" == "$CODEX_LEGACY_HOOKS" ]] && continue
     rel="${path#"$prefix"/}"
@@ -844,10 +885,12 @@ link_codex_user_hooks
 link_agent_instructions
 
 link_claude_skills
+link_claude_hooks
 link_skills_for_codex
 
-# Ensure hook scripts are executable (git may not preserve +x on all systems)
-find "$HOME/.claude/hooks" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+# Ensure hook scripts are executable (git may not preserve +x on all systems).
+# Trailing slash: find does not descend into a symlinked start directory.
+find "$HOME/.claude/hooks/" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # Prune symlinks whose repo target no longer exists (file deleted/renamed in
 # dotfiles) — otherwise dead agents/hooks linger forever. Covers the same
