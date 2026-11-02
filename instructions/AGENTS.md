@@ -19,6 +19,7 @@ Shared guidance for Claude Code and Codex. Each tool-specific section applies on
 - Before declaring completion, exercise the changed behavior, confirm every planned step landed, and check relevant regressions.
 - Run each validation command in a separate tool call, preserving its exit status and diagnostic output. Default to no output-filter pipelines; if filtering is necessary in Bash or zsh, enable `set -o pipefail` in that invocation and preserve the pipeline's failure status. Do not append commands that mask failure or use Bash's `PIPESTATUS` in zsh.
 - Report a passing gate only after the validator completes successfully; empty output or a success marker alone is not evidence of success.
+- Create worktrees with the runtime's native feature (Claude Code `--worktree`/EnterWorktree uses `<repo>/.claude/worktrees/`; Codex `--worktree`/`/worktree` uses `~/.codex/worktrees/`). For a manual `git worktree add`, use the path the active skill or tool prescribes, else `<repo>/.worktrees/<name>` after confirming it is git-ignored. Never place a worktree beside the repository or elsewhere in `~/Projects` (for example `../<repo>-*`).
 
 ## Quality and Scope
 

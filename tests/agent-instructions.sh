@@ -22,6 +22,7 @@ sed -n '/^## Codex$/,$p' "$ROOT/instructions/AGENTS.md" | grep -qF 'Use subagent
 grep -qF 'This includes applying existing migrations' "$ROOT/instructions/AGENTS.md"
 grep -qF 'Never drop a database table without explicit same-turn confirmation' "$ROOT/instructions/AGENTS.md"
 grep -qF 'Supabase remains list/read-only' "$ROOT/instructions/AGENTS.md"
+grep -qF 'Never place a worktree beside the repository' "$ROOT/instructions/AGENTS.md"
 
 mkdir -p "$WORK/repo/instructions" "$WORK/repo/.claude" "$WORK/repo/.codex"
 printf 'shared rules\n' > "$WORK/repo/instructions/AGENTS.md"
